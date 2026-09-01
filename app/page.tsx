@@ -604,7 +604,7 @@ export default function Home() {
           <div className="flex min-w-0 items-center gap-3">
             <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground"><Activity /></div>
             <div className="min-w-0">
-              <h1 className="truncate text-base font-semibold tracking-tight sm:text-lg">等风盘中 · 异动与晋级监控</h1>
+              <h1 className="truncate text-base font-semibold tracking-tight sm:text-lg">李米看板</h1>
               <p className="truncate text-xs text-muted-foreground">板块资金曲线、资金分流、连板梯队与涨速一屏联动</p>
             </div>
           </div>

@@ -13,10 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: '等风盘中 · 异动与晋级监控',
+  title: '李米看板',
   description: '板块驱动、连板晋级、同梯队竞争与打板涨速监控。',
   openGraph: {
-    title: '等风盘中',
+    title: '李米看板',
     description: '板块异动 · 连板晋级 · 梯队竞争 · 涨速观察',
     type: 'website',
     images: [
@@ -24,13 +24,13 @@ export const metadata: Metadata = {
         url: '/og.png',
         width: 1200,
         height: 630,
-        alt: '等风盘中监控看板',
+        alt: '李米看板',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: '等风盘中',
+    title: '李米看板',
     description: '板块异动 · 连板晋级 · 梯队竞争 · 涨速观察',
     images: ['/og.png'],
   },
