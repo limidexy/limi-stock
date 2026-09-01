@@ -112,6 +112,10 @@ export type MarketTimelineEvent = {
   sectorDailyFlow: number;
   sectorAtTimeChangePct: number | null;
   sectorWindowChangePct: number | null;
+  flowDelta: number;
+  flowPreviousDelta: number;
+  flowAcceleration: number;
+  turnReason: 'FLOW_REVERSAL' | 'FLOW_ACCELERATION';
   indices: Array<{
     code: string;
     name: string;
@@ -831,6 +835,11 @@ type TimelineCandidate = {
   time: string;
   sectorAtTimeChangePct: number | null;
   sectorWindowChangePct: number;
+  flowDelta: number;
+  flowPreviousDelta: number;
+  flowAcceleration: number;
+  turnReason: 'FLOW_REVERSAL' | 'FLOW_ACCELERATION';
+  turnScore: number;
 };
 
 async function fetchTimelineBoards() {
@@ -859,85 +868,97 @@ async function fetchTimelineBoards() {
   return { boards: [...selected.values()], stale: successful.some((result) => result.stale) };
 }
 
-function detectPriceTimelineCandidates(items: Array<{ sector: TimelineBoard; trend: IntradayTrend }>) {
-  const reference = items.find((item) => item.trend.points.length > 5)?.trend.points ?? [];
-  const checkpoints = reference.filter((point, index) => {
-    if (index < 5) return false;
-    if (point.time === '09:35' || point.time === '13:05') return true;
-    const minute = Number(point.time.slice(3, 5));
-    return Number.isFinite(minute) && minute % 15 === 0 && point.time !== '13:00';
-  }).map((point) => point.time);
-  const latest = reference.at(-1)?.time;
-  if (latest && !checkpoints.includes(latest)) {
-    const last = checkpoints.at(-1);
-    const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
-    if (!last || minutes(latest) - minutes(last) >= 8) checkpoints.push(latest);
-  }
-
-  const strongSeen = new Set<string>();
-  const lastPickedAt = new Map<string, number>();
-  const output: TimelineCandidate[] = [];
+function detectFlowTimelineCandidates(items: Array<{ sector: TimelineBoard; trend: IntradayTrend; flow: SectorFlowSeries }>) {
   const timeNumber = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+  const raw: TimelineCandidate[] = [];
 
-  for (const time of checkpoints) {
-    const observations = items.map(({ sector, trend }) => {
-      const index = trend.points.findLastIndex((point) => point.time <= time);
-      if (index < 5) return null;
-      const point = trend.points[index];
-      const before = trend.points[index - 5];
+  for (const { sector, trend, flow } of items) {
+    if (flow.points.length < 9) continue;
+    const threeMinuteDeltas = flow.points.slice(3).map((point, offset) => (
+      point.mainNetInflow - flow.points[offset].mainNetInflow
+    ));
+    const scaleValues = threeMinuteDeltas.map(Math.abs).sort((a, b) => a - b);
+    const scale = Math.max(scaleValues[Math.floor(scaleValues.length * 0.6)] ?? 0, 1_000_000);
+    const signals = flow.points.slice(6).map((point, offset) => {
+      const index = offset + 6;
+      const recent = point.mainNetInflow - flow.points[index - 3].mainNetInflow;
+      const previous = flow.points[index - 3].mainNetInflow - flow.points[index - 6].mainNetInflow;
+      const acceleration = recent - previous;
+      const reversal = (previous <= 0 && recent > 0) || (previous >= 0 && recent < 0);
+      const significant = reversal
+        ? Math.abs(recent) >= scale * 0.75 && Math.abs(acceleration) >= scale * 1.1
+        : Math.abs(recent) >= scale * 1.5 && Math.abs(acceleration) >= scale * 0.9;
       return {
-        sector,
-        windowStartTime: before.time,
+        index,
         time: point.time,
-        sectorAtTimeChangePct: trend.preClose ? (point.price / trend.preClose - 1) * 100 : null,
-        sectorWindowChangePct: (point.price / before.price - 1) * 100,
+        recent,
+        previous,
+        acceleration,
+        reversal,
+        significant,
+        score: Math.abs(acceleration) / scale + Math.abs(recent) / scale,
       };
-    }).filter(Boolean) as Array<Omit<TimelineCandidate, 'kind' | 'label'>>;
-    if (!observations.length) continue;
-
-    const currentMinute = timeNumber(time);
-    const pickDiverse = (rows: Array<Omit<TimelineCandidate, 'kind' | 'label'>>) => (
-      rows.find((row) => currentMinute - (lastPickedAt.get(row.sector.code) ?? -999) >= 30) ?? rows[0]
-    );
-    const positive = observations.filter((row) => row.sectorWindowChangePct > 0)
-      .sort((a, b) => b.sectorWindowChangePct - a.sectorWindowChangePct);
-    const negative = observations.filter((row) => row.sectorWindowChangePct < 0)
-      .sort((a, b) => a.sectorWindowChangePct - b.sectorWindowChangePct);
-    const strongest = [...observations].sort((a, b) => Math.abs(b.sectorWindowChangePct) - Math.abs(a.sectorWindowChangePct))[0];
-    const selected: Array<Omit<TimelineCandidate, 'kind' | 'label'>> = [];
-    if (strongest && Math.abs(strongest.sectorWindowChangePct) >= 0.06) {
-      const sameSide = strongest.sectorWindowChangePct >= 0 ? positive : negative;
-      selected.push(pickDiverse(sameSide));
-    }
-    const opposite = strongest?.sectorWindowChangePct >= 0 ? pickDiverse(negative) : pickDiverse(positive);
-    if (opposite && Math.abs(opposite.sectorWindowChangePct) >= 0.15 && !selected.some((row) => row.sector.code === opposite.sector.code)) selected.push(opposite);
-
-    for (const row of selected) {
-      const delta = row.sectorWindowChangePct;
-      let kind: TimelineCandidate['kind'] = 'OBSERVE';
-      let label: TimelineCandidate['label'] = '震荡观察';
-      if (delta >= 0.18) {
-        kind = strongSeen.has(row.sector.code) ? 'STRONG' : 'START';
-        label = kind === 'START' ? '启动' : '延续强势';
-      } else if (delta <= -0.18) {
-        kind = strongSeen.has(row.sector.code) ? 'CASHOUT' : 'WEAKEN';
-        label = kind === 'CASHOUT' ? '兑现' : '走弱';
+    });
+    const localTurns = signals.filter((signal, index) => {
+      if (!signal.significant) return false;
+      const neighbors = signals.slice(Math.max(0, index - 2), index + 3);
+      return signal.score >= Math.max(...neighbors.map((item) => item.score));
+    });
+    const sectorTurns: typeof localTurns = [];
+    for (const signal of localTurns) {
+      const previous = sectorTurns.at(-1);
+      if (previous && timeNumber(signal.time) - timeNumber(previous.time) < 12) {
+        if (signal.score > previous.score) sectorTurns[sectorTurns.length - 1] = signal;
+      } else {
+        sectorTurns.push(signal);
       }
-      output.push({ ...row, kind, label });
-      lastPickedAt.set(row.sector.code, currentMinute);
     }
-    observations.filter((row) => row.sectorWindowChangePct >= 0.18)
-      .forEach((row) => strongSeen.add(row.sector.code));
+    for (const signal of sectorTurns) {
+      const priceWindow = trendWindow(trend, flow.points[signal.index - 3].time, signal.time);
+      raw.push({
+        kind: 'OBSERVE',
+        label: '震荡观察',
+        sector,
+        windowStartTime: flow.points[signal.index - 3].time,
+        time: signal.time,
+        sectorAtTimeChangePct: priceWindow.changePct,
+        sectorWindowChangePct: priceWindow.windowChangePct ?? 0,
+        flowDelta: signal.recent,
+        flowPreviousDelta: signal.previous,
+        flowAcceleration: signal.acceleration,
+        turnReason: signal.reversal ? 'FLOW_REVERSAL' : 'FLOW_ACCELERATION',
+        turnScore: signal.score,
+      });
+    }
   }
-  return output.sort((a, b) => a.time.localeCompare(b.time) || a.sector.name.localeCompare(b.sector.name));
+
+  const selected: TimelineCandidate[] = [];
+  for (const candidate of [...raw].sort((a, b) => b.turnScore - a.turnScore)) {
+    const candidateMinute = timeNumber(candidate.time);
+    if (selected.some((item) => item.sector.code === candidate.sector.code && Math.abs(timeNumber(item.time) - candidateMinute) < 20)) continue;
+    if (selected.filter((item) => Math.abs(timeNumber(item.time) - candidateMinute) <= 3).length >= 2) continue;
+    selected.push(candidate);
+    if (selected.length >= 24) break;
+  }
+
+  const directionBySector = new Map<string, 'up' | 'down'>();
+  return selected.sort((a, b) => a.time.localeCompare(b.time) || b.turnScore - a.turnScore).map((candidate) => {
+    const direction = candidate.flowDelta >= 0 ? 'up' : 'down';
+    const previousDirection = directionBySector.get(candidate.sector.code);
+    directionBySector.set(candidate.sector.code, direction);
+    if (direction === 'up') {
+      return { ...candidate, kind: previousDirection === 'up' ? 'STRONG' as const : 'START' as const, label: previousDirection === 'up' ? '延续强势' as const : '启动' as const };
+    }
+    return { ...candidate, kind: previousDirection === 'up' ? 'CASHOUT' as const : 'WEAKEN' as const, label: previousDirection === 'up' ? '兑现' as const : '走弱' as const };
+  });
 }
 
 function timelineContextKey(candidate: TimelineCandidate) {
-  return `${candidate.sector.code}:${candidate.sectorWindowChangePct >= 0 ? 'up' : 'down'}`;
+  return `${candidate.sector.code}:${candidate.flowDelta >= 0 ? 'up' : 'down'}`;
 }
 
 async function fetchTimelineMembers(candidate: TimelineCandidate) {
-  const direction: 0 | 1 = candidate.sectorWindowChangePct >= 0 ? 1 : 0;
+  const direction: 0 | 1 = candidate.flowDelta >= 0 ? 1 : 0;
   const members = await fetchClist({
     fs: `b:${candidate.sector.code}`,
     fid: 'f3',
@@ -961,7 +982,7 @@ async function confirmTimelineDrivers(candidate: TimelineCandidate, relatedStock
     try {
       const trend = await fetchIntradayTrend({ code: row.code, secid: secid(row.code) }, tradeDate);
       const { windowChangePct } = trendWindow(trend, candidate.windowStartTime, candidate.time);
-      const aligns = windowChangePct !== null && (candidate.sectorWindowChangePct >= 0 ? windowChangePct > 0 : windowChangePct < 0);
+      const aligns = windowChangePct !== null && (candidate.flowDelta >= 0 ? windowChangePct > 0 : windowChangePct < 0);
       return {
         code: row.code,
         name: row.name,
@@ -994,20 +1015,20 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
   const ranked = await fetchTimelineBoards();
   const [boardTrendResults, indexSettled] = await Promise.all([
     mapLimit(ranked.boards, 4, async (board) => {
-      try {
-        const trend = await fetchIntradayTrend({ code: board.code, secid: `90.${board.code}` }, tradeDate);
-        return { sector: board, trend };
-      } catch {
-        return null;
-      }
+      const [trend, flow] = await Promise.allSettled([
+        fetchIntradayTrend({ code: board.code, secid: `90.${board.code}` }, tradeDate),
+        fetchSectorFlowSeries(board, tradeDate),
+      ]);
+      if (trend.status !== 'fulfilled' || flow.status !== 'fulfilled') return null;
+      return { sector: board, trend: trend.value, flow: flow.value };
     }),
     Promise.allSettled([
       fetchIntradayTrend({ code: '000001', secid: '1.000001' }, tradeDate),
       fetchIntradayTrend({ code: '399006', secid: '0.399006' }, tradeDate),
     ]),
   ]);
-  const boardTrends = boardTrendResults.filter(Boolean) as Array<{ sector: TimelineBoard; trend: IntradayTrend }>;
-  const candidates = detectPriceTimelineCandidates(boardTrends);
+  const boardSignals = boardTrendResults.filter(Boolean) as Array<{ sector: TimelineBoard; trend: IntradayTrend; flow: SectorFlowSeries }>;
+  const candidates = detectFlowTimelineCandidates(boardSignals);
   const indices = indexSettled
     .filter((result): result is PromiseFulfilledResult<IntradayTrend> => result.status === 'fulfilled')
     .map((result) => result.value);
@@ -1053,6 +1074,10 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
       sectorDailyFlow: candidate.sector.mainNetInflow ?? 0,
       sectorAtTimeChangePct: candidate.sectorAtTimeChangePct,
       sectorWindowChangePct: candidate.sectorWindowChangePct,
+      flowDelta: candidate.flowDelta,
+      flowPreviousDelta: candidate.flowPreviousDelta,
+      flowAcceleration: candidate.flowAcceleration,
+      turnReason: candidate.turnReason,
       indices: indices.map((marketIndex) => ({
         code: marketIndex.code,
         name: marketIndex.name,
@@ -1062,14 +1087,14 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
       relatedStocks,
       driverState: confirmed > 0 && indices.length === 2 ? 'READY' : drivers.length ? 'DEGRADED' : 'MISSING',
       driverBasis: confirmed > 0
-        ? `5分钟同窗价格确认${confirmed}/${drivers.length}只；下方扩展股为当日最新异动，不冒充事件时点因果`
+        ? `资金转折3分钟同窗价格确认${confirmed}/${drivers.length}只；下方扩展股为当日最新异动，不冒充事件时点因果`
         : '该节点未进入重点同窗核验；下方扩展股仅代表当日最新相关异动',
     };
   });
   const confirmedDrivers = events.flatMap((event) => event.drivers)
     .filter((driver) => driver.role === '同窗价格确认').length;
   const sourceStale = ranked.stale || indices.some((item) => item.stale)
-    || boardTrends.some((item) => item.trend.stale) || [...contexts.values()].some((item) => item.stale);
+    || boardSignals.some((item) => item.trend.stale) || [...contexts.values()].some((item) => item.stale);
   const status: DataState = events.length && indices.length === 2 && events.every((event) => event.relatedStocks.length) && !sourceStale
     ? 'READY' : events.length ? 'DEGRADED' : 'MISSING';
   const value: MarketTimelineSnapshot = {
@@ -1077,13 +1102,13 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     retrievedAt: new Date().toISOString(),
     tradeDate,
     phase: shanghaiMarketPhase(),
-    lastPointTime: boardTrends.flatMap((item) => item.trend.points.map((point) => point.time)).sort().at(-1) ?? null,
-    source: '东方财富公开板块、指数与个股分钟序列',
+    lastPointTime: boardSignals.flatMap((item) => item.flow.points.map((point) => point.time)).sort().at(-1) ?? null,
+    source: '东方财富公开板块分钟资金、板块/指数/个股分钟价格序列',
     sourceState: sourceStale ? 'STALE' : 'LIVE',
     reason: sourceStale ? '部分分钟端点短暂波动，已使用同交易日最近快照' : undefined,
-    basis: '每15分钟固定复盘一次，并补充当前最新节点；每个时点从细分板块中选取最明显方向及显著反向分支。启动/延续强势要求板块5个有效交易分钟明显上行；先走强后回落标为兑现，未走强直接下行标为走弱，小幅变化标为震荡观察。同窗确认股仅覆盖波动最显著的重点节点；扩展异动股展示该板块当日最新涨跌，不把当前排名冒充历史时点因果。',
+    basis: '不使用固定时间点。系统逐分钟比较板块最近3个有效交易分钟的主力资金增量与前3分钟增量，只在资金方向反转或流入/流出显著加速，并形成局部峰值时记录节点；同板块20分钟内去重、相近3分钟最多保留两个最强转折。启动/延续/兑现/走弱由资金方向的前后状态判定。同窗确认股仅覆盖最显著节点；扩展异动股展示该板块当日最新涨跌，不把当前排名冒充历史时点因果。',
     coverage: {
-      sectors: boardTrends.length,
+      sectors: boardSignals.length,
       events: events.length,
       timeNodes: new Set(events.map((event) => event.time)).size,
       indices: indices.length,

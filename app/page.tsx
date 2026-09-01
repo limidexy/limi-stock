@@ -243,6 +243,10 @@ type MarketTimelineEvent = {
   sectorDailyFlow: number;
   sectorAtTimeChangePct: number | null;
   sectorWindowChangePct: number | null;
+  flowDelta: number;
+  flowPreviousDelta: number;
+  flowAcceleration: number;
+  turnReason: 'FLOW_REVERSAL' | 'FLOW_ACCELERATION';
   indices: Array<{
     code: string;
     name: string;
@@ -651,7 +655,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
   const indexPhrase = (events: MarketTimelineEvent[]) => {
     const indices = events.find((event) => event.indices.length)?.indices ?? [];
     if (!indices.length) return '指数同窗数据待补。';
-    const detail = indices.map((marketIndex) => `${marketIndex.name}当时${fmtPct(marketIndex.changePct)}、5分钟${fmtPct(marketIndex.windowChangePct)}`).join('，');
+    const detail = indices.map((marketIndex) => `${marketIndex.name}当时${fmtPct(marketIndex.changePct)}、转折窗${fmtPct(marketIndex.windowChangePct)}`).join('，');
     const windows = indices.map((marketIndex) => marketIndex.windowChangePct).filter((value): value is number => value !== null);
     const hasStart = events.some((event) => (event.sectorWindowChangePct ?? 0) > 0);
     const hasExit = events.some((event) => (event.sectorWindowChangePct ?? 0) < 0);
@@ -664,7 +668,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
   return (
     <div className="space-y-4">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="盘面脉络摘要">
-        <Card size="sm"><CardHeader><CardTitle>启动 / 延续</CardTitle><CardAction><span className="market-up text-lg font-semibold">{starts.length + strongs.length}</span></CardAction><CardDescription>启动{starts.length} · 延续{strongs.length} · {data.coverage?.timeNodes ?? groups.length}个复盘时点</CardDescription></CardHeader></Card>
+        <Card size="sm"><CardHeader><CardTitle>启动 / 延续</CardTitle><CardAction><span className="market-up text-lg font-semibold">{starts.length + strongs.length}</span></CardAction><CardDescription>启动{starts.length} · 延续{strongs.length} · {data.coverage?.timeNodes ?? groups.length}个资金转折</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>兑现 / 走弱</CardTitle><CardAction><span className="market-down text-lg font-semibold">{cashouts.length + weakens.length}</span></CardAction><CardDescription>兑现{cashouts.length} · 走弱{weakens.length}</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>最强启动</CardTitle><CardAction><ArrowUpRight className="size-4 market-up" /></CardAction><CardDescription>{strongest ? `${strongest.time} ${strongest.sectorName} ${fmtPct(strongest.sectorWindowChangePct)}` : '等待新启动'}</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>个股覆盖</CardTitle><CardAction><StateBadge state={data.status} /></CardAction><CardDescription>{data.coverage ? `${data.coverage.confirmedDrivers}只同窗确认 · ${relatedCount}只当日相关异动` : '正在对齐分钟序列'}</CardDescription></CardHeader></Card>
@@ -673,7 +677,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Clock3 className="size-5" />今日盘面直播</CardTitle>
-          <CardDescription>最新在上 · 约每15分钟固定复盘，并补充当前最新节点；连续解读启动、延续、兑现、走弱及指数环境</CardDescription>
+          <CardDescription>最新在上 · 仅在板块资金方向反转或流入/流出明显加速时记录，时间取真实转折分钟</CardDescription>
           <CardAction><StateBadge state={data.status} label={`${data.phase} ${data.lastPointTime ?? '—'}`} /></CardAction>
         </CardHeader>
         <CardContent>
@@ -690,6 +694,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                   return drivers;
                 }, new Map<string, MarketTimelineDriver>()).values()];
                 const moveText = events.map((event) => `${event.sectorName}${fmtPct(event.sectorWindowChangePct)}`).join('、');
+                const flowText = events.map((event) => `${event.sectorName}${fmtFlowDirection(event.flowDelta)}，前窗${fmtFlowDirection(event.flowPreviousDelta)}`).join('；');
                 return (
                   <article key={`${time}-${events.map((event) => event.id).join('-')}`} className="grid grid-cols-[54px_18px_minmax(0,1fr)] gap-x-2 sm:grid-cols-[66px_20px_minmax(0,1fr)] sm:gap-x-3">
                     <time className="pt-4 text-right font-mono text-sm font-semibold tabular-nums whitespace-nowrap">{time}</time>
@@ -702,14 +707,15 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                         {events.map((event) => <Badge key={event.id} variant="outline" className={(event.sectorWindowChangePct ?? 0) >= 0 ? 'status-ready' : 'status-degraded'}>{event.sectorName} · {event.label}</Badge>)}
                       </div>
                       <p className="mt-3 text-[15px] font-medium leading-7 sm:text-base">
-                        {eventPhrase(events)}，5分钟板块变化为{moveText}。{indexPhrase(events)}
+                        {eventPhrase(events)}。资金转折窗：{flowText}；同期板块价格变化为{moveText}。{indexPhrase(events)}
                       </p>
 
                       <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                         {events.map((event) => (
                           <div key={event.id} className="rounded-md border bg-background/75 px-3 py-2 text-xs leading-5">
                             <div className="flex items-center justify-between gap-2"><span className="font-medium">{event.sectorName}</span><span className={`font-mono font-semibold ${(event.sectorWindowChangePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(event.sectorWindowChangePct)}</span></div>
-                            <div className="text-muted-foreground">当时 {fmtPct(event.sectorAtTimeChangePct)} · 最新 {fmtPct(event.sectorChangePct)} · 主力 {fmtFlowDirection(event.sectorDailyFlow)}</div>
+                            <div className="text-muted-foreground">3分钟资金 {fmtFlowDirection(event.flowDelta)} · 较前窗加速度 {fmtMoney(event.flowAcceleration)}</div>
+                            <div className="text-muted-foreground">当时 {fmtPct(event.sectorAtTimeChangePct)} · 最新 {fmtPct(event.sectorChangePct)} · 当日主力 {fmtFlowDirection(event.sectorDailyFlow)}</div>
                           </div>
                         ))}
                       </div>
@@ -783,6 +789,16 @@ export default function Home() {
   const radarCoverage = radar.data?.coverage;
   const flowCoverage = flow.data?.coverage;
   const timelineCoverage = timeline.data?.coverage;
+  const genericConcepts = new Set(['融资融券', '深股通', '沪股通', 'MSCI中国', '富时罗素', '标普道琼斯A股', '国企改革', '央企改革', '央国企改革', '专精特新']);
+  const speedConceptCounts = new Map<string, number>();
+  for (const row of speed.data?.rows ?? []) {
+    for (const concept of new Set(row.concepts.filter((item) => !genericConcepts.has(item)))) {
+      speedConceptCounts.set(concept, (speedConceptCounts.get(concept) ?? 0) + 1);
+    }
+  }
+  const hotConcepts = [...speedConceptCounts.entries()]
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -814,7 +830,7 @@ export default function Home() {
         )}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6" aria-label="数据状态">
-          <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="size-4 text-cyan-500" />盘面脉络</CardTitle><CardAction><StateBadge state={timeline.data?.status} /></CardAction><CardDescription>{timelineCoverage ? `${timelineCoverage.timeNodes ?? timelineCoverage.events}个复盘时点 · ${timelineCoverage.events}个板块节点` : '正在重建时间轴'} · 60秒刷新</CardDescription></CardHeader></Card>
+          <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="size-4 text-cyan-500" />盘面脉络</CardTitle><CardAction><StateBadge state={timeline.data?.status} /></CardAction><CardDescription>{timelineCoverage ? `${timelineCoverage.timeNodes ?? timelineCoverage.events}个资金转折 · ${timelineCoverage.events}个板块节点` : '正在重建时间轴'} · 60秒刷新</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4 text-emerald-500" />概念板块</CardTitle><CardAction><StateBadge state={radar.data?.status} /></CardAction><CardDescription>{radarCoverage ? `${radarCoverage.available}/${radarCoverage.reported}板块` : '正在连接'} · 15秒刷新</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="size-4 text-violet-500" />资金曲线</CardTitle><CardAction><StateBadge state={flow.data?.status} /></CardAction><CardDescription>{flowCoverage ? `${flowCoverage.available}/${flowCoverage.requested}板块` : '正在连接'} · 分钟序列</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Layers3 className="size-4 text-sky-500" />驱动成分</CardTitle><CardAction><StateBadge state={selectedEvent?.driverState} label={selectedEvent?.windowReady ? '3分钟就绪' : '预热中'} /></CardAction><CardDescription>{selectedEvent ? `${selectedEvent.directionalCount ?? 0}/${selectedEvent.memberCount ?? 0}只同向` : '等待板块异动'} · 贡献可追溯</CardDescription></CardHeader></Card>
@@ -900,8 +916,17 @@ export default function Home() {
 
           <TabsContent value="speed">
             <Card>
-              <CardHeader><CardTitle>涨速榜 · 打板观察</CardTitle><CardDescription>涨速只做触发器；同时展示当前涨幅、概念、板制距离与近20个交易日涨停次数。页面每秒发起刷新，实际新成交到达速度以行情源为准</CardDescription><CardAction><div className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3.5" />每秒刷新</div></CardAction></CardHeader>
-              <CardContent>{speed.data?.rows?.length ? <Table><TableHeader><TableRow><TableHead>#</TableHead><TableHead>个股</TableHead><TableHead className="text-right">涨速</TableHead><TableHead className="text-right">涨幅</TableHead><TableHead>核心概念</TableHead><TableHead>近20日涨停</TableHead><TableHead className="text-right">距名义涨停</TableHead><TableHead>状态</TableHead></TableRow></TableHeader><TableBody>{speed.data.rows.map((row, index) => <TableRow key={row.code}><TableCell className="text-muted-foreground">{index + 1}</TableCell><TableCell><div className="font-medium">{row.name}</div><div className="text-xs text-muted-foreground">{row.code} · {row.limitPct}%板</div></TableCell><TableCell className={`text-right font-medium ${(row.speedPct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.speedPct)}</TableCell><TableCell className={`text-right ${(row.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.changePct)}</TableCell><TableCell><div className="flex min-w-[210px] flex-wrap gap-1">{row.concepts.length ? row.concepts.map((concept) => <Badge key={concept} variant="secondary">{concept}</Badge>) : <StateBadge state="MISSING" label="概念缺失" />}</div></TableCell><TableCell><span className="font-medium">{row.recentLimitCount ?? '—'}次</span><span className="ml-1 text-xs text-muted-foreground">/{row.recentLimitSessions}日</span></TableCell><TableCell className="text-right">{fmtPct(row.distanceToLimitPct)}</TableCell><TableCell><Badge variant="outline">{row.status}</Badge></TableCell></TableRow>)}</TableBody></Table> : <EmptyState>{speed.loading ? '正在补齐涨速票概念与近期涨停历史…' : speed.data?.reason || speed.error || '当前没有涨速样本'}</EmptyState>}</CardContent>
+              <CardHeader><CardTitle>涨速榜 · 打板观察</CardTitle><CardDescription>涨速只做触发器；同一核心概念同时进入多只票时加红提示共振，同时展示涨幅、板制距离与近20个交易日涨停次数</CardDescription><CardAction><div className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3.5" />每秒刷新</div></CardAction></CardHeader>
+              <CardContent>
+                {hotConcepts.length ? <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-red-500/35 bg-red-500/[0.08] px-3 py-2 text-sm"><ShieldAlert className="size-4 shrink-0 text-red-600" /><span className="font-medium text-red-700 dark:text-red-400">同概念共振</span>{hotConcepts.slice(0, 8).map(([concept, count]) => <Badge key={concept} variant="outline" className="border-red-500/45 bg-red-500/15 text-red-700 dark:text-red-300">{concept} · {count}只</Badge>)}</div> : null}
+                {speed.data?.rows?.length ? <Table><TableHeader><TableRow><TableHead>#</TableHead><TableHead>个股</TableHead><TableHead className="text-right">涨速</TableHead><TableHead className="text-right">涨幅</TableHead><TableHead>核心概念</TableHead><TableHead>近20日涨停</TableHead><TableHead className="text-right">距名义涨停</TableHead><TableHead>状态</TableHead></TableRow></TableHeader><TableBody>{speed.data.rows.map((row, index) => {
+                  const rowHotConcepts = row.concepts.filter((concept) => (speedConceptCounts.get(concept) ?? 0) >= 2);
+                  return <TableRow key={row.code} className={rowHotConcepts.length ? 'bg-red-500/[0.055] hover:bg-red-500/[0.09]' : undefined}><TableCell className="text-muted-foreground">{index + 1}</TableCell><TableCell><div className={rowHotConcepts.length ? 'font-semibold text-red-700 dark:text-red-300' : 'font-medium'}>{row.name}</div><div className="text-xs text-muted-foreground">{row.code} · {row.limitPct}%板</div></TableCell><TableCell className={`text-right font-medium ${(row.speedPct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.speedPct)}</TableCell><TableCell className={`text-right ${(row.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.changePct)}</TableCell><TableCell><div className="flex min-w-[210px] flex-wrap gap-1">{row.concepts.length ? row.concepts.map((concept) => {
+                    const count = speedConceptCounts.get(concept) ?? 0;
+                    return <Badge key={concept} variant={count >= 2 ? 'outline' : 'secondary'} className={count >= 2 ? 'border-red-500/45 bg-red-500/15 text-red-700 dark:text-red-300' : undefined}>{concept}{count >= 2 ? ` · ${count}只` : ''}</Badge>;
+                  }) : <StateBadge state="MISSING" label="概念缺失" />}</div></TableCell><TableCell><span className="font-medium">{row.recentLimitCount ?? '—'}次</span><span className="ml-1 text-xs text-muted-foreground">/{row.recentLimitSessions}日</span></TableCell><TableCell className="text-right">{fmtPct(row.distanceToLimitPct)}</TableCell><TableCell><Badge variant="outline">{row.status}</Badge></TableCell></TableRow>;
+                })}</TableBody></Table> : <EmptyState>{speed.loading ? '正在补齐涨速票概念与近期涨停历史…' : speed.data?.reason || speed.error || '当前没有涨速样本'}</EmptyState>}
+              </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
