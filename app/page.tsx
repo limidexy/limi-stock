@@ -222,6 +222,15 @@ type MarketTimelineDriver = {
   role: '同窗价格确认' | '当日资金候选';
 };
 
+type MarketTimelineRelatedStock = {
+  code: string;
+  name: string;
+  industry: string;
+  changePct: number | null;
+  speedPct: number | null;
+  mainNetInflow: number | null;
+};
+
 type MarketTimelineEvent = {
   id: string;
   kind: 'START' | 'CASHOUT' | 'WEAKEN';
@@ -241,6 +250,7 @@ type MarketTimelineEvent = {
     windowChangePct: number | null;
   }>;
   drivers: MarketTimelineDriver[];
+  relatedStocks?: MarketTimelineRelatedStock[];
   driverState: DataState;
   driverBasis: string;
 };
@@ -614,58 +624,116 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
   const cashouts = data.events.filter((event) => event.kind === 'CASHOUT');
   const weakens = data.events.filter((event) => event.kind === 'WEAKEN');
   const strongest = [...starts].sort((a, b) => (b.sectorWindowChangePct ?? 0) - (a.sectorWindowChangePct ?? 0))[0];
+  const relatedCount = new Set(data.events.flatMap((event) => (event.relatedStocks ?? []).map((stock) => stock.code))).size;
+  const groups = [...data.events.reduce((grouped, event) => {
+    const sameMinute = grouped.get(event.time) ?? [];
+    sameMinute.push(event);
+    grouped.set(event.time, sameMinute);
+    return grouped;
+  }, new Map<string, MarketTimelineEvent[]>()).entries()]
+    .sort(([a], [b]) => b.localeCompare(a));
+
+  const eventPhrase = (events: MarketTimelineEvent[]) => {
+    const phrases: string[] = [];
+    const add = (kind: MarketTimelineEvent['kind'], singular: string, multiple: string) => {
+      const names = events.filter((event) => event.kind === kind).map((event) => event.sectorName);
+      if (names.length) phrases.push(`${names.join('、')}${names.length > 1 ? multiple : singular}`);
+    };
+    add('START', '启动', '同步启动');
+    add('CASHOUT', '出现兑现', '同步出现兑现');
+    add('WEAKEN', '转弱', '同步转弱');
+    return phrases.join('；');
+  };
+
+  const indexPhrase = (events: MarketTimelineEvent[]) => {
+    const indices = events.find((event) => event.indices.length)?.indices ?? [];
+    if (!indices.length) return '指数同窗数据待补。';
+    const detail = indices.map((marketIndex) => `${marketIndex.name}当时${fmtPct(marketIndex.changePct)}、5分钟${fmtPct(marketIndex.windowChangePct)}`).join('，');
+    const windows = indices.map((marketIndex) => marketIndex.windowChangePct).filter((value): value is number => value !== null);
+    const hasStart = events.some((event) => event.kind === 'START');
+    const hasExit = events.some((event) => event.kind !== 'START');
+    let relation = '指数分化，题材走势相对独立';
+    if (windows.length && windows.every((value) => value > 0)) relation = hasStart ? '题材与指数共振上行' : '板块回落时指数仍有承接';
+    if (windows.length && windows.every((value) => value < 0)) relation = hasStart ? '题材逆指数启动' : '板块回落与指数同向';
+    if (hasStart && hasExit) relation = '同一分钟板块发生切换，指数仅作环境参照';
+    return `${detail}，${relation}。`;
+  };
   return (
     <div className="space-y-4">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="盘面脉络摘要">
         <Card size="sm"><CardHeader><CardTitle>启动节点</CardTitle><CardAction><span className="market-up text-lg font-semibold">{starts.length}</span></CardAction><CardDescription>{starts.map((event) => event.sectorName).join('、') || '暂无达标板块'}</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>兑现 / 走弱</CardTitle><CardAction><span className="market-down text-lg font-semibold">{cashouts.length + weakens.length}</span></CardAction><CardDescription>兑现{cashouts.length} · 走弱{weakens.length}</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>最强启动</CardTitle><CardAction><ArrowUpRight className="size-4 market-up" /></CardAction><CardDescription>{strongest ? `${strongest.time} ${strongest.sectorName} ${fmtPct(strongest.sectorWindowChangePct)}` : '等待新启动'}</CardDescription></CardHeader></Card>
-        <Card size="sm"><CardHeader><CardTitle>同窗确认</CardTitle><CardAction><StateBadge state={data.status} /></CardAction><CardDescription>{data.coverage ? `${data.coverage.confirmedDrivers}只驱动股 · ${data.coverage.indices}/2指数` : '正在对齐分钟序列'}</CardDescription></CardHeader></Card>
+        <Card size="sm"><CardHeader><CardTitle>个股覆盖</CardTitle><CardAction><StateBadge state={data.status} /></CardAction><CardDescription>{data.coverage ? `${data.coverage.confirmedDrivers}只同窗确认 · ${relatedCount}只当日相关异动` : '正在对齐分钟序列'}</CardDescription></CardHeader></Card>
       </section>
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Clock3 className="size-5" />今日盘面启动—兑现时间轴</CardTitle>
-          <CardDescription>每个节点同时回答：什么板块、什么时间、指数怎么走、哪些股在同一窗口带动</CardDescription>
+          <CardTitle className="flex items-center gap-2"><Clock3 className="size-5" />今日盘面直播</CardTitle>
+          <CardDescription>最新在上 · 同一分钟合并解读板块启动/兑现、指数环境、同窗确认股及更多相关异动股</CardDescription>
           <CardAction><StateBadge state={data.status} label={`${data.phase} ${data.lastPointTime ?? '—'}`} /></CardAction>
         </CardHeader>
         <CardContent>
-          {data.events.length ? (
-            <div className="relative space-y-4 before:absolute before:bottom-3 before:left-[43px] before:top-3 before:w-px before:bg-border sm:before:left-[67px]">
-              {data.events.map((event) => {
-                const isStart = event.kind === 'START';
+          {groups.length ? (
+            <div>
+              {groups.map(([time, events], groupIndex) => {
+                const hasStart = events.some((event) => event.kind === 'START');
+                const relatedStocks = [...events.flatMap((event) => event.relatedStocks ?? []).reduce((stocks, stock) => {
+                  if (!stocks.has(stock.code)) stocks.set(stock.code, stock);
+                  return stocks;
+                }, new Map<string, MarketTimelineRelatedStock>()).values()].slice(0, 16);
+                const confirmedDrivers = [...events.flatMap((event) => event.drivers.filter((driver) => driver.role === '同窗价格确认')).reduce((drivers, driver) => {
+                  if (!drivers.has(driver.code)) drivers.set(driver.code, driver);
+                  return drivers;
+                }, new Map<string, MarketTimelineDriver>()).values()];
+                const moveText = events.map((event) => `${event.sectorName}${fmtPct(event.sectorWindowChangePct)}`).join('、');
                 return (
-                  <article key={event.id} className="relative grid grid-cols-[56px_minmax(0,1fr)] gap-3 sm:grid-cols-[80px_minmax(0,1fr)]">
-                    <div className="pt-3 text-right font-mono text-sm font-semibold tabular-nums">{event.time}</div>
-                    <span className={`absolute left-[38px] top-4 size-2.5 rounded-full ring-4 ring-background sm:left-[62px] ${isStart ? 'bg-red-500' : 'bg-emerald-500'}`} />
-                    <div className={`rounded-lg border p-3.5 ${isStart ? 'border-red-500/25 bg-red-500/[0.04]' : 'border-emerald-500/25 bg-emerald-500/[0.04]'}`}>
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={isStart ? 'status-ready' : 'status-degraded'}>{event.label}</Badge><h3 className="text-base font-semibold">{event.sectorName}</h3><span className="text-xs text-muted-foreground">{event.windowStartTime}–{event.time}</span></div>
-                          <p className="mt-1 text-xs text-muted-foreground">板块当时 {fmtPct(event.sectorAtTimeChangePct)} · 同窗 {fmtPct(event.sectorWindowChangePct)} · 当日最新 {fmtPct(event.sectorChangePct)} · 累计主力 {fmtMoney(event.sectorDailyFlow)}</p>
-                        </div>
-                        <div className="text-right"><div className={`font-mono text-base font-semibold ${(event.sectorWindowChangePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(event.sectorWindowChangePct)}</div><div className="text-[11px] text-muted-foreground">5分钟板块变化</div></div>
+                  <article key={`${time}-${events.map((event) => event.id).join('-')}`} className="grid grid-cols-[54px_18px_minmax(0,1fr)] gap-x-2 sm:grid-cols-[66px_20px_minmax(0,1fr)] sm:gap-x-3">
+                    <time className="pt-4 text-right font-mono text-sm font-semibold tabular-nums whitespace-nowrap">{time}</time>
+                    <div className="relative flex justify-center">
+                      <span className={`absolute w-px bg-border ${groupIndex === 0 ? 'top-5' : 'top-0'} ${groupIndex === groups.length - 1 ? 'bottom-5' : 'bottom-0'}`} />
+                      <span className={`relative mt-[18px] size-2.5 shrink-0 rounded-full ring-4 ring-background ${hasStart ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                    </div>
+                    <div className={`mb-4 min-w-0 rounded-lg border p-3.5 sm:p-4 ${hasStart ? 'border-red-500/25 bg-red-500/[0.035]' : 'border-emerald-500/25 bg-emerald-500/[0.035]'}`}>
+                      <div className="flex flex-wrap gap-2">
+                        {events.map((event) => <Badge key={event.id} variant="outline" className={event.kind === 'START' ? 'status-ready' : 'status-degraded'}>{event.sectorName} · {event.label}</Badge>)}
                       </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {event.indices.length ? event.indices.map((marketIndex) => (
-                          <div key={marketIndex.code} className="rounded-md border bg-background/75 px-2.5 py-1.5 text-xs">
-                            <span className="font-medium">{marketIndex.name}</span>
-                            <span className={`ml-2 ${(marketIndex.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>当时 {fmtPct(marketIndex.changePct)}</span>
-                            <span className={`ml-2 ${(marketIndex.windowChangePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>同窗 {fmtPct(marketIndex.windowChangePct)}</span>
-                          </div>
-                        )) : <StateBadge state="MISSING" label="指数同窗待补" />}
-                      </div>
+                      <p className="mt-3 text-[15px] font-medium leading-7 sm:text-base">
+                        {eventPhrase(events)}，5分钟板块变化为{moveText}。{indexPhrase(events)}
+                      </p>
 
                       <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                        {event.drivers.length ? event.drivers.map((driver) => (
-                          <div key={driver.code} className="rounded-md border bg-background/75 p-2.5">
-                            <div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="truncate text-sm font-medium">{driver.name}</div><div className="text-[11px] text-muted-foreground">{driver.industry} · {driver.code}</div></div><span className={`shrink-0 font-mono text-sm ${(driver.windowChangePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(driver.windowChangePct)}</span></div>
-                            <div className="mt-2 flex items-center justify-between gap-2"><Badge variant="outline" className={driver.role === '同窗价格确认' ? 'status-ready' : 'status-degraded'}>{driver.role}</Badge><span className="text-[11px] text-muted-foreground">当日 {fmtFlowDirection(driver.mainNetInflow)}</span></div>
+                        {events.map((event) => (
+                          <div key={event.id} className="rounded-md border bg-background/75 px-3 py-2 text-xs leading-5">
+                            <div className="flex items-center justify-between gap-2"><span className="font-medium">{event.sectorName}</span><span className={`font-mono font-semibold ${(event.sectorWindowChangePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(event.sectorWindowChangePct)}</span></div>
+                            <div className="text-muted-foreground">当时 {fmtPct(event.sectorAtTimeChangePct)} · 最新 {fmtPct(event.sectorChangePct)} · 主力 {fmtFlowDirection(event.sectorDailyFlow)}</div>
                           </div>
-                        )) : <div className="sm:col-span-2 xl:col-span-3"><EmptyState>驱动股分钟序列暂时不可用</EmptyState></div>}
+                        ))}
                       </div>
-                      <p className="mt-2 text-[11px] text-muted-foreground">{event.driverBasis}</p>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="font-medium">同窗确认股</span>
+                        {confirmedDrivers.length ? confirmedDrivers.map((driver) => (
+                          <span key={driver.code} className="rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-2 py-1">
+                            {driver.name} <span className={(driver.windowChangePct ?? 0) >= 0 ? 'market-up' : 'market-down'}>{fmtPct(driver.windowChangePct)}</span>
+                          </span>
+                        )) : <StateBadge state="DEGRADED" label="同窗价格未确认" />}
+                      </div>
+
+                      <div className="mt-4">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-medium">板块相关异动股</span><span className="text-[11px] text-muted-foreground">当日最新排名 · 与历史节点分开</span></div>
+                        {relatedStocks.length ? (
+                          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {relatedStocks.map((stock) => (
+                              <div key={stock.code} className="flex min-w-0 items-center justify-between gap-2 rounded-md bg-muted/70 px-2.5 py-2 text-xs">
+                                <span className="min-w-0 truncate" title={`${stock.name} · ${stock.industry}`}>{stock.name}</span>
+                                <span className={`shrink-0 font-mono font-semibold ${(stock.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(stock.changePct)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : <EmptyState>相关异动股当前不可用</EmptyState>}
+                      </div>
+                      <p className="mt-3 text-[11px] leading-5 text-muted-foreground">{events.map((event) => `${event.sectorName}：${event.driverBasis}`).join('；')}</p>
                     </div>
                   </article>
                 );

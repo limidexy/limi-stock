@@ -91,6 +91,15 @@ export type MarketTimelineDriver = {
   role: '同窗价格确认' | '当日资金候选';
 };
 
+export type MarketTimelineRelatedStock = {
+  code: string;
+  name: string;
+  industry: string;
+  changePct: number | null;
+  speedPct: number | null;
+  mainNetInflow: number | null;
+};
+
 export type MarketTimelineEvent = {
   id: string;
   kind: 'START' | 'CASHOUT' | 'WEAKEN';
@@ -110,6 +119,7 @@ export type MarketTimelineEvent = {
     windowChangePct: number | null;
   }>;
   drivers: MarketTimelineDriver[];
+  relatedStocks: MarketTimelineRelatedStock[];
   driverState: DataState;
   driverBasis: string;
 };
@@ -841,7 +851,7 @@ async function fetchTimelineBoards() {
       if (!row) continue;
       const code = String(row.f12 ?? '');
       const name = String(row.f14 ?? '');
-      if (!code || !name || /^(MSCI中国|融资融券|富时罗素|破增发价股|2026中报预增|科技风格|昨日连板.*|昨日涨停.*)$/.test(name)) continue;
+      if (!code || !name || /^(MSCI中国|融资融券|富时罗素|破增发价股|2026中报预增|科技风格|昨日.*)$/.test(name)) continue;
       selected.set(code, { code, name, changePct: numberOrNull(row.f3), mainNetInflow: numberOrNull(row.f62) });
       if (selected.size >= 10) break;
     }
@@ -876,8 +886,8 @@ function detectPriceTimelineCandidates(items: Array<{ sector: TimelineBoard; tre
     }
   }
   return [
-    ...starts.sort((a, b) => b.sectorWindowChangePct - a.sectorWindowChangePct).slice(0, 2),
-    ...exits.sort((a, b) => a.sectorWindowChangePct - b.sectorWindowChangePct).slice(0, 2),
+    ...starts.sort((a, b) => b.sectorWindowChangePct - a.sectorWindowChangePct).slice(0, 3),
+    ...exits.sort((a, b) => a.sectorWindowChangePct - b.sectorWindowChangePct).slice(0, 3),
   ].sort((a, b) => a.time.localeCompare(b.time) || a.sector.name.localeCompare(b.sector.name));
 }
 
@@ -885,31 +895,48 @@ async function fetchTimelineDrivers(candidate: TimelineCandidate, tradeDate: str
   const direction: 0 | 1 = candidate.kind === 'START' ? 1 : 0;
   const members = await fetchClist({
     fs: `b:${candidate.sector.code}`,
-    fid: 'f62',
+    fid: 'f3',
     order: direction,
-    pageSize: 2,
+    pageSize: 12,
     fields: 'f12,f14,f3,f22,f62,f100',
   });
-  const rows = members.rows.map((row) => ({
+  const relatedStocks: MarketTimelineRelatedStock[] = members.rows.map((row) => ({
     code: String(row.f12 ?? ''),
     name: String(row.f14 ?? ''),
     industry: String(row.f100 ?? '未知') || '未知',
+    changePct: numberOrNull(row.f3),
+    speedPct: numberOrNull(row.f22),
     mainNetInflow: numberOrNull(row.f62),
   })).filter((row) => row.code && row.name);
-  const drivers = await mapLimit(rows, 2, async (row): Promise<MarketTimelineDriver> => {
+  const drivers = await mapLimit(relatedStocks.slice(0, 2), 2, async (row): Promise<MarketTimelineDriver> => {
     try {
       const trend = await fetchIntradayTrend({ code: row.code, secid: secid(row.code) }, tradeDate);
       const { windowChangePct } = trendWindow(trend, candidate.windowStartTime, candidate.time);
       const aligns = windowChangePct !== null && (candidate.kind === 'START' ? windowChangePct > 0 : windowChangePct < 0);
-      return { ...row, windowChangePct, role: aligns ? '同窗价格确认' : '当日资金候选' };
+      return {
+        code: row.code,
+        name: row.name,
+        industry: row.industry,
+        mainNetInflow: row.mainNetInflow,
+        windowChangePct,
+        role: aligns ? '同窗价格确认' : '当日资金候选',
+      };
     } catch {
-      return { ...row, windowChangePct: null, role: '当日资金候选' };
+      return {
+        code: row.code,
+        name: row.name,
+        industry: row.industry,
+        mainNetInflow: row.mainNetInflow,
+        windowChangePct: null,
+        role: '当日资金候选',
+      };
     }
   });
-  return drivers.sort((a, b) => {
+  const sortedDrivers = drivers.sort((a, b) => {
     const role = Number(b.role === '同窗价格确认') - Number(a.role === '同窗价格确认');
     return role || Math.abs(b.mainNetInflow ?? 0) - Math.abs(a.mainNetInflow ?? 0);
-  }).slice(0, 3);
+  });
+  return { drivers: sortedDrivers, relatedStocks, stale: Boolean(members.stale) };
 }
 
 export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapshot> {
@@ -939,11 +966,11 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     try {
       return await fetchTimelineDrivers(candidate, tradeDate);
     } catch {
-      return [];
+      return { drivers: [], relatedStocks: [], stale: false };
     }
   });
   const events: MarketTimelineEvent[] = candidates.map((candidate, index) => {
-    const drivers = driverGroups[index];
+    const { drivers, relatedStocks } = driverGroups[index];
     const confirmed = drivers.filter((driver) => driver.role === '同窗价格确认').length;
     return {
       id: `${candidate.sector.code}-${candidate.kind}-${candidate.time}`,
@@ -963,16 +990,17 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
         ...trendWindow(marketIndex, candidate.windowStartTime, candidate.time),
       })),
       drivers,
+      relatedStocks,
       driverState: confirmed > 0 && indices.length === 2 ? 'READY' : drivers.length ? 'DEGRADED' : 'MISSING',
       driverBasis: confirmed > 0
-        ? `5分钟同窗价格确认${confirmed}/${drivers.length}只；其余仅为当日资金候选`
-        : '暂无同窗价格确认，仅展示当日资金候选',
+        ? `5分钟同窗价格确认${confirmed}/${drivers.length}只；下方扩展股为当日最新异动，不冒充事件时点因果`
+        : '暂无同窗价格确认；下方扩展股仅代表当日最新相关异动',
     };
   });
   const confirmedDrivers = events.flatMap((event) => event.drivers)
     .filter((driver) => driver.role === '同窗价格确认').length;
   const sourceStale = ranked.stale || indices.some((item) => item.stale)
-    || boardTrends.some((item) => item.trend.stale);
+    || boardTrends.some((item) => item.trend.stale) || driverGroups.some((item) => item.stale);
   const status: DataState = events.length && indices.length === 2 && events.every((event) => event.driverState === 'READY') && !sourceStale
     ? 'READY' : events.length ? 'DEGRADED' : 'MISSING';
   const value: MarketTimelineSnapshot = {
@@ -984,7 +1012,7 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     source: '东方财富公开板块、指数与个股分钟序列',
     sourceState: sourceStale ? 'STALE' : 'LIVE',
     reason: sourceStale ? '部分分钟端点短暂波动，已使用同交易日最近快照' : undefined,
-    basis: '启动=板块5个有效交易分钟价格明显上行；兑现=先有启动且之后出现5分钟明显回落；否则标为走弱。驱动股先按当日主力资金候选，再用相同5分钟价格方向确认；这是分钟级归因，不代表逐笔因果。',
+    basis: '启动=板块5个有效交易分钟价格明显上行；兑现=先有启动且之后出现5分钟明显回落；否则标为走弱。同窗确认股使用相同5分钟价格方向校验；扩展异动股展示该板块当日最新涨跌，二者分开标注，不把当前排名冒充历史时点因果。',
     coverage: { sectors: boardTrends.length, events: events.length, indices: indices.length, confirmedDrivers },
     events,
   };
