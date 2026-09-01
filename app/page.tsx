@@ -230,7 +230,6 @@ type MarketTimelineEvent = {
   sectorName: string;
   windowStartTime: string;
   time: string;
-  flowDelta5m: number;
   sectorChangePct: number | null;
   sectorDailyFlow: number;
   sectorAtTimeChangePct: number | null;
@@ -614,13 +613,13 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
   const starts = data.events.filter((event) => event.kind === 'START');
   const cashouts = data.events.filter((event) => event.kind === 'CASHOUT');
   const weakens = data.events.filter((event) => event.kind === 'WEAKEN');
-  const strongest = [...starts].sort((a, b) => b.flowDelta5m - a.flowDelta5m)[0];
+  const strongest = [...starts].sort((a, b) => (b.sectorWindowChangePct ?? 0) - (a.sectorWindowChangePct ?? 0))[0];
   return (
     <div className="space-y-4">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="盘面脉络摘要">
         <Card size="sm"><CardHeader><CardTitle>启动节点</CardTitle><CardAction><span className="market-up text-lg font-semibold">{starts.length}</span></CardAction><CardDescription>{starts.map((event) => event.sectorName).join('、') || '暂无达标板块'}</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>兑现 / 走弱</CardTitle><CardAction><span className="market-down text-lg font-semibold">{cashouts.length + weakens.length}</span></CardAction><CardDescription>兑现{cashouts.length} · 走弱{weakens.length}</CardDescription></CardHeader></Card>
-        <Card size="sm"><CardHeader><CardTitle>最强启动</CardTitle><CardAction><ArrowUpRight className="size-4 market-up" /></CardAction><CardDescription>{strongest ? `${strongest.time} ${strongest.sectorName} ${fmtMoney(strongest.flowDelta5m)}` : '等待新启动'}</CardDescription></CardHeader></Card>
+        <Card size="sm"><CardHeader><CardTitle>最强启动</CardTitle><CardAction><ArrowUpRight className="size-4 market-up" /></CardAction><CardDescription>{strongest ? `${strongest.time} ${strongest.sectorName} ${fmtPct(strongest.sectorWindowChangePct)}` : '等待新启动'}</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>同窗确认</CardTitle><CardAction><StateBadge state={data.status} /></CardAction><CardDescription>{data.coverage ? `${data.coverage.confirmedDrivers}只驱动股 · ${data.coverage.indices}/2指数` : '正在对齐分钟序列'}</CardDescription></CardHeader></Card>
       </section>
 
@@ -645,7 +644,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                           <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={isStart ? 'status-ready' : 'status-degraded'}>{event.label}</Badge><h3 className="text-base font-semibold">{event.sectorName}</h3><span className="text-xs text-muted-foreground">{event.windowStartTime}–{event.time}</span></div>
                           <p className="mt-1 text-xs text-muted-foreground">板块当时 {fmtPct(event.sectorAtTimeChangePct)} · 同窗 {fmtPct(event.sectorWindowChangePct)} · 当日最新 {fmtPct(event.sectorChangePct)} · 累计主力 {fmtMoney(event.sectorDailyFlow)}</p>
                         </div>
-                        <div className="text-right"><div className={`font-mono text-base font-semibold ${event.flowDelta5m >= 0 ? 'market-up' : 'market-down'}`}>{fmtMoney(event.flowDelta5m)}</div><div className="text-[11px] text-muted-foreground">5分钟主力增量</div></div>
+                        <div className="text-right"><div className={`font-mono text-base font-semibold ${(event.sectorWindowChangePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(event.sectorWindowChangePct)}</div><div className="text-[11px] text-muted-foreground">5分钟板块变化</div></div>
                       </div>
 
                       <div className="mt-3 flex flex-wrap gap-2">
