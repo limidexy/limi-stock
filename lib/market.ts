@@ -835,7 +835,7 @@ async function fetchTimelineBoards() {
     .map((result) => result.value);
   if (!successful.length) throw new Error('板块排名端点暂时不可用');
   const selected = new Map<string, TimelineBoard>();
-  for (let rank = 0; rank < 8 && selected.size < 12; rank += 1) {
+  for (let rank = 0; rank < 8 && selected.size < 10; rank += 1) {
     for (const result of successful) {
       const row = result.rows[rank];
       if (!row) continue;
@@ -843,7 +843,7 @@ async function fetchTimelineBoards() {
       const name = String(row.f14 ?? '');
       if (!code || !name || /^(MSCI中国|融资融券|富时罗素|破增发价股|2026中报预增|科技风格|昨日连板.*|昨日涨停.*)$/.test(name)) continue;
       selected.set(code, { code, name, changePct: numberOrNull(row.f3), mainNetInflow: numberOrNull(row.f62) });
-      if (selected.size >= 12) break;
+      if (selected.size >= 10) break;
     }
   }
   return { boards: [...selected.values()], stale: successful.some((result) => result.stale) };
@@ -876,8 +876,8 @@ function detectPriceTimelineCandidates(items: Array<{ sector: TimelineBoard; tre
     }
   }
   return [
-    ...starts.sort((a, b) => b.sectorWindowChangePct - a.sectorWindowChangePct).slice(0, 3),
-    ...exits.sort((a, b) => a.sectorWindowChangePct - b.sectorWindowChangePct).slice(0, 3),
+    ...starts.sort((a, b) => b.sectorWindowChangePct - a.sectorWindowChangePct).slice(0, 2),
+    ...exits.sort((a, b) => a.sectorWindowChangePct - b.sectorWindowChangePct).slice(0, 2),
   ].sort((a, b) => a.time.localeCompare(b.time) || a.sector.name.localeCompare(b.sector.name));
 }
 
@@ -935,7 +935,7 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
   const indices = indexSettled
     .filter((result): result is PromiseFulfilledResult<IntradayTrend> => result.status === 'fulfilled')
     .map((result) => result.value);
-  const driverGroups = await mapLimit(candidates, 2, async (candidate) => {
+  const driverGroups = await mapLimit(candidates, 4, async (candidate) => {
     try {
       return await fetchTimelineDrivers(candidate, tradeDate);
     } catch {

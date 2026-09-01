@@ -3,9 +3,23 @@ import { getMarketTimelineSnapshot } from '@/lib/market';
 export const dynamic = 'force-dynamic';
 let lastSnapshot: Awaited<ReturnType<typeof getMarketTimelineSnapshot>> | null = null;
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('盘面脉络计算超时')), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function GET() {
   try {
-    const snapshot = await getMarketTimelineSnapshot();
+    const snapshot = await withTimeout(getMarketTimelineSnapshot(), 55_000);
     lastSnapshot = snapshot;
     return Response.json(snapshot, { headers: { 'cache-control': 'no-store' } });
   } catch {
