@@ -41,7 +41,7 @@ export async function GET() {
       sourceState: 'STALE',
       reason: '盘面脉络数据暂时不可用，正在自动重连',
       basis: '',
-      coverage: { sectors: 0, events: 0, indices: 0, confirmedDrivers: 0 },
+      coverage: { sectors: 0, events: 0, timeNodes: 0, indices: 0, checkedDrivers: 0, confirmedDrivers: 0, relatedStocks: 0 },
       events: [],
     }, { status: 503 });
   }

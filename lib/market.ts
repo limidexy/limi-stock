@@ -88,7 +88,7 @@ export type MarketTimelineDriver = {
   industry: string;
   windowChangePct: number | null;
   mainNetInflow: number | null;
-  role: '同窗价格确认' | '当日资金候选';
+  role: '同窗价格确认' | '同窗方向相反' | '同窗价格持平' | '同窗窗口缺口' | '分钟价格不可用';
 };
 
 export type MarketTimelineRelatedStock = {
@@ -138,7 +138,7 @@ export type MarketTimelineSnapshot = {
   sourceState: 'LIVE' | 'STALE';
   reason?: string;
   basis: string;
-  coverage: { sectors: number; events: number; timeNodes: number; indices: number; confirmedDrivers: number; relatedStocks: number };
+  coverage: { sectors: number; events: number; timeNodes: number; indices: number; checkedDrivers: number; confirmedDrivers: number; relatedStocks: number };
   events: MarketTimelineEvent[];
 };
 
@@ -369,29 +369,41 @@ export async function fetchStockMetadata(code: string): Promise<StockMetadata> {
 }
 
 async function fetchStockChangesAndSpeeds(codes: string[]) {
-  const params = new URLSearchParams({
-    secids: codes.map(secid).join(','),
-    fields: 'f12,f3,f22',
-    ut: PUBLIC_CLIENT_TOKEN,
-    fltt: '2',
-    invt: '2',
-  });
-  const failures: string[] = [];
-  for (const host of ['push2delay.eastmoney.com', 'push2.eastmoney.com']) {
-    try {
-      const payload = await fetchJsonOnce(`https://${host}/api/qt/ulist.np/get?${params}`, 7_000);
-      const data = (payload.data ?? {}) as Record<string, unknown>;
-      const rows = Array.isArray(data.diff) ? data.diff as ClistRow[] : [];
-      if (!rows.length) throw new Error('涨幅与涨速列表为空');
-      return new Map(rows.map((row) => [String(row.f12 ?? ''), {
-        changePct: numberOrNull(row.f3),
-        speedPct: numberOrNull(row.f22),
-      }]));
-    } catch (error) {
-      failures.push(`${host}:${String(error)}`);
+  const uniqueCodes = [...new Set(codes.filter(Boolean))];
+  const batches = Array.from({ length: Math.ceil(uniqueCodes.length / 40) }, (_, index) => (
+    uniqueCodes.slice(index * 40, index * 40 + 40)
+  ));
+  const batchMaps = await mapLimit(batches, 2, async (batch) => {
+    const params = new URLSearchParams({
+      secids: batch.map(secid).join(','),
+      fields: 'f12,f3,f6,f22',
+      ut: PUBLIC_CLIENT_TOKEN,
+      fltt: '2',
+      invt: '2',
+    });
+    for (const host of ['push2delay.eastmoney.com', 'push2.eastmoney.com']) {
+      try {
+        const payload = await fetchJsonOnce(`https://${host}/api/qt/ulist.np/get?${params}`, 7_000);
+        const data = (payload.data ?? {}) as Record<string, unknown>;
+        const rows = Array.isArray(data.diff) ? data.diff as ClistRow[] : [];
+        if (!rows.length) throw new Error('涨幅与涨速列表为空');
+        return new Map(rows.map((row) => [String(row.f12 ?? ''), {
+          changePct: numberOrNull(row.f3),
+          speedPct: numberOrNull(row.f22),
+          amount: numberOrNull(row.f6),
+        }]));
+      } catch {
+        // Try the next public quote host for this batch.
+      }
     }
+    return new Map<string, { changePct: number | null; speedPct: number | null; amount: number | null }>();
+  });
+  const merged = new Map<string, { changePct: number | null; speedPct: number | null; amount: number | null }>();
+  for (const batchMap of batchMaps) {
+    for (const [code, quote] of batchMap) merged.set(code, quote);
   }
-  throw new Error(`个股涨速不可用 ${failures.join(' | ')}`);
+  if (!merged.size && uniqueCodes.length) throw new Error('个股涨幅与涨速不可用');
+  return merged;
 }
 
 function limitBand(code: string, name: string): [number, number] {
@@ -1009,13 +1021,18 @@ async function confirmTimelineDrivers(candidate: TimelineCandidate, relatedStock
       const trend = await fetchIntradayTrend({ code: row.code, secid: secid(row.code) }, tradeDate);
       const { windowChangePct } = trendWindow(trend, candidate.windowStartTime, candidate.time);
       const aligns = windowChangePct !== null && (candidate.flowDelta >= 0 ? windowChangePct > 0 : windowChangePct < 0);
+      const role: MarketTimelineDriver['role'] = windowChangePct === null
+        ? '同窗窗口缺口'
+        : windowChangePct === 0
+          ? '同窗价格持平'
+          : aligns ? '同窗价格确认' : '同窗方向相反';
       return {
         code: row.code,
         name: row.name,
         industry: row.industry,
         mainNetInflow: row.mainNetInflow,
         windowChangePct,
-        role: aligns ? '同窗价格确认' : '当日资金候选',
+        role,
       };
     } catch {
       return {
@@ -1024,7 +1041,7 @@ async function confirmTimelineDrivers(candidate: TimelineCandidate, relatedStock
         industry: row.industry,
         mainNetInflow: row.mainNetInflow,
         windowChangePct: null,
-        role: '当日资金候选',
+        role: '分钟价格不可用',
       };
     }
   });
@@ -1063,7 +1080,7 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     if (!contexts.has(key)) contexts.set(key, candidate);
     return contexts;
   }, new Map<string, TimelineCandidate>()).entries()];
-  const contextResults = await mapLimit(contextCandidates, 6, async ([key, candidate]) => {
+  const contextResults = await mapLimit(contextCandidates, 6, async ([key, candidate]): Promise<readonly [string, { relatedStocks: MarketTimelineRelatedStock[]; stale: boolean }]> => {
     try {
       return [key, await fetchTimelineMembers(candidate)] as const;
     } catch {
@@ -1071,13 +1088,7 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     }
   });
   const contexts = new Map(contextResults);
-  const confirmIds = new Set([...candidates]
-    .sort((a, b) => Math.abs(b.sectorWindowChangePct) - Math.abs(a.sectorWindowChangePct))
-    .slice(0, 10)
-    .map((candidate) => `${candidate.sector.code}-${candidate.kind}-${candidate.time}`));
   const driverGroups = await mapLimit(candidates, 6, async (candidate) => {
-    const id = `${candidate.sector.code}-${candidate.kind}-${candidate.time}`;
-    if (!confirmIds.has(id)) return [];
     try {
       return await confirmTimelineDrivers(candidate, contexts.get(timelineContextKey(candidate))?.relatedStocks ?? [], tradeDate);
     } catch {
@@ -1088,6 +1099,7 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     const drivers = driverGroups[index];
     const relatedStocks = contexts.get(timelineContextKey(candidate))?.relatedStocks ?? [];
     const confirmed = drivers.filter((driver) => driver.role === '同窗价格确认').length;
+    const checked = drivers.filter((driver) => driver.windowChangePct !== null).length;
     return {
       id: `${candidate.sector.code}-${candidate.kind}-${candidate.time}`,
       kind: candidate.kind,
@@ -1111,14 +1123,20 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
       })),
       drivers,
       relatedStocks,
-      driverState: confirmed > 0 && indices.length === 2 ? 'READY' : drivers.length ? 'DEGRADED' : 'MISSING',
+      driverState: checked > 0 && indices.length === 2 ? 'READY' : drivers.length ? 'DEGRADED' : 'MISSING',
       driverBasis: confirmed > 0
         ? `资金转折3分钟同窗价格确认${confirmed}/${drivers.length}只；下方扩展股为当日最新异动，不冒充事件时点因果`
-        : '该节点未进入重点同窗核验；下方扩展股仅代表当日最新相关异动',
+        : checked > 0
+          ? `已核验${checked}/${drivers.length}只同窗价格，但未与该节点资金方向同向；这是方向不一致，不是价格未确认`
+          : drivers.length
+            ? `已尝试核验${drivers.length}只，但该时窗分钟价格存在缺口或行情端点不可用`
+            : '板块成分股列表暂时不可用，未能发起同窗价格核验',
     };
   });
   const confirmedDrivers = events.flatMap((event) => event.drivers)
     .filter((driver) => driver.role === '同窗价格确认').length;
+  const checkedDrivers = events.flatMap((event) => event.drivers)
+    .filter((driver) => driver.windowChangePct !== null).length;
   const sourceStale = ranked.stale || indices.some((item) => item.stale)
     || boardSignals.some((item) => item.trend.stale) || [...contexts.values()].some((item) => item.stale);
   const status: DataState = events.length && indices.length === 2 && events.every((event) => event.relatedStocks.length) && !sourceStale
@@ -1132,12 +1150,13 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     source: '东方财富公开板块分钟资金、板块/指数/个股分钟价格序列',
     sourceState: sourceStale ? 'STALE' : 'LIVE',
     reason: sourceStale ? '部分分钟端点短暂波动，已使用同交易日最近快照' : undefined,
-    basis: '不使用固定时间点。系统逐分钟比较板块最近3个有效交易分钟的主力资金增量与前3分钟增量，只在资金方向反转或流入/流出显著加速，并形成局部峰值时记录节点；同板块20分钟内去重、相近3分钟最多保留两个最强转折。启动/延续/兑现/走弱由资金方向的前后状态判定。同窗确认股仅覆盖最显著节点；扩展异动股展示该板块当日最新涨跌，不把当前排名冒充历史时点因果。',
+    basis: '不使用固定时间点。系统逐分钟比较板块最近3个有效交易分钟的主力资金增量与前3分钟增量，只在资金方向反转或流入/流出显著加速，并形成局部峰值时记录节点；同板块20分钟内去重、相近3分钟最多保留两个最强转折。启动/延续/兑现/走弱由资金方向的前后状态判定。每个转折节点都对排名靠前的成分股做同窗价格核验，并分开标记同向、反向和数据缺口；扩展异动股展示该板块当日最新涨跌，不把当前排名冒充历史时点因果。',
     coverage: {
       sectors: boardSignals.length,
       events: events.length,
       timeNodes: new Set(events.map((event) => event.time)).size,
       indices: indices.length,
+      checkedDrivers,
       confirmedDrivers,
       relatedStocks: new Set(events.flatMap((event) => event.relatedStocks.map((stock) => stock.code))).size,
     },
@@ -1220,48 +1239,57 @@ export async function getLadderSnapshot() {
     const code = poolCode(prior);
     const sealed = sealedByCode.get(code);
     const failed = failedByCode.get(code);
-    const current = sealed ?? failed;
-    if (!current) return null;
+    const current = sealed ?? failed ?? prior;
     const fromHeight = Math.max(1, Number(prior.lbc ?? 1));
     return {
       code, name: poolName(current), fromHeight, toHeight: fromHeight + 1,
-      state: sealed ? 'SEALED' : 'FAILED',
-      changePct: poolNumber(current, 'zdp'), amount: poolNumber(current, 'amount'),
-      firstTouch: clockText(current.fbt), lastSeal: sealed ? clockText(current.lbt ?? current.fbt) : null,
-      breakCount: Number(current.zbc ?? 0), industry: String(current.hybk ?? prior.hybk ?? '未知'),
+      state: sealed ? 'SEALED' : failed ? 'FAILED' : 'DROPPED',
+      changePct: sealed || failed ? poolNumber(current, 'zdp') : null,
+      amount: sealed || failed ? poolNumber(current, 'amount') : null,
+      firstTouch: sealed || failed ? clockText(current.fbt) : null,
+      lastSeal: sealed ? clockText(current.lbt ?? current.fbt) : null,
+      breakCount: sealed || failed ? Number(current.zbc ?? 0) : 0, industry: String(current.hybk ?? prior.hybk ?? '未知'),
       sealFund: sealed ? poolNumber(current, 'fund') : null,
     };
-  }).filter(Boolean) as Array<Record<string, unknown>>;
-  let quoteMap = new Map<string, { changePct: number | null; speedPct: number | null }>();
+  });
+  let quoteMap = new Map<string, { changePct: number | null; speedPct: number | null; amount: number | null }>();
   try {
     quoteMap = await fetchStockChangesAndSpeeds(competitorBase.map((row) => String(row.code)));
   } catch {
     quoteMap = new Map();
   }
   const competitorQuotes = competitorBase.map((row) => quoteMap.get(String(row.code)) ?? null);
-  const competitors = competitorBase.map((row, index) => ({
-    ...row,
-    changePct: competitorQuotes[index]?.changePct ?? numberOrNull(row.changePct),
-    speedPct: competitorQuotes[index]?.speedPct ?? null,
-    quoteState: competitorQuotes[index] ? 'READY' as DataState : 'MISSING' as DataState,
-  }));
+  const competitors = competitorBase.map((row, index) => {
+    const quote = competitorQuotes[index];
+    return {
+      ...row,
+      changePct: quote?.changePct ?? numberOrNull(row.changePct),
+      speedPct: quote?.speedPct ?? null,
+      amount: quote?.amount ?? numberOrNull(row.amount),
+      quoteState: quote && (quote.changePct !== null || quote.speedPct !== null) ? 'READY' as DataState : 'MISSING' as DataState,
+    };
+  });
   competitors.sort((a, b) => {
     const height = Number(b.toHeight) - Number(a.toHeight);
     if (height) return height;
-    const state = String(a.state).localeCompare(String(b.state));
-    if (state) return state;
+    const change = (numberOrNull(b.changePct) ?? -Infinity) - (numberOrNull(a.changePct) ?? -Infinity);
+    if (change) return change;
+    const speed = (numberOrNull(b.speedPct) ?? -Infinity) - (numberOrNull(a.speedPct) ?? -Infinity);
+    if (speed) return speed;
     return String(a.lastSeal ?? '99:99:99').localeCompare(String(b.lastSeal ?? '99:99:99'));
   });
 
+  const quoteReady = competitors.filter((row) => row.quoteState === 'READY').length;
+
   return {
-    status: previous.dateState === 'READY' && competitorQuotes.every(Boolean) ? 'READY' as DataState : 'DEGRADED' as DataState,
+    status: previous.dateState === 'READY' && quoteReady === competitors.length ? 'READY' as DataState : 'DEGRADED' as DataState,
     tradeDate,
     previousTradeDate: previous.tradeDate,
     priorDateState: previous.dateState,
     priorProviderQdate: previous.providerQdate,
     retrievedAt: new Date().toISOString(), source: '东方财富公开涨停、炸板池与个股实时行情',
     counts: { previousLimitUp: previous.rows.length, todaySealed: todayLimit.rows.length, todayFailed: todayFailed.rows.length },
-    coverage: { competitors: competitors.length, quoteReady: competitorQuotes.filter(Boolean).length },
+    coverage: { competitors: competitors.length, quoteReady },
     promotion, competitors,
   };
 }

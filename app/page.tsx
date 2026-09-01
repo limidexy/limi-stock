@@ -161,7 +161,7 @@ type Competitor = {
   name: string;
   fromHeight: number;
   toHeight: number;
-  state: 'SEALED' | 'FAILED';
+  state: 'SEALED' | 'FAILED' | 'DROPPED';
   changePct: number | null;
   speedPct: number | null;
   quoteState: DataState;
@@ -222,7 +222,7 @@ type MarketTimelineDriver = {
   industry: string;
   windowChangePct: number | null;
   mainNetInflow: number | null;
-  role: '同窗价格确认' | '当日资金候选';
+  role: '同窗价格确认' | '同窗方向相反' | '同窗价格持平' | '同窗窗口缺口' | '分钟价格不可用';
 };
 
 type MarketTimelineRelatedStock = {
@@ -270,7 +270,7 @@ type MarketTimelineData = {
   lastPointTime: string | null;
   reason?: string;
   basis?: string;
-  coverage?: { sectors: number; events: number; timeNodes?: number; indices: number; confirmedDrivers: number; relatedStocks?: number };
+  coverage?: { sectors: number; events: number; timeNodes?: number; indices: number; checkedDrivers?: number; confirmedDrivers: number; relatedStocks?: number };
   events: MarketTimelineEvent[];
 };
 
@@ -674,7 +674,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
         <Card size="sm"><CardHeader><CardTitle>启动 / 延续</CardTitle><CardAction><span className="market-up text-lg font-semibold">{starts.length + strongs.length}</span></CardAction><CardDescription>启动{starts.length} · 延续{strongs.length} · {data.coverage?.timeNodes ?? groups.length}个资金转折</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>兑现 / 走弱</CardTitle><CardAction><span className="market-down text-lg font-semibold">{cashouts.length + weakens.length}</span></CardAction><CardDescription>兑现{cashouts.length} · 走弱{weakens.length}</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>最强启动</CardTitle><CardAction><ArrowUpRight className="size-4 market-up" /></CardAction><CardDescription>{strongest ? `${strongest.time} ${strongest.sectorName} ${fmtPct(strongest.sectorWindowChangePct)}` : '等待新启动'}</CardDescription></CardHeader></Card>
-        <Card size="sm"><CardHeader><CardTitle>个股覆盖</CardTitle><CardAction><StateBadge state={data.status} /></CardAction><CardDescription>{data.coverage ? `${data.coverage.confirmedDrivers}只同窗确认 · ${relatedCount}只当日相关异动` : '正在对齐分钟序列'}</CardDescription></CardHeader></Card>
+        <Card size="sm"><CardHeader><CardTitle>个股覆盖</CardTitle><CardAction><StateBadge state={data.status} /></CardAction><CardDescription>{data.coverage ? `${data.coverage.confirmedDrivers}只同向确认 · ${data.coverage.checkedDrivers ?? data.coverage.confirmedDrivers}只已核验 · ${relatedCount}只当日异动` : '正在对齐分钟序列'}</CardDescription></CardHeader></Card>
       </section>
 
       <Card>
@@ -696,6 +696,11 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                   if (!drivers.has(driver.code)) drivers.set(driver.code, driver);
                   return drivers;
                 }, new Map<string, MarketTimelineDriver>()).values()];
+                const checkedButUnaligned = [...events.flatMap((event) => event.drivers.filter((driver) => driver.windowChangePct !== null && driver.role !== '同窗价格确认')).reduce((drivers, driver) => {
+                  if (!drivers.has(driver.code)) drivers.set(driver.code, driver);
+                  return drivers;
+                }, new Map<string, MarketTimelineDriver>()).values()];
+                const unavailableDrivers = events.flatMap((event) => event.drivers).filter((driver) => driver.windowChangePct === null);
                 const moveText = events.map((event) => `${event.sectorName}${fmtPct(event.sectorWindowChangePct)}`).join('、');
                 const flowText = events.map((event) => `${event.sectorName}${fmtFlowDirection(event.flowDelta)}，前窗${fmtFlowDirection(event.flowPreviousDelta)}`).join('；');
                 return (
@@ -724,12 +729,18 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                       </div>
 
                       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-medium">同窗确认股</span>
+                        <span className="font-medium">同窗个股核验</span>
                         {confirmedDrivers.length ? confirmedDrivers.map((driver) => (
-                          <span key={driver.code} className="rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-2 py-1">
-                            {driver.name} <span className={(driver.windowChangePct ?? 0) >= 0 ? 'market-up' : 'market-down'}>{fmtPct(driver.windowChangePct)}</span>
+                          <span key={`confirmed-${driver.code}`} className="rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-2 py-1">
+                            {driver.name} <span className={(driver.windowChangePct ?? 0) >= 0 ? 'market-up' : 'market-down'}>{fmtPct(driver.windowChangePct)}</span> <span className="text-muted-foreground">同向</span>
                           </span>
-                        )) : <StateBadge state="DEGRADED" label="同窗价格未确认" />}
+                        )) : null}
+                        {checkedButUnaligned.length ? checkedButUnaligned.map((driver) => (
+                          <span key={`checked-${driver.code}`} className="rounded-md border bg-muted/55 px-2 py-1">
+                            {driver.name} <span className={(driver.windowChangePct ?? 0) >= 0 ? 'market-up' : 'market-down'}>{fmtPct(driver.windowChangePct)}</span> <span className="text-muted-foreground">{driver.role === '同窗价格持平' ? '持平' : '反向'}</span>
+                          </span>
+                        )) : null}
+                        {!confirmedDrivers.length && !checkedButUnaligned.length ? <StateBadge state="DEGRADED" label={unavailableDrivers.length ? `分钟价格暂不可用 ${unavailableDrivers.length}只` : '成分股暂不可用'} /> : null}
                       </div>
 
                       <div className="mt-4">
@@ -912,8 +923,8 @@ export default function Home() {
 
           <TabsContent value="competition">
             <Card>
-              <CardHeader><CardTitle>同梯队竞争</CardTitle><CardDescription>同身位比较封板状态、当前涨幅与涨速、首次触板、最终回封、开板次数和成交容量</CardDescription><CardAction>{ladder.data?.coverage ? <StateBadge state={ladder.data.coverage.quoteReady === ladder.data.coverage.competitors ? 'READY' : 'DEGRADED'} label={`行情 ${ladder.data.coverage.quoteReady}/${ladder.data.coverage.competitors}`} /> : null}</CardAction></CardHeader>
-              <CardContent>{ladder.data?.competitors?.length ? <Table><TableHeader><TableRow><TableHead>目标梯队</TableHead><TableHead>个股</TableHead><TableHead>行业</TableHead><TableHead>状态</TableHead><TableHead className="text-right">涨幅</TableHead><TableHead className="text-right">涨速</TableHead><TableHead>首次触板</TableHead><TableHead>最终回封</TableHead><TableHead className="text-right">开板</TableHead><TableHead className="text-right">成交额</TableHead><TableHead className="text-right">封单</TableHead></TableRow></TableHeader><TableBody>{ladder.data.competitors.map((row) => <TableRow key={`${row.code}-${row.toHeight}`}><TableCell><Badge variant="secondary">{row.toHeight}板</Badge></TableCell><TableCell><div className="font-medium">{row.name}</div><div className="text-xs text-muted-foreground">{row.code}</div></TableCell><TableCell>{row.industry}</TableCell><TableCell>{row.state === 'SEALED' ? <Badge variant="outline" className="status-ready">封板</Badge> : <Badge variant="outline" className="status-degraded">炸板</Badge>}</TableCell><TableCell className={`text-right font-medium ${(row.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.changePct)}</TableCell><TableCell className={`text-right font-medium ${(row.speedPct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.speedPct)}</TableCell><TableCell className="tabular-nums">{row.firstTouch ?? '—'}</TableCell><TableCell className="tabular-nums">{row.lastSeal ?? '—'}</TableCell><TableCell className="text-right">{row.breakCount}</TableCell><TableCell className="text-right">{fmtAmount(row.amount)}</TableCell><TableCell className="text-right">{fmtAmount(row.sealFund)}</TableCell></TableRow>)}</TableBody></Table> : <EmptyState>{ladder.loading ? '正在比较同梯队个股…' : ladder.data?.reason || ladder.error || '当前没有封板或炸板竞争者'}</EmptyState>}</CardContent>
+              <CardHeader><CardTitle>同梯队竞争</CardTitle><CardDescription>昨日涨停池全量展示；目标梯队从高到低，同梯队内涨幅、涨速靠前，下跌掉队股保留在后</CardDescription><CardAction>{ladder.data?.coverage ? <StateBadge state={ladder.data.coverage.quoteReady === ladder.data.coverage.competitors ? 'READY' : 'DEGRADED'} label={`全量 ${ladder.data.coverage.competitors}只 · 行情 ${ladder.data.coverage.quoteReady}/${ladder.data.coverage.competitors}`} /> : null}</CardAction></CardHeader>
+              <CardContent>{ladder.data?.competitors?.length ? <Table><TableHeader><TableRow><TableHead>目标梯队</TableHead><TableHead>个股</TableHead><TableHead>行业</TableHead><TableHead>状态</TableHead><TableHead className="text-right">涨幅</TableHead><TableHead className="text-right">涨速</TableHead><TableHead>首次触板</TableHead><TableHead>最终回封</TableHead><TableHead className="text-right">开板</TableHead><TableHead className="text-right">成交额</TableHead><TableHead className="text-right">封单</TableHead></TableRow></TableHeader><TableBody>{ladder.data.competitors.map((row) => <TableRow key={`${row.code}-${row.toHeight}`}><TableCell><Badge variant="secondary">{row.toHeight}板</Badge></TableCell><TableCell><div className="font-medium">{row.name}</div><div className="text-xs text-muted-foreground">{row.code}</div></TableCell><TableCell>{row.industry}</TableCell><TableCell>{row.state === 'SEALED' ? <Badge variant="outline" className="status-ready">封板</Badge> : row.state === 'FAILED' ? <Badge variant="outline" className="status-degraded">炸板</Badge> : <Badge variant="outline" className={(row.changePct ?? 0) < 0 ? 'market-down' : 'text-muted-foreground'}>{(row.changePct ?? 0) < 0 ? '下跌掉队' : '未触板'}</Badge>}</TableCell><TableCell className={`text-right font-medium ${(row.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.changePct)}</TableCell><TableCell className={`text-right font-medium ${(row.speedPct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.speedPct)}</TableCell><TableCell className="tabular-nums">{row.firstTouch ?? '—'}</TableCell><TableCell className="tabular-nums">{row.lastSeal ?? '—'}</TableCell><TableCell className="text-right">{row.breakCount}</TableCell><TableCell className="text-right">{fmtAmount(row.amount)}</TableCell><TableCell className="text-right">{fmtAmount(row.sealFund)}</TableCell></TableRow>)}</TableBody></Table> : <EmptyState>{ladder.loading ? '正在比较同梯队个股…' : ladder.data?.reason || ladder.error || '当前没有上一交易日涨停池数据'}</EmptyState>}</CardContent>
             </Card>
           </TabsContent>
 
