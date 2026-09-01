@@ -82,9 +82,71 @@ export type FlowSnapshot = {
   };
 };
 
+export type MarketTimelineDriver = {
+  code: string;
+  name: string;
+  industry: string;
+  windowChangePct: number | null;
+  mainNetInflow: number | null;
+  role: '同窗价格确认' | '当日资金候选';
+};
+
+export type MarketTimelineEvent = {
+  id: string;
+  kind: 'START' | 'CASHOUT' | 'WEAKEN';
+  label: '启动' | '兑现' | '走弱';
+  sectorCode: string;
+  sectorName: string;
+  windowStartTime: string;
+  time: string;
+  flowDelta5m: number;
+  sectorChangePct: number | null;
+  sectorDailyFlow: number;
+  sectorAtTimeChangePct: number | null;
+  sectorWindowChangePct: number | null;
+  indices: Array<{
+    code: string;
+    name: string;
+    changePct: number | null;
+    windowChangePct: number | null;
+  }>;
+  drivers: MarketTimelineDriver[];
+  driverState: DataState;
+  driverBasis: string;
+};
+
+export type MarketTimelineSnapshot = {
+  status: DataState;
+  retrievedAt: string;
+  tradeDate: string;
+  phase: string;
+  lastPointTime: string | null;
+  source: string;
+  sourceState: 'LIVE' | 'STALE';
+  reason?: string;
+  basis: string;
+  coverage: { sectors: number; events: number; indices: number; confirmedDrivers: number };
+  events: MarketTimelineEvent[];
+};
+
 type ClistRow = Record<string, string | number | null>;
 type PoolRow = Record<string, unknown>;
 let flowSnapshotCache: CacheRecord<FlowSnapshot> | null = null;
+let flowSnapshotPending: Promise<FlowSnapshot> | null = null;
+let timelineSnapshotCache: CacheRecord<MarketTimelineSnapshot> | null = null;
+const trendCache = new Map<string, {
+  expiresAt: number;
+  staleUntil: number;
+  value: IntradayTrend;
+}>();
+
+type IntradayTrend = {
+  code: string;
+  name: string;
+  preClose: number | null;
+  points: Array<{ time: string; price: number }>;
+  stale?: boolean;
+};
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -545,8 +607,7 @@ async function fetchSectorFlowDetail(series: SectorFlowSeries) {
   };
 }
 
-export async function getFlowSnapshot(): Promise<FlowSnapshot> {
-  if (flowSnapshotCache && flowSnapshotCache.expiresAt > Date.now()) return flowSnapshotCache.value;
+async function buildFlowSnapshot(): Promise<FlowSnapshot> {
   const tradeDate = shanghaiDate();
   const [topFlow, bottomFlow] = await Promise.all([
     fetchClist({ fs: 'm:90+t:3', fid: 'f62', order: 1, pageSize: 8, fields: 'f12,f14,f3,f62' }),
@@ -657,6 +718,228 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
     },
   };
   flowSnapshotCache = { expiresAt: Date.now() + 45_000, value };
+  return value;
+}
+
+export async function getFlowSnapshot(): Promise<FlowSnapshot> {
+  if (flowSnapshotCache && flowSnapshotCache.expiresAt > Date.now()) return flowSnapshotCache.value;
+  if (flowSnapshotPending) return flowSnapshotPending;
+  flowSnapshotPending = buildFlowSnapshot();
+  try {
+    return await flowSnapshotPending;
+  } finally {
+    flowSnapshotPending = null;
+  }
+}
+
+async function fetchIntradayTrend(instrument: { code: string; secid: string }, tradeDate: string): Promise<IntradayTrend> {
+  const cacheKey = `${tradeDate}:${instrument.secid}`;
+  const cached = trendCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const params = new URLSearchParams({
+    secid: instrument.secid,
+    fields1: 'f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13',
+    fields2: 'f51,f52,f53,f54,f55,f56,f57,f58',
+    ndays: '1',
+    iscr: '0',
+    iscca: '0',
+    ut: PUBLIC_CLIENT_TOKEN,
+  });
+  const failures: string[] = [];
+  for (const host of ['push2his.eastmoney.com', 'push2delay.eastmoney.com']) {
+    try {
+      const payload = await fetchJson(`https://${host}/api/qt/stock/trends2/get?${params}`, 9_000);
+      const data = (payload.data ?? {}) as Record<string, unknown>;
+      const points = (Array.isArray(data.trends) ? data.trends : [])
+        .map((row) => {
+          const [stamp, priceText] = String(row).split(',');
+          const rowDate = stamp.slice(0, 10).replaceAll('-', '');
+          const price = Number(priceText);
+          if (rowDate !== tradeDate || !Number.isFinite(price) || price <= 0) return null;
+          return { time: stamp.slice(11, 16), price };
+        })
+        .filter(Boolean) as Array<{ time: string; price: number }>;
+      if (!points.length) throw new Error(`未返回${tradeDate}的分钟价格`);
+      const value: IntradayTrend = {
+        code: String(data.code ?? instrument.code),
+        name: String(data.name ?? instrument.code),
+        preClose: numberOrNull(data.preClose),
+        points,
+        stale: false,
+      };
+      trendCache.set(cacheKey, { expiresAt: Date.now() + 45_000, staleUntil: Date.now() + 5 * 60_000, value });
+      return value;
+    } catch (error) {
+      failures.push(`${host}:${String(error)}`);
+    }
+  }
+  if (cached && cached.staleUntil > Date.now()) return { ...cached.value, stale: true };
+  throw new Error(`分钟价格不可用 ${failures.join(' | ')}`);
+}
+
+function trendWindow(trend: IntradayTrend, startTime: string, endTime: string) {
+  const atOrBefore = (time: string) => [...trend.points].reverse().find((point) => point.time <= time) ?? null;
+  const start = atOrBefore(startTime);
+  const end = atOrBefore(endTime);
+  return {
+    changePct: end && trend.preClose ? (end.price / trend.preClose - 1) * 100 : null,
+    windowChangePct: start && end ? (end.price / start.price - 1) * 100 : null,
+  };
+}
+
+type TimelineCandidate = {
+  kind: 'START' | 'CASHOUT' | 'WEAKEN';
+  label: '启动' | '兑现' | '走弱';
+  sector: SectorFlowSeries;
+  windowStartTime: string;
+  time: string;
+  flowDelta5m: number;
+};
+
+function detectTimelineCandidates(series: SectorFlowSeries[]) {
+  const starts: TimelineCandidate[] = [];
+  const exits: TimelineCandidate[] = [];
+  for (const sector of series) {
+    if (/^(MSCI中国|融资融券|富时罗素|破增发价股|2026中报预增|科技风格)$/.test(sector.name)) continue;
+    if (sector.points.length <= 5) continue;
+    const windows = sector.points.slice(5).map((point, offset) => {
+      const index = offset + 5;
+      return {
+        index,
+        time: point.time,
+        windowStartTime: sector.points[index - 5].time,
+        flowDelta5m: point.mainNetInflow - sector.points[index - 5].mainNetInflow,
+      };
+    });
+    const start = [...windows].sort((a, b) => b.flowDelta5m - a.flowDelta5m)[0];
+    const minimum = [...windows]
+      .filter((item) => !start || item.index >= start.index + 3)
+      .sort((a, b) => a.flowDelta5m - b.flowDelta5m)[0];
+    if (start && start.flowDelta5m > 10_000_000 && ((sector.changePct ?? 0) > 0 || sector.latestMainNetInflow > 0)) {
+      starts.push({ kind: 'START', label: '启动', sector, ...start });
+    }
+    if (minimum && minimum.flowDelta5m < -10_000_000) {
+      const isCashout = Boolean(start && start.flowDelta5m > 10_000_000 && minimum.index > start.index);
+      exits.push({ kind: isCashout ? 'CASHOUT' : 'WEAKEN', label: isCashout ? '兑现' : '走弱', sector, ...minimum });
+    }
+  }
+  return [
+    ...starts.sort((a, b) => b.flowDelta5m - a.flowDelta5m).slice(0, 3),
+    ...exits.sort((a, b) => a.flowDelta5m - b.flowDelta5m).slice(0, 3),
+  ].sort((a, b) => a.time.localeCompare(b.time) || a.sector.name.localeCompare(b.sector.name));
+}
+
+async function fetchTimelineDrivers(candidate: TimelineCandidate, tradeDate: string) {
+  const direction: 0 | 1 = candidate.kind === 'START' ? 1 : 0;
+  const members = await fetchClist({
+    fs: `b:${candidate.sector.code}`,
+    fid: 'f62',
+    order: direction,
+    pageSize: 5,
+    fields: 'f12,f14,f3,f22,f62,f100',
+  });
+  const rows = members.rows.map((row) => ({
+    code: String(row.f12 ?? ''),
+    name: String(row.f14 ?? ''),
+    industry: String(row.f100 ?? '未知') || '未知',
+    mainNetInflow: numberOrNull(row.f62),
+  })).filter((row) => row.code && row.name);
+  const drivers = await mapLimit(rows, 3, async (row): Promise<MarketTimelineDriver> => {
+    try {
+      const trend = await fetchIntradayTrend({ code: row.code, secid: secid(row.code) }, tradeDate);
+      const { windowChangePct } = trendWindow(trend, candidate.windowStartTime, candidate.time);
+      const aligns = windowChangePct !== null && (candidate.kind === 'START' ? windowChangePct > 0 : windowChangePct < 0);
+      return { ...row, windowChangePct, role: aligns ? '同窗价格确认' : '当日资金候选' };
+    } catch {
+      return { ...row, windowChangePct: null, role: '当日资金候选' };
+    }
+  });
+  return drivers.sort((a, b) => {
+    const role = Number(b.role === '同窗价格确认') - Number(a.role === '同窗价格确认');
+    return role || Math.abs(b.mainNetInflow ?? 0) - Math.abs(a.mainNetInflow ?? 0);
+  }).slice(0, 3);
+}
+
+export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapshot> {
+  if (timelineSnapshotCache && timelineSnapshotCache.expiresAt > Date.now()) return timelineSnapshotCache.value;
+  const flow = await getFlowSnapshot();
+  const tradeDate = flow.tradeDate;
+  const candidates = detectTimelineCandidates(flow.series);
+  const indexSettled = await Promise.allSettled([
+    fetchIntradayTrend({ code: '000001', secid: '1.000001' }, tradeDate),
+    fetchIntradayTrend({ code: '399006', secid: '0.399006' }, tradeDate),
+  ]);
+  const indices = indexSettled
+    .filter((result): result is PromiseFulfilledResult<IntradayTrend> => result.status === 'fulfilled')
+    .map((result) => result.value);
+  const uniqueSectorCodes = [...new Set(candidates.map((candidate) => candidate.sector.code))];
+  const sectorTrendResults = await mapLimit(uniqueSectorCodes, 3, async (code) => {
+    try {
+      return await fetchIntradayTrend({ code, secid: `90.${code}` }, tradeDate);
+    } catch {
+      return null;
+    }
+  });
+  const sectorTrendByCode = new Map(uniqueSectorCodes.map((code, index) => [code, sectorTrendResults[index]]));
+  const driverGroups = await mapLimit(candidates, 2, async (candidate) => {
+    try {
+      return await fetchTimelineDrivers(candidate, tradeDate);
+    } catch {
+      return [];
+    }
+  });
+  const events: MarketTimelineEvent[] = candidates.map((candidate, index) => {
+    const drivers = driverGroups[index];
+    const confirmed = drivers.filter((driver) => driver.role === '同窗价格确认').length;
+    const sectorTrend = sectorTrendByCode.get(candidate.sector.code);
+    const sectorWindow = sectorTrend
+      ? trendWindow(sectorTrend, candidate.windowStartTime, candidate.time)
+      : { changePct: null, windowChangePct: null };
+    return {
+      id: `${candidate.sector.code}-${candidate.kind}-${candidate.time}`,
+      kind: candidate.kind,
+      label: candidate.label,
+      sectorCode: candidate.sector.code,
+      sectorName: candidate.sector.name,
+      windowStartTime: candidate.windowStartTime,
+      time: candidate.time,
+      flowDelta5m: candidate.flowDelta5m,
+      sectorChangePct: candidate.sector.changePct,
+      sectorDailyFlow: candidate.sector.latestMainNetInflow,
+      sectorAtTimeChangePct: sectorWindow.changePct,
+      sectorWindowChangePct: sectorWindow.windowChangePct,
+      indices: indices.map((marketIndex) => ({
+        code: marketIndex.code,
+        name: marketIndex.name,
+        ...trendWindow(marketIndex, candidate.windowStartTime, candidate.time),
+      })),
+      drivers,
+      driverState: confirmed > 0 && indices.length === 2 && sectorTrend ? 'READY' : drivers.length ? 'DEGRADED' : 'MISSING',
+      driverBasis: confirmed > 0
+        ? `5分钟同窗价格确认${confirmed}/${drivers.length}只；其余仅为当日资金候选`
+        : '暂无同窗价格确认，仅展示当日资金候选',
+    };
+  });
+  const confirmedDrivers = events.flatMap((event) => event.drivers)
+    .filter((driver) => driver.role === '同窗价格确认').length;
+  const sourceStale = flow.sourceState === 'STALE' || indices.some((item) => item.stale)
+    || sectorTrendResults.some((item) => item?.stale);
+  const status: DataState = events.length && indices.length === 2 && events.every((event) => event.driverState === 'READY') && !sourceStale
+    ? 'READY' : events.length ? 'DEGRADED' : 'MISSING';
+  const value: MarketTimelineSnapshot = {
+    status,
+    retrievedAt: new Date().toISOString(),
+    tradeDate,
+    phase: flow.phase,
+    lastPointTime: flow.lastPointTime,
+    source: '东方财富公开板块资金、指数与个股分钟序列',
+    sourceState: sourceStale ? 'STALE' : 'LIVE',
+    reason: sourceStale ? '部分分钟端点短暂波动，已使用同交易日最近快照' : undefined,
+    basis: '启动=板块5个有效交易分钟内主力净流入最强正增量；兑现=先有启动且之后出现5分钟明显净流出；否则标为走弱。驱动股先按当日主力资金候选，再用相同5分钟价格方向确认；这是分钟级归因，不代表逐笔因果。',
+    coverage: { sectors: flow.series.length, events: events.length, indices: indices.length, confirmedDrivers },
+    events,
+  };
+  timelineSnapshotCache = { expiresAt: Date.now() + 45_000, value };
   return value;
 }
 
