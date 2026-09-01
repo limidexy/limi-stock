@@ -7,6 +7,11 @@ export type DataState = 'READY' | 'DEGRADED' | 'MISSING';
 type CacheRecord<T> = { expiresAt: number; value: T };
 const metadataCache = new Map<string, CacheRecord<StockMetadata>>();
 const limitHistoryCache = new Map<string, CacheRecord<LimitHistory>>();
+const clistCache = new Map<string, {
+  expiresAt: number;
+  staleUntil: number;
+  value: { total: number; rows: ClistRow[]; host: string; stale?: boolean };
+}>();
 
 export type StockMetadata = {
   code: string;
@@ -37,6 +42,17 @@ export type SectorFlowSeries = {
   delta15m: number | null;
   delta30m: number | null;
   points: SectorFlowPoint[];
+  detailState?: DataState;
+  detailBasis?: string;
+  subgroups?: Array<{ name: string; count: number; leaders: string[] }>;
+  representatives?: Array<{
+    code: string;
+    name: string;
+    industry: string;
+    changePct: number | null;
+    speedPct: number | null;
+    mainNetInflow: number | null;
+  }>;
 };
 
 export type FlowSnapshot = {
@@ -48,6 +64,8 @@ export type FlowSnapshot = {
   phase: string;
   lastPointTime: string | null;
   source: string;
+  reason?: string;
+  sourceState?: 'LIVE' | 'STALE';
   basis: string;
   coverage: { requested: number; available: number };
   series: SectorFlowSeries[];
@@ -142,7 +160,7 @@ async function fetchClist(options: {
   pageSize?: number;
   page?: number;
   fields?: string;
-}): Promise<{ total: number; rows: ClistRow[]; host: string }> {
+}): Promise<{ total: number; rows: ClistRow[]; host: string; stale?: boolean }> {
   const params = new URLSearchParams({
     pn: String(options.page ?? 1),
     pz: String(options.pageSize ?? 1000),
@@ -155,16 +173,24 @@ async function fetchClist(options: {
     fs: options.fs,
     fields: options.fields ?? QUOTE_FIELDS,
   });
+  const cacheKey = `${shanghaiDate()}:${params.toString()}`;
+  const cached = clistCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
   const failures: string[] = [];
   for (const host of ['push2delay.eastmoney.com', 'push2.eastmoney.com']) {
     try {
       const payload = await fetchJson(`https://${host}/api/qt/clist/get?${params}`);
       const data = (payload.data ?? {}) as Record<string, unknown>;
       const rows = Array.isArray(data.diff) ? (data.diff as ClistRow[]) : [];
-      return { total: Number(data.total ?? rows.length), rows, host };
+      const value = { total: Number(data.total ?? rows.length), rows, host, stale: false };
+      clistCache.set(cacheKey, { expiresAt: Date.now() + 1_200, staleUntil: Date.now() + 5 * 60_000, value });
+      return value;
     } catch (error) {
       failures.push(`${host}:${String(error)}`);
     }
+  }
+  if (cached && cached.staleUntil > Date.now()) {
+    return { ...cached.value, stale: true, host: `stale:${cached.value.host}` };
   }
   throw new Error(`行情列表不可用 ${failures.join(' | ')}`);
 }
@@ -319,8 +345,19 @@ export async function fetchRecentLimitHistory(code: string, name: string): Promi
 
 export async function getRadarSnapshot() {
   const startedAt = Date.now();
-  const boardList = await fetchAllClist({ fs: 'm:90+t:3', fid: 'f22' });
-  const boards = boardList.rows
+  const queryResults = await Promise.allSettled([
+    fetchClist({ fs: 'm:90+t:3', fid: 'f22', order: 1, pageSize: 12 }),
+    fetchClist({ fs: 'm:90+t:3', fid: 'f22', order: 0, pageSize: 12 }),
+    fetchClist({ fs: 'm:90+t:3', fid: 'f3', order: 1, pageSize: 12 }),
+    fetchClist({ fs: 'm:90+t:3', fid: 'f3', order: 0, pageSize: 12 }),
+  ]);
+  const successful = queryResults
+    .filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof fetchClist>>> => result.status === 'fulfilled')
+    .map((result) => result.value);
+  if (!successful.length) throw new Error('概念板块排名端点暂时不可用');
+  const boardTotal = Math.max(...successful.map((result) => result.total));
+  const boardMap = new Map(successful.flatMap((result) => result.rows).map((row) => [String(row.f12 ?? ''), row]));
+  const boards = [...boardMap.values()]
     .map((row) => ({
       code: String(row.f12 ?? ''),
       name: String(row.f14 ?? ''),
@@ -359,42 +396,54 @@ export async function getRadarSnapshot() {
         mainNetInflow: numberOrNull(row.f62), amount: numberOrNull(row.f6),
         industry: String(row.f100 ?? ''),
       }));
-      const sameDirection = normalized.filter((row) => {
-        const flow = row.mainNetInflow ?? 0;
-        const change = row.changePct ?? 0;
-        return direction === 'up' ? flow > 0 && change > 0 : flow < 0 && change < 0;
+      const priceDirectional = normalized.filter((row) => {
+        const speed = row.speedPct ?? 0;
+        return direction === 'up' ? speed > 0 : speed < 0;
       });
-      const denominator = sameDirection.reduce((sum, row) => sum + Math.abs(row.mainNetInflow ?? 0), 0);
-      const drivers = sameDirection
-        .sort((a, b) => Math.abs(b.mainNetInflow ?? 0) - Math.abs(a.mainNetInflow ?? 0))
+      const flowDirectional = priceDirectional.filter((row) => {
+        const flow = row.mainNetInflow ?? 0;
+        return direction === 'up' ? flow > 0 : flow < 0;
+      });
+      const flowCodes = new Set(flowDirectional.map((row) => row.code));
+      const candidates = [
+        ...flowDirectional.sort((a, b) => Math.abs(b.mainNetInflow ?? 0) - Math.abs(a.mainNetInflow ?? 0)),
+        ...priceDirectional
+          .filter((row) => !flowCodes.has(row.code))
+          .sort((a, b) => Math.abs(b.speedPct ?? 0) - Math.abs(a.speedPct ?? 0)),
+      ];
+      const denominator = flowDirectional.reduce((sum, row) => sum + Math.abs(row.mainNetInflow ?? 0), 0);
+      const drivers = candidates
         .slice(0, 4)
         .map((row) => ({
           ...row,
-          contributionPct: denominator > 0 ? Math.abs(row.mainNetInflow ?? 0) / denominator * 100 : null,
+          driverRole: flowCodes.has(row.code) ? '价格与资金同向' : '价格速度拖累',
+          contributionPct: flowCodes.has(row.code) && denominator > 0 ? Math.abs(row.mainNetInflow ?? 0) / denominator * 100 : null,
         }));
-      const directionalCount = normalized.filter((row) => direction === 'up' ? (row.changePct ?? 0) > 0 : (row.changePct ?? 0) < 0).length;
+      const directionalCount = priceDirectional.length;
       return {
         ...board, selectedDirection: undefined, direction, memberCount: members.total, directionalCount, drivers,
         members: normalized,
         driverState: drivers.length ? 'DEGRADED' as DataState : 'MISSING' as DataState,
-        driverBasis: '当前累计主力净流入代理；连续打开3分钟后切换为同窗口增量',
+        driverBasis: '先按当前个股涨速识别拉动/拖累，资金同向者优先；连续打开3分钟后升级为同窗口增量',
       };
-    } catch (error) {
+    } catch {
       return {
         ...board, selectedDirection: undefined, direction, memberCount: null, directionalCount: null, drivers: [],
         members: [],
-        driverState: 'MISSING' as DataState, driverBasis: `成分股不可用：${String(error)}`,
+        driverState: 'MISSING' as DataState, driverBasis: '成分股端点短暂波动，正在自动重连',
       };
     }
   });
 
   return {
-    status: boardList.total && boards.length / boardList.total >= 0.98 && events.length === 6 && events.every((event) => event.driverState === 'READY')
+    status: successful.length === 4 && successful.every((result) => !result.stale) && events.length === 6 && events.every((event) => event.driverState === 'READY')
       ? 'READY' as DataState : 'DEGRADED' as DataState,
     retrievedAt: new Date().toISOString(),
     tradeDate: shanghaiDate(),
     source: '东方财富公开概念板块与成分行情',
-    coverage: { reported: boardList.total, available: boards.length },
+    sourceState: successful.some((result) => result.stale) ? 'STALE' : 'LIVE',
+    reason: successful.some((result) => result.stale) ? '部分排名端点短暂波动，已使用同交易日最近快照' : undefined,
+    coverage: { reported: boardTotal, available: boardTotal, rankedCandidates: boards.length, queryReady: successful.length, queryRequested: 4 },
     events,
     latencyMs: Date.now() - startedAt,
   };
@@ -463,14 +512,46 @@ async function fetchSectorFlowSeries(board: {
   };
 }
 
+async function fetchSectorFlowDetail(series: SectorFlowSeries) {
+  const direction: 0 | 1 = series.latestMainNetInflow >= 0 ? 1 : 0;
+  const members = await fetchClist({
+    fs: `b:${series.code}`, fid: 'f62', order: direction, pageSize: 100,
+    fields: 'f12,f14,f3,f22,f62,f6,f100',
+  });
+  const rows = members.rows.map((row) => ({
+    code: String(row.f12 ?? ''),
+    name: String(row.f14 ?? ''),
+    industry: String(row.f100 ?? '未知') || '未知',
+    changePct: numberOrNull(row.f3),
+    speedPct: numberOrNull(row.f22),
+    mainNetInflow: numberOrNull(row.f62),
+  })).filter((row) => row.code && row.name);
+  const sameFlow = rows.filter((row) => series.latestMainNetInflow >= 0
+    ? (row.mainNetInflow ?? 0) > 0
+    : (row.mainNetInflow ?? 0) < 0);
+  const representatives = (sameFlow.length ? sameFlow : rows).slice(0, 4);
+  const industryMap = new Map<string, typeof rows>();
+  for (const row of rows) industryMap.set(row.industry, [...(industryMap.get(row.industry) ?? []), row]);
+  const subgroups = [...industryMap.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 4)
+    .map(([name, items]) => ({ name, count: items.length, leaders: items.slice(0, 3).map((item) => item.name) }));
+  return {
+    detailState: !members.stale && rows.length >= Math.min(members.total, 100) ? 'READY' as DataState : 'DEGRADED' as DataState,
+    detailBasis: `${members.stale ? '同交易日快照·' : ''}资金同向成分样本${rows.length}/${members.total}只`,
+    subgroups,
+    representatives,
+  };
+}
+
 export async function getFlowSnapshot(): Promise<FlowSnapshot> {
   if (flowSnapshotCache && flowSnapshotCache.expiresAt > Date.now()) return flowSnapshotCache.value;
   const tradeDate = shanghaiDate();
-  const boardList = await fetchAllClist({
-    fs: 'm:90+t:3', fid: 'f62',
-    fields: 'f12,f14,f3,f62',
-  });
-  const boards = boardList.rows
+  const [topFlow, bottomFlow] = await Promise.all([
+    fetchClist({ fs: 'm:90+t:3', fid: 'f62', order: 1, pageSize: 8, fields: 'f12,f14,f3,f62' }),
+    fetchClist({ fs: 'm:90+t:3', fid: 'f62', order: 0, pageSize: 8, fields: 'f12,f14,f3,f62' }),
+  ]);
+  const boards = [...topFlow.rows, ...bottomFlow.rows]
     .map((row) => ({
       code: String(row.f12 ?? ''),
       name: String(row.f14 ?? ''),
@@ -478,8 +559,7 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
       mainNetInflow: numberOrNull(row.f62),
     }))
     .filter((row) => row.code && row.name && row.mainNetInflow !== null);
-  const byFlow = [...boards].sort((a, b) => (b.mainNetInflow ?? 0) - (a.mainNetInflow ?? 0));
-  const candidates = [...byFlow.slice(0, 8), ...byFlow.slice(-8)]
+  const candidates = boards
     .map(({ code, name, changePct }) => ({ code, name, changePct }));
   const settled = await mapLimit(candidates, 4, async (board) => {
     try {
@@ -488,7 +568,20 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
       return null;
     }
   });
-  const series = settled.filter(Boolean) as SectorFlowSeries[];
+  const baseSeries = settled.filter(Boolean) as SectorFlowSeries[];
+  const details = await mapLimit(baseSeries, 4, async (item) => {
+    try {
+      return await fetchSectorFlowDetail(item);
+    } catch {
+      return {
+        detailState: 'MISSING' as DataState,
+        detailBasis: '细分成分暂时不可用',
+        subgroups: [],
+        representatives: [],
+      };
+    }
+  });
+  const series = baseSeries.map((item, index) => ({ ...item, ...details[index] }));
   const splitReady = series.filter((item) => item.delta5m !== null);
   const inflow = [...splitReady]
     .filter((item) => (item.delta5m ?? 0) > 0)
@@ -516,15 +609,18 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
     .slice(0, 6);
   const curveState: DataState = series.length === candidates.length ? 'READY' : series.length ? 'DEGRADED' : 'MISSING';
   const splitState: DataState = splitReady.length === series.length && splitReady.length > 0 ? 'READY' : splitReady.length ? 'DEGRADED' : 'MISSING';
+  const sourceStale = Boolean(topFlow.stale || bottomFlow.stale);
   const value: FlowSnapshot = {
-    status: curveState === 'READY' && splitState === 'READY' ? 'READY' : series.length ? 'DEGRADED' : 'MISSING',
-    curveState,
-    splitState,
+    status: curveState === 'READY' && splitState === 'READY' && !sourceStale ? 'READY' : series.length ? 'DEGRADED' : 'MISSING',
+    curveState: sourceStale && curveState === 'READY' ? 'DEGRADED' : curveState,
+    splitState: sourceStale && splitState === 'READY' ? 'DEGRADED' : splitState,
     retrievedAt: new Date().toISOString(),
     tradeDate,
     phase: shanghaiMarketPhase(),
     lastPointTime: series.flatMap((item) => item.points.map((point) => point.time)).sort().at(-1) ?? null,
     source: '东方财富公开概念板块与主力资金分钟序列',
+    sourceState: sourceStale ? 'STALE' : 'LIVE',
+    reason: sourceStale ? '资金排名端点短暂波动，已使用同交易日最近快照' : undefined,
     basis: '曲线为当日累计主力净流入；短时分流为最近5个有效交易分钟的增量，持续强弱使用30个有效交易分钟。概念成分重叠，不作资金守恒解释。',
     coverage: { requested: candidates.length, available: series.length },
     series,
@@ -681,8 +777,10 @@ export async function getSpeedSnapshot() {
   const missingMeta = rows.filter((row) => row.metadataState !== 'READY').length;
   const missingLimits = rows.filter((row) => row.recentLimitState === 'MISSING').length;
   return {
-    status: missingMeta || missingLimits ? 'DEGRADED' as DataState : 'READY' as DataState,
+    status: missingMeta || missingLimits || quotes.stale ? 'DEGRADED' as DataState : 'READY' as DataState,
     retrievedAt: new Date().toISOString(), tradeDate: shanghaiDate(), source: '东方财富公开沪深京行情、个股资料与日线',
+    sourceState: quotes.stale ? 'STALE' : 'LIVE',
+    reason: quotes.stale ? '涨速行情端点短暂波动，已使用同交易日最近快照' : undefined,
     coverage: { requested: rows.length, conceptReady: rows.length - missingMeta, recentLimitReady: rows.length - missingLimits },
     rows, latencyMs: Date.now() - startedAt,
   };

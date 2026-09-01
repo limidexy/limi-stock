@@ -61,6 +61,7 @@ type RadarMember = {
   amount: number | null;
   industry: string;
   contributionPct?: number | null;
+  driverRole?: string;
 };
 
 type RadarEvent = {
@@ -106,6 +107,17 @@ type SectorFlowSeries = {
   delta15m: number | null;
   delta30m: number | null;
   points: SectorFlowPoint[];
+  detailState?: DataState;
+  detailBasis?: string;
+  subgroups?: Array<{ name: string; count: number; leaders: string[] }>;
+  representatives?: Array<{
+    code: string;
+    name: string;
+    industry: string;
+    changePct: number | null;
+    speedPct: number | null;
+    mainNetInflow: number | null;
+  }>;
 };
 
 type FlowData = {
@@ -223,7 +235,7 @@ function usePolling<T>(url: string, intervalMs: number): PollState<T> {
       setData(payload);
       setError(null);
     } catch (reason) {
-      setError(String(reason));
+      setError(reason instanceof Error ? reason.message : '行情源短暂波动，正在自动重连');
     } finally {
       setLoading(false);
       inFlight.current = false;
@@ -266,30 +278,43 @@ function useWindowedRadar(data: RadarData | null) {
       const direction = event.direction;
       const windowAligns = direction === 'up' ? deltaChange > 0 : deltaChange < 0;
       const baseMembers = new Map(base.event.members.map((member) => [member.code, member]));
-      const candidates = event.members.map((member) => {
+      const windowMembers = event.members.map((member) => {
         const before = baseMembers.get(member.code);
         if (!before) return null;
         const memberDeltaFlow = (member.mainNetInflow ?? 0) - (before.mainNetInflow ?? 0);
         const memberDeltaChange = (member.changePct ?? 0) - (before.changePct ?? 0);
-        const sameDirection = direction === 'up'
-          ? memberDeltaFlow > 0 && memberDeltaChange > 0
-          : memberDeltaFlow < 0 && memberDeltaChange < 0;
-        return sameDirection ? { ...member, mainNetInflow: memberDeltaFlow, changePct: memberDeltaChange } : null;
+        const priceDirectional = direction === 'up' ? memberDeltaChange > 0 : memberDeltaChange < 0;
+        if (!priceDirectional) return null;
+        const flowDirectional = direction === 'up' ? memberDeltaFlow > 0 : memberDeltaFlow < 0;
+        return {
+          ...member,
+          mainNetInflow: memberDeltaFlow,
+          changePct: memberDeltaChange,
+          driverRole: flowDirectional ? '价格与资金同向' : '价格速度拖累',
+        };
       }).filter(Boolean) as RadarMember[];
-      const denominator = candidates.reduce((sum, member) => sum + Math.abs(member.mainNetInflow ?? 0), 0);
-      const drivers = candidates
-        .sort((a, b) => Math.abs(b.mainNetInflow ?? 0) - Math.abs(a.mainNetInflow ?? 0))
+      const strong = windowMembers.filter((member) => member.driverRole === '价格与资金同向');
+      const priceOnly = windowMembers.filter((member) => member.driverRole !== '价格与资金同向');
+      const denominator = strong.reduce((sum, member) => sum + Math.abs(member.mainNetInflow ?? 0), 0);
+      const drivers = [
+        ...strong.sort((a, b) => Math.abs(b.mainNetInflow ?? 0) - Math.abs(a.mainNetInflow ?? 0)),
+        ...priceOnly.sort((a, b) => Math.abs(b.changePct ?? 0) - Math.abs(a.changePct ?? 0)),
+      ]
         .slice(0, 4)
         .map((member) => ({
           ...member,
-          contributionPct: denominator > 0 ? Math.abs(member.mainNetInflow ?? 0) / denominator * 100 : null,
+          contributionPct: member.driverRole === '价格与资金同向' && denominator > 0
+            ? Math.abs(member.mainNetInflow ?? 0) / denominator * 100
+            : null,
         }));
       return {
         ...event,
         direction,
         drivers: drivers.length ? drivers : event.drivers,
-        driverState: drivers.length && windowAligns ? 'READY' as DataState : event.driverState,
-        driverBasis: drivers.length && windowAligns ? '近3分钟个股主力净流入增量，占同向成分股增量的比例' : event.driverBasis,
+        driverState: strong.length && windowAligns ? 'READY' as DataState : drivers.length ? 'DEGRADED' as DataState : event.driverState,
+        driverBasis: strong.length && windowAligns
+          ? '近3分钟个股价格与主力资金同向增量归因'
+          : drivers.length ? '近3分钟价格同向，资金未全部同向，按价格拖累/拉动降级展示' : event.driverBasis,
         windowReady: drivers.length > 0 && windowAligns,
         displayChangePct: windowAligns ? deltaChange : event.speedPct,
         displayFlow: deltaFlow,
@@ -411,6 +436,20 @@ function SectorFlowChart({ data }: { data: FlowData }) {
   );
 }
 
+function SectorDetailLine({ item }: { item: SectorFlowSeries }) {
+  const subgroups = item.subgroups?.slice(0, 3) ?? [];
+  const representatives = item.representatives?.slice(0, 3) ?? [];
+  return (
+    <div className="space-y-1 text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-1">
+        <span>成分细分：</span>
+        {subgroups.length ? subgroups.map((group) => <Badge key={group.name} variant="secondary" className="h-5 px-1.5 text-[10px]">{group.name} {group.count}</Badge>) : <span>暂未补齐</span>}
+      </div>
+      <div className="truncate">资金活跃股（当日累计）：{representatives.length ? representatives.map((row) => `${row.name}(${fmtMoney(row.mainNetInflow)})`).join(' · ') : '暂未补齐'}</div>
+    </div>
+  );
+}
+
 function FlowSplitList({ title, rows, direction }: {
   title: string;
   rows: SectorFlowSeries[];
@@ -436,6 +475,7 @@ function FlowSplitList({ title, rows, direction }: {
               <div className={`h-full rounded-full ${direction === 'inflow' ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.max(4, Math.abs(item.delta5m ?? 0) / maxValue * 100)}%` }} />
             </div>
             <div className="flex justify-between text-[11px] text-muted-foreground"><span>累计 {fmtMoney(item.latestMainNetInflow)}</span><span>15分钟 {fmtMoney(item.delta15m)}</span></div>
+            <SectorDetailLine item={item} />
           </div>
         )) : <EmptyState>当前样本中暂无这一方向的资金增量</EmptyState>}
       </CardContent>
@@ -458,9 +498,12 @@ function HorizonFlowList({ title, rows, direction, horizon }: {
       </div>
       <div className="grid gap-2">
         {rows.length ? rows.map((item, index) => (
-          <div key={item.code} className="flex items-center justify-between gap-3 rounded-md bg-muted/45 px-2.5 py-2">
-            <div className="min-w-0"><div className="truncate text-sm"><span className="mr-2 text-xs text-muted-foreground">{index + 1}</span>{item.name}</div><div className="mt-0.5 text-[11px] text-muted-foreground">板块涨跌 {fmtPct(item.changePct)} · 累计 {fmtMoney(item.latestMainNetInflow)}</div></div>
-            <span className={`shrink-0 font-mono text-sm font-medium ${direction === 'inflow' ? 'market-up' : 'market-down'}`}>{fmtMoney(valueOf(item))}</span>
+          <div key={item.code} className="rounded-md bg-muted/45 px-2.5 py-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0"><div className="truncate text-sm"><span className="mr-2 text-xs text-muted-foreground">{index + 1}</span>{item.name}</div><div className="mt-0.5 text-[11px] text-muted-foreground">板块涨跌 {fmtPct(item.changePct)} · 累计 {fmtMoney(item.latestMainNetInflow)}</div></div>
+              <span className={`shrink-0 font-mono text-sm font-medium ${direction === 'inflow' ? 'market-up' : 'market-down'}`}>{fmtMoney(valueOf(item))}</span>
+            </div>
+            <div className="mt-2"><SectorDetailLine item={item} /></div>
           </div>
         )) : <div className="rounded-md border border-dashed px-3 py-5 text-center text-xs text-muted-foreground">当前没有满足同向价格与资金条件的板块</div>}
       </div>
@@ -533,6 +576,7 @@ export default function Home() {
   const latestAt = [radar.data?.retrievedAt, flow.data?.retrievedAt, ladder.data?.retrievedAt, speed.data?.retrievedAt]
     .filter(Boolean).sort().at(-1);
   const sourceError = radar.error || flow.error || ladder.error || speed.error;
+  const sourceNotice = sourceError || radar.data?.reason || flow.data?.reason || ladder.data?.reason || speed.data?.reason;
   const manualRefresh = async () => {
     setRefreshing(true);
     await Promise.all([radar.refresh(), flow.refresh(), ladder.refresh(), speed.refresh()]);
@@ -556,7 +600,7 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="hidden gap-1.5 sm:inline-flex"><span className={`size-1.5 rounded-full ${sourceError ? 'bg-amber-500' : 'bg-emerald-500'}`} />{sourceError ? '部分异常' : '监控中'} {fmtTime(latestAt)}</Badge>
+            <Badge variant="outline" className="hidden gap-1.5 sm:inline-flex"><span className={`size-1.5 rounded-full ${sourceNotice ? 'bg-amber-500' : 'bg-emerald-500'}`} />{sourceNotice ? '自动降级' : '监控中'} {fmtTime(latestAt)}</Badge>
             <Button variant="outline" size="sm" onClick={() => void manualRefresh()} aria-label="刷新盘中数据">
               <RefreshCw className={refreshing ? 'animate-spin' : ''} />
               <span className="hidden sm:inline">刷新</span>
@@ -566,10 +610,10 @@ export default function Home() {
       </header>
 
       <div className="mx-auto max-w-[1500px] space-y-4 px-4 py-4 sm:px-6 sm:py-6">
-        {sourceError && (
+        {sourceNotice && (
           <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
             <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
-            <span>部分数据暂时不可用，页面保留最近一次成功结果：{sourceError}</span>
+            <span>{sourceNotice}。系统会自动重连，已有快照时继续展示并标记为降级。</span>
           </div>
         )}
 
@@ -626,7 +670,7 @@ export default function Home() {
                       <CardAction><StateBadge state={selectedEvent.driverState} label={selectedEvent.windowReady ? '同窗口归因' : '当前资金代理'} /></CardAction>
                     </CardHeader>
                     <CardContent>
-                      {selectedEvent.drivers.length ? <Table><TableHeader><TableRow><TableHead>个股</TableHead><TableHead>行业</TableHead><TableHead className="text-right">窗口涨跌</TableHead><TableHead className="text-right">资金增量/代理</TableHead><TableHead className="text-right">贡献</TableHead></TableRow></TableHeader><TableBody>{selectedEvent.drivers.map((driver) => <TableRow key={driver.code}><TableCell><div className="font-medium">{driver.name}</div><div className="text-xs text-muted-foreground">{driver.code}</div></TableCell><TableCell>{driver.industry || '未知'}</TableCell><TableCell className={`text-right ${selectedEvent.direction === 'up' ? 'market-up' : 'market-down'}`}>{fmtPct(driver.changePct)}</TableCell><TableCell className={`text-right ${selectedEvent.direction === 'up' ? 'market-up' : 'market-down'}`}>{fmtMoney(driver.mainNetInflow)}</TableCell><TableCell className="text-right">{fmtPct(driver.contributionPct ?? null, 1)}</TableCell></TableRow>)}</TableBody></Table> : <EmptyState>成分股资金字段暂时缺失</EmptyState>}
+                      {selectedEvent.drivers.length ? <Table><TableHeader><TableRow><TableHead>个股</TableHead><TableHead>细分行业</TableHead><TableHead>归因层级</TableHead><TableHead className="text-right">{selectedEvent.windowReady ? '3分钟价格变化' : '当前涨速'}</TableHead><TableHead className="text-right">资金增量/代理</TableHead><TableHead className="text-right">资金贡献</TableHead></TableRow></TableHeader><TableBody>{selectedEvent.drivers.map((driver) => <TableRow key={driver.code}><TableCell><div className="font-medium">{driver.name}</div><div className="text-xs text-muted-foreground">{driver.code}</div></TableCell><TableCell>{driver.industry || '未知'}</TableCell><TableCell><Badge variant="outline" className={driver.driverRole === '价格与资金同向' ? 'status-ready' : 'status-degraded'}>{driver.driverRole || '当前代理'}</Badge></TableCell><TableCell className={`text-right ${selectedEvent.direction === 'up' ? 'market-up' : 'market-down'}`}>{fmtPct(selectedEvent.windowReady ? driver.changePct : driver.speedPct)}</TableCell><TableCell className={`text-right ${(driver.mainNetInflow ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtMoney(driver.mainNetInflow)}</TableCell><TableCell className="text-right">{fmtPct(driver.contributionPct ?? null, 1)}</TableCell></TableRow>)}</TableBody></Table> : <EmptyState>成分股暂时无法建立可追溯归因</EmptyState>}
                     </CardContent>
                   </Card>
                 )}
