@@ -13,7 +13,10 @@ export async function GET() {
       retrievedAt: new Date().toISOString(),
       reason: String(error),
       series: [],
-      split: { inflow: [], outflow: [], positiveCount: 0, negativeCount: 0 },
+      split: {
+        inflow: [], outflow: [], cumulativeInflow: [], cumulativeOutflow: [],
+        persistentStrong: [], persistentWeak: [], positiveCount: 0, negativeCount: 0,
+      },
     }, { status: 503 });
   }
 }

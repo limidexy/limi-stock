@@ -35,6 +35,7 @@ export type SectorFlowSeries = {
   latestMainNetInflow: number;
   delta5m: number | null;
   delta15m: number | null;
+  delta30m: number | null;
   points: SectorFlowPoint[];
 };
 
@@ -53,6 +54,10 @@ export type FlowSnapshot = {
   split: {
     inflow: SectorFlowSeries[];
     outflow: SectorFlowSeries[];
+    cumulativeInflow: SectorFlowSeries[];
+    cumulativeOutflow: SectorFlowSeries[];
+    persistentStrong: SectorFlowSeries[];
+    persistentWeak: SectorFlowSeries[];
     positiveCount: number;
     negativeCount: number;
   };
@@ -325,12 +330,27 @@ export async function getRadarSnapshot() {
       amount: numberOrNull(row.f6),
     }))
     .filter((row) => row.code && row.name && row.changePct !== null);
-  const up = boards.filter((row) => (row.speedPct ?? 0) > 0).sort((a, b) => (b.speedPct ?? 0) - (a.speedPct ?? 0)).slice(0, 3);
-  const down = boards.filter((row) => (row.speedPct ?? 0) < 0).sort((a, b) => (a.speedPct ?? 0) - (b.speedPct ?? 0)).slice(0, 3);
-  const selected = [...up, ...down];
+  const uniqueTop = <T extends { code: string }>(primary: T[], fallback: T[]) => {
+    const seen = new Set<string>();
+    return [...primary, ...fallback].filter((item) => {
+      if (seen.has(item.code)) return false;
+      seen.add(item.code);
+      return true;
+    }).slice(0, 3);
+  };
+  const speedUp = boards.filter((row) => (row.speedPct ?? 0) > 0).sort((a, b) => (b.speedPct ?? 0) - (a.speedPct ?? 0));
+  const speedDown = boards.filter((row) => (row.speedPct ?? 0) < 0).sort((a, b) => (a.speedPct ?? 0) - (b.speedPct ?? 0));
+  const dayUp = boards.filter((row) => (row.changePct ?? 0) > 0).sort((a, b) => (b.changePct ?? 0) - (a.changePct ?? 0));
+  const dayDown = boards.filter((row) => (row.changePct ?? 0) < 0).sort((a, b) => (a.changePct ?? 0) - (b.changePct ?? 0));
+  const up = uniqueTop(speedUp, dayUp);
+  const down = uniqueTop(speedDown, dayDown);
+  const selected = [
+    ...up.map((board) => ({ ...board, selectedDirection: 'up' as const })),
+    ...down.map((board) => ({ ...board, selectedDirection: 'down' as const })),
+  ];
 
   const events = await mapLimit(selected, 3, async (board) => {
-    const direction = (board.speedPct ?? 0) >= 0 ? 'up' : 'down';
+    const direction = board.selectedDirection;
     try {
       const members = await fetchClist({ fs: `b:${board.code}`, fid: 'f62', pageSize: 300 });
       const normalized = members.rows.map((row) => ({
@@ -354,14 +374,14 @@ export async function getRadarSnapshot() {
         }));
       const directionalCount = normalized.filter((row) => direction === 'up' ? (row.changePct ?? 0) > 0 : (row.changePct ?? 0) < 0).length;
       return {
-        ...board, direction, memberCount: members.total, directionalCount, drivers,
+        ...board, selectedDirection: undefined, direction, memberCount: members.total, directionalCount, drivers,
         members: normalized,
         driverState: drivers.length ? 'DEGRADED' as DataState : 'MISSING' as DataState,
         driverBasis: '当前累计主力净流入代理；连续打开3分钟后切换为同窗口增量',
       };
     } catch (error) {
       return {
-        ...board, direction, memberCount: null, directionalCount: null, drivers: [],
+        ...board, selectedDirection: undefined, direction, memberCount: null, directionalCount: null, drivers: [],
         members: [],
         driverState: 'MISSING' as DataState, driverBasis: `成分股不可用：${String(error)}`,
       };
@@ -438,6 +458,7 @@ async function fetchSectorFlowSeries(board: {
     latestMainNetInflow: latest,
     delta5m: deltaFrom(5),
     delta15m: deltaFrom(15),
+    delta30m: deltaFrom(30),
     points,
   };
 }
@@ -445,8 +466,8 @@ async function fetchSectorFlowSeries(board: {
 export async function getFlowSnapshot(): Promise<FlowSnapshot> {
   if (flowSnapshotCache && flowSnapshotCache.expiresAt > Date.now()) return flowSnapshotCache.value;
   const tradeDate = shanghaiDate();
-  const boardList = await fetchClist({
-    fs: 'm:90+t:3', fid: 'f62', pageSize: 1000,
+  const boardList = await fetchAllClist({
+    fs: 'm:90+t:3', fid: 'f62',
     fields: 'f12,f14,f3,f62',
   });
   const boards = boardList.rows
@@ -477,6 +498,22 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
     .filter((item) => (item.delta5m ?? 0) < 0)
     .sort((a, b) => (a.delta5m ?? 0) - (b.delta5m ?? 0))
     .slice(0, 6);
+  const cumulativeInflow = [...series]
+    .filter((item) => item.latestMainNetInflow > 0)
+    .sort((a, b) => b.latestMainNetInflow - a.latestMainNetInflow)
+    .slice(0, 6);
+  const cumulativeOutflow = [...series]
+    .filter((item) => item.latestMainNetInflow < 0)
+    .sort((a, b) => a.latestMainNetInflow - b.latestMainNetInflow)
+    .slice(0, 6);
+  const persistentStrong = [...series]
+    .filter((item) => (item.delta30m ?? 0) > 0 && item.latestMainNetInflow > 0 && (item.changePct ?? 0) > 0)
+    .sort((a, b) => (b.delta30m ?? 0) - (a.delta30m ?? 0))
+    .slice(0, 6);
+  const persistentWeak = [...series]
+    .filter((item) => (item.delta30m ?? 0) < 0 && item.latestMainNetInflow < 0 && (item.changePct ?? 0) < 0)
+    .sort((a, b) => (a.delta30m ?? 0) - (b.delta30m ?? 0))
+    .slice(0, 6);
   const curveState: DataState = series.length === candidates.length ? 'READY' : series.length ? 'DEGRADED' : 'MISSING';
   const splitState: DataState = splitReady.length === series.length && splitReady.length > 0 ? 'READY' : splitReady.length ? 'DEGRADED' : 'MISSING';
   const value: FlowSnapshot = {
@@ -488,12 +525,16 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
     phase: shanghaiMarketPhase(),
     lastPointTime: series.flatMap((item) => item.points.map((point) => point.time)).sort().at(-1) ?? null,
     source: '东方财富公开概念板块与主力资金分钟序列',
-    basis: '曲线为当日累计主力净流入；资金分流为最近5个有效交易分钟的增量。概念成分重叠，不作资金守恒解释。',
+    basis: '曲线为当日累计主力净流入；短时分流为最近5个有效交易分钟的增量，持续强弱使用30个有效交易分钟。概念成分重叠，不作资金守恒解释。',
     coverage: { requested: candidates.length, available: series.length },
     series,
     split: {
       inflow,
       outflow,
+      cumulativeInflow,
+      cumulativeOutflow,
+      persistentStrong,
+      persistentWeak,
       positiveCount: splitReady.filter((item) => (item.delta5m ?? 0) > 0).length,
       negativeCount: splitReady.filter((item) => (item.delta5m ?? 0) < 0).length,
     },

@@ -104,6 +104,7 @@ type SectorFlowSeries = {
   latestMainNetInflow: number;
   delta5m: number | null;
   delta15m: number | null;
+  delta30m: number | null;
   points: SectorFlowPoint[];
 };
 
@@ -123,6 +124,10 @@ type FlowData = {
   split: {
     inflow: SectorFlowSeries[];
     outflow: SectorFlowSeries[];
+    cumulativeInflow: SectorFlowSeries[];
+    cumulativeOutflow: SectorFlowSeries[];
+    persistentStrong: SectorFlowSeries[];
+    persistentWeak: SectorFlowSeries[];
     positiveCount: number;
     negativeCount: number;
   };
@@ -258,7 +263,8 @@ function useWindowedRadar(data: RadarData | null) {
       }
       const deltaChange = (event.changePct ?? 0) - (base.event.changePct ?? 0);
       const deltaFlow = (event.mainNetInflow ?? 0) - (base.event.mainNetInflow ?? 0);
-      const direction: 'up' | 'down' = deltaChange >= 0 ? 'up' : 'down';
+      const direction = event.direction;
+      const windowAligns = direction === 'up' ? deltaChange > 0 : deltaChange < 0;
       const baseMembers = new Map(base.event.members.map((member) => [member.code, member]));
       const candidates = event.members.map((member) => {
         const before = baseMembers.get(member.code);
@@ -282,10 +288,10 @@ function useWindowedRadar(data: RadarData | null) {
         ...event,
         direction,
         drivers: drivers.length ? drivers : event.drivers,
-        driverState: drivers.length ? 'READY' as DataState : event.driverState,
-        driverBasis: drivers.length ? '近3分钟个股主力净流入增量，占同向成分股增量的比例' : event.driverBasis,
-        windowReady: drivers.length > 0,
-        displayChangePct: deltaChange,
+        driverState: drivers.length && windowAligns ? 'READY' as DataState : event.driverState,
+        driverBasis: drivers.length && windowAligns ? '近3分钟个股主力净流入增量，占同向成分股增量的比例' : event.driverBasis,
+        windowReady: drivers.length > 0 && windowAligns,
+        displayChangePct: windowAligns ? deltaChange : event.speedPct,
         displayFlow: deltaFlow,
       };
     });
@@ -437,6 +443,47 @@ function FlowSplitList({ title, rows, direction }: {
   );
 }
 
+function HorizonFlowList({ title, rows, direction, horizon }: {
+  title: string;
+  rows: SectorFlowSeries[];
+  direction: 'inflow' | 'outflow';
+  horizon: 'day' | '30m';
+}) {
+  const valueOf = (item: SectorFlowSeries) => horizon === 'day' ? item.latestMainNetInflow : item.delta30m;
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h4 className={`text-sm font-medium ${direction === 'inflow' ? 'market-up' : 'market-down'}`}>{title}</h4>
+        <span className="text-[11px] text-muted-foreground">{horizon === 'day' ? '开盘至今' : '30个交易分钟'}</span>
+      </div>
+      <div className="grid gap-2">
+        {rows.length ? rows.map((item, index) => (
+          <div key={item.code} className="flex items-center justify-between gap-3 rounded-md bg-muted/45 px-2.5 py-2">
+            <div className="min-w-0"><div className="truncate text-sm"><span className="mr-2 text-xs text-muted-foreground">{index + 1}</span>{item.name}</div><div className="mt-0.5 text-[11px] text-muted-foreground">板块涨跌 {fmtPct(item.changePct)} · 累计 {fmtMoney(item.latestMainNetInflow)}</div></div>
+            <span className={`shrink-0 font-mono text-sm font-medium ${direction === 'inflow' ? 'market-up' : 'market-down'}`}>{fmtMoney(valueOf(item))}</span>
+          </div>
+        )) : <div className="rounded-md border border-dashed px-3 py-5 text-center text-xs text-muted-foreground">当前没有满足同向价格与资金条件的板块</div>}
+      </div>
+    </div>
+  );
+}
+
+function PersistentStrengthBoard({ data }: { data: FlowData }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>30分钟持续强弱</CardTitle>
+        <CardDescription>区别于上方短时异动：同时要求30分钟资金增量、当日累计资金和板块涨跌方向一致</CardDescription>
+        <CardAction><StateBadge state={data.series.some((item) => item.delta30m !== null) ? 'READY' : 'DEGRADED'} label="长周期" /></CardAction>
+      </CardHeader>
+      <CardContent className="grid gap-3 lg:grid-cols-2">
+        <HorizonFlowList title="持续强势" rows={data.split.persistentStrong} direction="inflow" horizon="30m" />
+        <HorizonFlowList title="持续弱势" rows={data.split.persistentWeak} direction="outflow" horizon="30m" />
+      </CardContent>
+    </Card>
+  );
+}
+
 function FlowSplitBoard({ data }: { data: FlowData }) {
   const leadersIn = data.split.inflow.slice(0, 3).map((item) => item.name).join('、') || '暂无';
   const leadersOut = data.split.outflow.slice(0, 3).map((item) => item.name).join('、') || '暂无';
@@ -455,6 +502,13 @@ function FlowSplitBoard({ data }: { data: FlowData }) {
         <FlowSplitList title="资金正在流入" rows={data.split.inflow} direction="inflow" />
         <FlowSplitList title="资金正在流出" rows={data.split.outflow} direction="outflow" />
       </div>
+      <Card>
+        <CardHeader><CardTitle>当日累计净流入 / 净流出</CardTitle><CardDescription>即使最近5分钟发生回流，日内累计失血板块仍会保留在净流出侧，不再消失</CardDescription></CardHeader>
+        <CardContent className="grid gap-3 lg:grid-cols-2">
+          <HorizonFlowList title="当日累计净流入" rows={data.split.cumulativeInflow} direction="inflow" horizon="day" />
+          <HorizonFlowList title="当日累计净流出" rows={data.split.cumulativeOutflow} direction="outflow" horizon="day" />
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -463,7 +517,7 @@ export default function Home() {
   const radar = usePolling<RadarData>('/api/radar', 15_000);
   const flow = usePolling<FlowData>('/api/flow', 60_000);
   const ladder = usePolling<LadderData>('/api/ladder', 30_000);
-  const speed = usePolling<SpeedData>('/api/speed', 5_000);
+  const speed = usePolling<SpeedData>('/api/speed', 2_000);
   const radarEvents = useWindowedRadar(radar.data);
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -524,7 +578,7 @@ export default function Home() {
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="size-4 text-violet-500" />资金曲线</CardTitle><CardAction><StateBadge state={flow.data?.status} /></CardAction><CardDescription>{flowCoverage ? `${flowCoverage.available}/${flowCoverage.requested}板块` : '正在连接'} · 分钟序列</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Layers3 className="size-4 text-sky-500" />驱动成分</CardTitle><CardAction><StateBadge state={selectedEvent?.driverState} label={selectedEvent?.windowReady ? '3分钟就绪' : '预热中'} /></CardAction><CardDescription>{selectedEvent ? `${selectedEvent.directionalCount ?? 0}/${selectedEvent.memberCount ?? 0}只同向` : '等待板块异动'} · 贡献可追溯</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Swords className="size-4 text-amber-500" />连板梯队</CardTitle><CardAction><StateBadge state={ladder.data?.status} /></CardAction><CardDescription>{ladderSummary ? `昨日${ladderSummary.previousLimitUp} · 今封${ladderSummary.todaySealed} · 炸${ladderSummary.todayFailed}` : '正在连接'} · 30秒刷新</CardDescription></CardHeader></Card>
-          <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Zap className="size-4 text-rose-500" />涨速样本</CardTitle><CardAction><StateBadge state={speed.data?.status} /></CardAction><CardDescription>{speedCoverage ? `概念${speedCoverage.conceptReady}/${speedCoverage.requested} · 涨停史${speedCoverage.recentLimitReady}/${speedCoverage.requested}` : '正在连接'} · 5秒刷新</CardDescription></CardHeader></Card>
+          <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Zap className="size-4 text-rose-500" />涨速样本</CardTitle><CardAction><StateBadge state={speed.data?.status} /></CardAction><CardDescription>{speedCoverage ? `概念${speedCoverage.conceptReady}/${speedCoverage.requested} · 涨停史${speedCoverage.recentLimitReady}/${speedCoverage.requested}` : '正在连接'} · 约2秒刷新</CardDescription></CardHeader></Card>
         </section>
 
         <Tabs defaultValue="radar" className="gap-4">
@@ -562,6 +616,8 @@ export default function Home() {
                   ))}
                 </div>
 
+                {flow.data?.series?.length ? <PersistentStrengthBoard data={flow.data} /> : null}
+
                 {selectedEvent && (
                   <Card>
                     <CardHeader>
@@ -598,7 +654,7 @@ export default function Home() {
 
           <TabsContent value="speed">
             <Card>
-              <CardHeader><CardTitle>涨速榜 · 打板观察</CardTitle><CardDescription>涨速只做触发器；同时展示当前涨幅、概念、板制距离与近20个交易日涨停次数</CardDescription><CardAction><div className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3.5" />5秒刷新</div></CardAction></CardHeader>
+              <CardHeader><CardTitle>涨速榜 · 打板观察</CardTitle><CardDescription>涨速只做触发器；同时展示当前涨幅、概念、板制距离与近20个交易日涨停次数。页面约2秒轮询，实际新成交到达速度以行情源为准</CardDescription><CardAction><div className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3.5" />约2秒刷新</div></CardAction></CardHeader>
               <CardContent>{speed.data?.rows?.length ? <Table><TableHeader><TableRow><TableHead>#</TableHead><TableHead>个股</TableHead><TableHead className="text-right">涨速</TableHead><TableHead className="text-right">涨幅</TableHead><TableHead>核心概念</TableHead><TableHead>近20日涨停</TableHead><TableHead className="text-right">距名义涨停</TableHead><TableHead>状态</TableHead></TableRow></TableHeader><TableBody>{speed.data.rows.map((row, index) => <TableRow key={row.code}><TableCell className="text-muted-foreground">{index + 1}</TableCell><TableCell><div className="font-medium">{row.name}</div><div className="text-xs text-muted-foreground">{row.code} · {row.limitPct}%板</div></TableCell><TableCell className={`text-right font-medium ${(row.speedPct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.speedPct)}</TableCell><TableCell className={`text-right ${(row.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.changePct)}</TableCell><TableCell><div className="flex min-w-[210px] flex-wrap gap-1">{row.concepts.length ? row.concepts.map((concept) => <Badge key={concept} variant="secondary">{concept}</Badge>) : <StateBadge state="MISSING" label="概念缺失" />}</div></TableCell><TableCell><span className="font-medium">{row.recentLimitCount ?? '—'}次</span><span className="ml-1 text-xs text-muted-foreground">/{row.recentLimitSessions}日</span></TableCell><TableCell className="text-right">{fmtPct(row.distanceToLimitPct)}</TableCell><TableCell><Badge variant="outline">{row.status}</Badge></TableCell></TableRow>)}</TableBody></Table> : <EmptyState>{speed.loading ? '正在补齐涨速票概念与近期涨停历史…' : speed.data?.reason || speed.error || '当前没有涨速样本'}</EmptyState>}</CardContent>
             </Card>
           </TabsContent>
