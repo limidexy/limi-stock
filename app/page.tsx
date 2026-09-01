@@ -233,8 +233,8 @@ type MarketTimelineRelatedStock = {
 
 type MarketTimelineEvent = {
   id: string;
-  kind: 'START' | 'CASHOUT' | 'WEAKEN';
-  label: '启动' | '兑现' | '走弱';
+  kind: 'START' | 'STRONG' | 'CASHOUT' | 'WEAKEN' | 'OBSERVE';
+  label: '启动' | '延续强势' | '兑现' | '走弱' | '震荡观察';
   sectorCode: string;
   sectorName: string;
   windowStartTime: string;
@@ -263,7 +263,7 @@ type MarketTimelineData = {
   lastPointTime: string | null;
   reason?: string;
   basis?: string;
-  coverage?: { sectors: number; events: number; indices: number; confirmedDrivers: number };
+  coverage?: { sectors: number; events: number; timeNodes?: number; indices: number; confirmedDrivers: number; relatedStocks?: number };
   events: MarketTimelineEvent[];
 };
 
@@ -621,6 +621,7 @@ function FlowSplitBoard({ data }: { data: FlowData }) {
 
 function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
   const starts = data.events.filter((event) => event.kind === 'START');
+  const strongs = data.events.filter((event) => event.kind === 'STRONG');
   const cashouts = data.events.filter((event) => event.kind === 'CASHOUT');
   const weakens = data.events.filter((event) => event.kind === 'WEAKEN');
   const strongest = [...starts].sort((a, b) => (b.sectorWindowChangePct ?? 0) - (a.sectorWindowChangePct ?? 0))[0];
@@ -640,8 +641,10 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
       if (names.length) phrases.push(`${names.join('、')}${names.length > 1 ? multiple : singular}`);
     };
     add('START', '启动', '同步启动');
+    add('STRONG', '延续强势', '同步延续强势');
     add('CASHOUT', '出现兑现', '同步出现兑现');
     add('WEAKEN', '转弱', '同步转弱');
+    add('OBSERVE', '进入震荡观察', '同步进入震荡观察');
     return phrases.join('；');
   };
 
@@ -650,8 +653,8 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
     if (!indices.length) return '指数同窗数据待补。';
     const detail = indices.map((marketIndex) => `${marketIndex.name}当时${fmtPct(marketIndex.changePct)}、5分钟${fmtPct(marketIndex.windowChangePct)}`).join('，');
     const windows = indices.map((marketIndex) => marketIndex.windowChangePct).filter((value): value is number => value !== null);
-    const hasStart = events.some((event) => event.kind === 'START');
-    const hasExit = events.some((event) => event.kind !== 'START');
+    const hasStart = events.some((event) => (event.sectorWindowChangePct ?? 0) > 0);
+    const hasExit = events.some((event) => (event.sectorWindowChangePct ?? 0) < 0);
     let relation = '指数分化，题材走势相对独立';
     if (windows.length && windows.every((value) => value > 0)) relation = hasStart ? '题材与指数共振上行' : '板块回落时指数仍有承接';
     if (windows.length && windows.every((value) => value < 0)) relation = hasStart ? '题材逆指数启动' : '板块回落与指数同向';
@@ -661,7 +664,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
   return (
     <div className="space-y-4">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="盘面脉络摘要">
-        <Card size="sm"><CardHeader><CardTitle>启动节点</CardTitle><CardAction><span className="market-up text-lg font-semibold">{starts.length}</span></CardAction><CardDescription>{starts.map((event) => event.sectorName).join('、') || '暂无达标板块'}</CardDescription></CardHeader></Card>
+        <Card size="sm"><CardHeader><CardTitle>启动 / 延续</CardTitle><CardAction><span className="market-up text-lg font-semibold">{starts.length + strongs.length}</span></CardAction><CardDescription>启动{starts.length} · 延续{strongs.length} · {data.coverage?.timeNodes ?? groups.length}个复盘时点</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>兑现 / 走弱</CardTitle><CardAction><span className="market-down text-lg font-semibold">{cashouts.length + weakens.length}</span></CardAction><CardDescription>兑现{cashouts.length} · 走弱{weakens.length}</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>最强启动</CardTitle><CardAction><ArrowUpRight className="size-4 market-up" /></CardAction><CardDescription>{strongest ? `${strongest.time} ${strongest.sectorName} ${fmtPct(strongest.sectorWindowChangePct)}` : '等待新启动'}</CardDescription></CardHeader></Card>
         <Card size="sm"><CardHeader><CardTitle>个股覆盖</CardTitle><CardAction><StateBadge state={data.status} /></CardAction><CardDescription>{data.coverage ? `${data.coverage.confirmedDrivers}只同窗确认 · ${relatedCount}只当日相关异动` : '正在对齐分钟序列'}</CardDescription></CardHeader></Card>
@@ -670,14 +673,14 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Clock3 className="size-5" />今日盘面直播</CardTitle>
-          <CardDescription>最新在上 · 同一分钟合并解读板块启动/兑现、指数环境、同窗确认股及更多相关异动股</CardDescription>
+          <CardDescription>最新在上 · 约每15分钟固定复盘，并补充当前最新节点；连续解读启动、延续、兑现、走弱及指数环境</CardDescription>
           <CardAction><StateBadge state={data.status} label={`${data.phase} ${data.lastPointTime ?? '—'}`} /></CardAction>
         </CardHeader>
         <CardContent>
           {groups.length ? (
             <div>
               {groups.map(([time, events], groupIndex) => {
-                const hasStart = events.some((event) => event.kind === 'START');
+                const bullish = events.reduce((sum, event) => sum + (event.sectorWindowChangePct ?? 0), 0) >= 0;
                 const relatedStocks = [...events.flatMap((event) => event.relatedStocks ?? []).reduce((stocks, stock) => {
                   if (!stocks.has(stock.code)) stocks.set(stock.code, stock);
                   return stocks;
@@ -692,11 +695,11 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                     <time className="pt-4 text-right font-mono text-sm font-semibold tabular-nums whitespace-nowrap">{time}</time>
                     <div className="relative flex justify-center">
                       <span className={`absolute w-px bg-border ${groupIndex === 0 ? 'top-5' : 'top-0'} ${groupIndex === groups.length - 1 ? 'bottom-5' : 'bottom-0'}`} />
-                      <span className={`relative mt-[18px] size-2.5 shrink-0 rounded-full ring-4 ring-background ${hasStart ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                      <span className={`relative mt-[18px] size-2.5 shrink-0 rounded-full ring-4 ring-background ${bullish ? 'bg-red-500' : 'bg-emerald-500'}`} />
                     </div>
-                    <div className={`mb-4 min-w-0 rounded-lg border p-3.5 sm:p-4 ${hasStart ? 'border-red-500/25 bg-red-500/[0.035]' : 'border-emerald-500/25 bg-emerald-500/[0.035]'}`}>
+                    <div className={`mb-4 min-w-0 rounded-lg border p-3.5 sm:p-4 ${bullish ? 'border-red-500/25 bg-red-500/[0.035]' : 'border-emerald-500/25 bg-emerald-500/[0.035]'}`}>
                       <div className="flex flex-wrap gap-2">
-                        {events.map((event) => <Badge key={event.id} variant="outline" className={event.kind === 'START' ? 'status-ready' : 'status-degraded'}>{event.sectorName} · {event.label}</Badge>)}
+                        {events.map((event) => <Badge key={event.id} variant="outline" className={(event.sectorWindowChangePct ?? 0) >= 0 ? 'status-ready' : 'status-degraded'}>{event.sectorName} · {event.label}</Badge>)}
                       </div>
                       <p className="mt-3 text-[15px] font-medium leading-7 sm:text-base">
                         {eventPhrase(events)}，5分钟板块变化为{moveText}。{indexPhrase(events)}
@@ -811,7 +814,7 @@ export default function Home() {
         )}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6" aria-label="数据状态">
-          <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="size-4 text-cyan-500" />盘面脉络</CardTitle><CardAction><StateBadge state={timeline.data?.status} /></CardAction><CardDescription>{timelineCoverage ? `${timelineCoverage.events}节点 · ${timelineCoverage.confirmedDrivers}只同窗确认` : '正在重建时间轴'} · 60秒刷新</CardDescription></CardHeader></Card>
+          <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="size-4 text-cyan-500" />盘面脉络</CardTitle><CardAction><StateBadge state={timeline.data?.status} /></CardAction><CardDescription>{timelineCoverage ? `${timelineCoverage.timeNodes ?? timelineCoverage.events}个复盘时点 · ${timelineCoverage.events}个板块节点` : '正在重建时间轴'} · 60秒刷新</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4 text-emerald-500" />概念板块</CardTitle><CardAction><StateBadge state={radar.data?.status} /></CardAction><CardDescription>{radarCoverage ? `${radarCoverage.available}/${radarCoverage.reported}板块` : '正在连接'} · 15秒刷新</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="size-4 text-violet-500" />资金曲线</CardTitle><CardAction><StateBadge state={flow.data?.status} /></CardAction><CardDescription>{flowCoverage ? `${flowCoverage.available}/${flowCoverage.requested}板块` : '正在连接'} · 分钟序列</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Layers3 className="size-4 text-sky-500" />驱动成分</CardTitle><CardAction><StateBadge state={selectedEvent?.driverState} label={selectedEvent?.windowReady ? '3分钟就绪' : '预热中'} /></CardAction><CardDescription>{selectedEvent ? `${selectedEvent.directionalCount ?? 0}/${selectedEvent.memberCount ?? 0}只同向` : '等待板块异动'} · 贡献可追溯</CardDescription></CardHeader></Card>

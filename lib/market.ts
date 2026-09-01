@@ -102,8 +102,8 @@ export type MarketTimelineRelatedStock = {
 
 export type MarketTimelineEvent = {
   id: string;
-  kind: 'START' | 'CASHOUT' | 'WEAKEN';
-  label: '启动' | '兑现' | '走弱';
+  kind: 'START' | 'STRONG' | 'CASHOUT' | 'WEAKEN' | 'OBSERVE';
+  label: '启动' | '延续强势' | '兑现' | '走弱' | '震荡观察';
   sectorCode: string;
   sectorName: string;
   windowStartTime: string;
@@ -134,7 +134,7 @@ export type MarketTimelineSnapshot = {
   sourceState: 'LIVE' | 'STALE';
   reason?: string;
   basis: string;
-  coverage: { sectors: number; events: number; indices: number; confirmedDrivers: number };
+  coverage: { sectors: number; events: number; timeNodes: number; indices: number; confirmedDrivers: number; relatedStocks: number };
   events: MarketTimelineEvent[];
 };
 
@@ -824,8 +824,8 @@ type TimelineBoard = {
 };
 
 type TimelineCandidate = {
-  kind: 'START' | 'CASHOUT' | 'WEAKEN';
-  label: '启动' | '兑现' | '走弱';
+  kind: 'START' | 'STRONG' | 'CASHOUT' | 'WEAKEN' | 'OBSERVE';
+  label: '启动' | '延续强势' | '兑现' | '走弱' | '震荡观察';
   sector: TimelineBoard;
   windowStartTime: string;
   time: string;
@@ -835,17 +835,17 @@ type TimelineCandidate = {
 
 async function fetchTimelineBoards() {
   const ranked = await Promise.allSettled([
-    fetchClist({ fs: 'm:90+t:3', fid: 'f22', order: 1, pageSize: 8, fields: 'f12,f14,f3,f22,f62' }),
-    fetchClist({ fs: 'm:90+t:3', fid: 'f22', order: 0, pageSize: 8, fields: 'f12,f14,f3,f22,f62' }),
-    fetchClist({ fs: 'm:90+t:3', fid: 'f3', order: 1, pageSize: 8, fields: 'f12,f14,f3,f22,f62' }),
-    fetchClist({ fs: 'm:90+t:3', fid: 'f3', order: 0, pageSize: 8, fields: 'f12,f14,f3,f22,f62' }),
+    fetchClist({ fs: 'm:90+t:3', fid: 'f22', order: 1, pageSize: 12, fields: 'f12,f14,f3,f22,f62' }),
+    fetchClist({ fs: 'm:90+t:3', fid: 'f22', order: 0, pageSize: 12, fields: 'f12,f14,f3,f22,f62' }),
+    fetchClist({ fs: 'm:90+t:3', fid: 'f3', order: 1, pageSize: 12, fields: 'f12,f14,f3,f22,f62' }),
+    fetchClist({ fs: 'm:90+t:3', fid: 'f3', order: 0, pageSize: 12, fields: 'f12,f14,f3,f22,f62' }),
   ]);
   const successful = ranked
     .filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof fetchClist>>> => result.status === 'fulfilled')
     .map((result) => result.value);
   if (!successful.length) throw new Error('板块排名端点暂时不可用');
   const selected = new Map<string, TimelineBoard>();
-  for (let rank = 0; rank < 8 && selected.size < 10; rank += 1) {
+  for (let rank = 0; rank < 12 && selected.size < 14; rank += 1) {
     for (const result of successful) {
       const row = result.rows[rank];
       if (!row) continue;
@@ -853,46 +853,91 @@ async function fetchTimelineBoards() {
       const name = String(row.f14 ?? '');
       if (!code || !name || /^(MSCI中国|融资融券|富时罗素|破增发价股|2026中报预增|科技风格|昨日.*)$/.test(name)) continue;
       selected.set(code, { code, name, changePct: numberOrNull(row.f3), mainNetInflow: numberOrNull(row.f62) });
-      if (selected.size >= 10) break;
+      if (selected.size >= 14) break;
     }
   }
   return { boards: [...selected.values()], stale: successful.some((result) => result.stale) };
 }
 
 function detectPriceTimelineCandidates(items: Array<{ sector: TimelineBoard; trend: IntradayTrend }>) {
-  const starts: TimelineCandidate[] = [];
-  const exits: TimelineCandidate[] = [];
-  for (const { sector, trend } of items) {
-    if (trend.points.length <= 5) continue;
-    const windows = trend.points.slice(5).map((point, offset) => {
-      const index = offset + 5;
+  const reference = items.find((item) => item.trend.points.length > 5)?.trend.points ?? [];
+  const checkpoints = reference.filter((point, index) => {
+    if (index < 5) return false;
+    if (point.time === '09:35' || point.time === '13:05') return true;
+    const minute = Number(point.time.slice(3, 5));
+    return Number.isFinite(minute) && minute % 15 === 0 && point.time !== '13:00';
+  }).map((point) => point.time);
+  const latest = reference.at(-1)?.time;
+  if (latest && !checkpoints.includes(latest)) {
+    const last = checkpoints.at(-1);
+    const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+    if (!last || minutes(latest) - minutes(last) >= 8) checkpoints.push(latest);
+  }
+
+  const strongSeen = new Set<string>();
+  const lastPickedAt = new Map<string, number>();
+  const output: TimelineCandidate[] = [];
+  const timeNumber = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+  for (const time of checkpoints) {
+    const observations = items.map(({ sector, trend }) => {
+      const index = trend.points.findLastIndex((point) => point.time <= time);
+      if (index < 5) return null;
+      const point = trend.points[index];
       const before = trend.points[index - 5];
       return {
-        index,
-        time: point.time,
+        sector,
         windowStartTime: before.time,
+        time: point.time,
         sectorAtTimeChangePct: trend.preClose ? (point.price / trend.preClose - 1) * 100 : null,
         sectorWindowChangePct: (point.price / before.price - 1) * 100,
       };
-    });
-    const start = [...windows].sort((a, b) => b.sectorWindowChangePct - a.sectorWindowChangePct)[0];
-    const minimum = [...windows]
-      .filter((item) => !start || item.index >= start.index + 3)
-      .sort((a, b) => a.sectorWindowChangePct - b.sectorWindowChangePct)[0];
-    if (start && start.sectorWindowChangePct >= 0.3) starts.push({ kind: 'START', label: '启动', sector, ...start });
-    if (minimum && minimum.sectorWindowChangePct <= -0.25) {
-      const isCashout = Boolean(start && start.sectorWindowChangePct >= 0.3 && minimum.index > start.index);
-      exits.push({ kind: isCashout ? 'CASHOUT' : 'WEAKEN', label: isCashout ? '兑现' : '走弱', sector, ...minimum });
+    }).filter(Boolean) as Array<Omit<TimelineCandidate, 'kind' | 'label'>>;
+    if (!observations.length) continue;
+
+    const currentMinute = timeNumber(time);
+    const pickDiverse = (rows: Array<Omit<TimelineCandidate, 'kind' | 'label'>>) => (
+      rows.find((row) => currentMinute - (lastPickedAt.get(row.sector.code) ?? -999) >= 30) ?? rows[0]
+    );
+    const positive = observations.filter((row) => row.sectorWindowChangePct > 0)
+      .sort((a, b) => b.sectorWindowChangePct - a.sectorWindowChangePct);
+    const negative = observations.filter((row) => row.sectorWindowChangePct < 0)
+      .sort((a, b) => a.sectorWindowChangePct - b.sectorWindowChangePct);
+    const strongest = [...observations].sort((a, b) => Math.abs(b.sectorWindowChangePct) - Math.abs(a.sectorWindowChangePct))[0];
+    const selected: Array<Omit<TimelineCandidate, 'kind' | 'label'>> = [];
+    if (strongest && Math.abs(strongest.sectorWindowChangePct) >= 0.06) {
+      const sameSide = strongest.sectorWindowChangePct >= 0 ? positive : negative;
+      selected.push(pickDiverse(sameSide));
     }
+    const opposite = strongest?.sectorWindowChangePct >= 0 ? pickDiverse(negative) : pickDiverse(positive);
+    if (opposite && Math.abs(opposite.sectorWindowChangePct) >= 0.15 && !selected.some((row) => row.sector.code === opposite.sector.code)) selected.push(opposite);
+
+    for (const row of selected) {
+      const delta = row.sectorWindowChangePct;
+      let kind: TimelineCandidate['kind'] = 'OBSERVE';
+      let label: TimelineCandidate['label'] = '震荡观察';
+      if (delta >= 0.18) {
+        kind = strongSeen.has(row.sector.code) ? 'STRONG' : 'START';
+        label = kind === 'START' ? '启动' : '延续强势';
+      } else if (delta <= -0.18) {
+        kind = strongSeen.has(row.sector.code) ? 'CASHOUT' : 'WEAKEN';
+        label = kind === 'CASHOUT' ? '兑现' : '走弱';
+      }
+      output.push({ ...row, kind, label });
+      lastPickedAt.set(row.sector.code, currentMinute);
+    }
+    observations.filter((row) => row.sectorWindowChangePct >= 0.18)
+      .forEach((row) => strongSeen.add(row.sector.code));
   }
-  return [
-    ...starts.sort((a, b) => b.sectorWindowChangePct - a.sectorWindowChangePct).slice(0, 3),
-    ...exits.sort((a, b) => a.sectorWindowChangePct - b.sectorWindowChangePct).slice(0, 3),
-  ].sort((a, b) => a.time.localeCompare(b.time) || a.sector.name.localeCompare(b.sector.name));
+  return output.sort((a, b) => a.time.localeCompare(b.time) || a.sector.name.localeCompare(b.sector.name));
 }
 
-async function fetchTimelineDrivers(candidate: TimelineCandidate, tradeDate: string) {
-  const direction: 0 | 1 = candidate.kind === 'START' ? 1 : 0;
+function timelineContextKey(candidate: TimelineCandidate) {
+  return `${candidate.sector.code}:${candidate.sectorWindowChangePct >= 0 ? 'up' : 'down'}`;
+}
+
+async function fetchTimelineMembers(candidate: TimelineCandidate) {
+  const direction: 0 | 1 = candidate.sectorWindowChangePct >= 0 ? 1 : 0;
   const members = await fetchClist({
     fs: `b:${candidate.sector.code}`,
     fid: 'f3',
@@ -908,11 +953,15 @@ async function fetchTimelineDrivers(candidate: TimelineCandidate, tradeDate: str
     speedPct: numberOrNull(row.f22),
     mainNetInflow: numberOrNull(row.f62),
   })).filter((row) => row.code && row.name);
+  return { relatedStocks, stale: Boolean(members.stale) };
+}
+
+async function confirmTimelineDrivers(candidate: TimelineCandidate, relatedStocks: MarketTimelineRelatedStock[], tradeDate: string) {
   const drivers = await mapLimit(relatedStocks.slice(0, 2), 2, async (row): Promise<MarketTimelineDriver> => {
     try {
       const trend = await fetchIntradayTrend({ code: row.code, secid: secid(row.code) }, tradeDate);
       const { windowChangePct } = trendWindow(trend, candidate.windowStartTime, candidate.time);
-      const aligns = windowChangePct !== null && (candidate.kind === 'START' ? windowChangePct > 0 : windowChangePct < 0);
+      const aligns = windowChangePct !== null && (candidate.sectorWindowChangePct >= 0 ? windowChangePct > 0 : windowChangePct < 0);
       return {
         code: row.code,
         name: row.name,
@@ -936,7 +985,7 @@ async function fetchTimelineDrivers(candidate: TimelineCandidate, tradeDate: str
     const role = Number(b.role === '同窗价格确认') - Number(a.role === '同窗价格确认');
     return role || Math.abs(b.mainNetInflow ?? 0) - Math.abs(a.mainNetInflow ?? 0);
   });
-  return { drivers: sortedDrivers, relatedStocks, stale: Boolean(members.stale) };
+  return sortedDrivers;
 }
 
 export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapshot> {
@@ -962,15 +1011,35 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
   const indices = indexSettled
     .filter((result): result is PromiseFulfilledResult<IntradayTrend> => result.status === 'fulfilled')
     .map((result) => result.value);
-  const driverGroups = await mapLimit(candidates, 4, async (candidate) => {
+  const contextCandidates = [...candidates.reduce((contexts, candidate) => {
+    const key = timelineContextKey(candidate);
+    if (!contexts.has(key)) contexts.set(key, candidate);
+    return contexts;
+  }, new Map<string, TimelineCandidate>()).entries()];
+  const contextResults = await mapLimit(contextCandidates, 6, async ([key, candidate]) => {
     try {
-      return await fetchTimelineDrivers(candidate, tradeDate);
+      return [key, await fetchTimelineMembers(candidate)] as const;
     } catch {
-      return { drivers: [], relatedStocks: [], stale: false };
+      return [key, { relatedStocks: [], stale: false }] as const;
+    }
+  });
+  const contexts = new Map(contextResults);
+  const confirmIds = new Set([...candidates]
+    .sort((a, b) => Math.abs(b.sectorWindowChangePct) - Math.abs(a.sectorWindowChangePct))
+    .slice(0, 10)
+    .map((candidate) => `${candidate.sector.code}-${candidate.kind}-${candidate.time}`));
+  const driverGroups = await mapLimit(candidates, 6, async (candidate) => {
+    const id = `${candidate.sector.code}-${candidate.kind}-${candidate.time}`;
+    if (!confirmIds.has(id)) return [];
+    try {
+      return await confirmTimelineDrivers(candidate, contexts.get(timelineContextKey(candidate))?.relatedStocks ?? [], tradeDate);
+    } catch {
+      return [];
     }
   });
   const events: MarketTimelineEvent[] = candidates.map((candidate, index) => {
-    const { drivers, relatedStocks } = driverGroups[index];
+    const drivers = driverGroups[index];
+    const relatedStocks = contexts.get(timelineContextKey(candidate))?.relatedStocks ?? [];
     const confirmed = drivers.filter((driver) => driver.role === '同窗价格确认').length;
     return {
       id: `${candidate.sector.code}-${candidate.kind}-${candidate.time}`,
@@ -994,14 +1063,14 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
       driverState: confirmed > 0 && indices.length === 2 ? 'READY' : drivers.length ? 'DEGRADED' : 'MISSING',
       driverBasis: confirmed > 0
         ? `5分钟同窗价格确认${confirmed}/${drivers.length}只；下方扩展股为当日最新异动，不冒充事件时点因果`
-        : '暂无同窗价格确认；下方扩展股仅代表当日最新相关异动',
+        : '该节点未进入重点同窗核验；下方扩展股仅代表当日最新相关异动',
     };
   });
   const confirmedDrivers = events.flatMap((event) => event.drivers)
     .filter((driver) => driver.role === '同窗价格确认').length;
   const sourceStale = ranked.stale || indices.some((item) => item.stale)
-    || boardTrends.some((item) => item.trend.stale) || driverGroups.some((item) => item.stale);
-  const status: DataState = events.length && indices.length === 2 && events.every((event) => event.driverState === 'READY') && !sourceStale
+    || boardTrends.some((item) => item.trend.stale) || [...contexts.values()].some((item) => item.stale);
+  const status: DataState = events.length && indices.length === 2 && events.every((event) => event.relatedStocks.length) && !sourceStale
     ? 'READY' : events.length ? 'DEGRADED' : 'MISSING';
   const value: MarketTimelineSnapshot = {
     status,
@@ -1012,8 +1081,15 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     source: '东方财富公开板块、指数与个股分钟序列',
     sourceState: sourceStale ? 'STALE' : 'LIVE',
     reason: sourceStale ? '部分分钟端点短暂波动，已使用同交易日最近快照' : undefined,
-    basis: '启动=板块5个有效交易分钟价格明显上行；兑现=先有启动且之后出现5分钟明显回落；否则标为走弱。同窗确认股使用相同5分钟价格方向校验；扩展异动股展示该板块当日最新涨跌，二者分开标注，不把当前排名冒充历史时点因果。',
-    coverage: { sectors: boardTrends.length, events: events.length, indices: indices.length, confirmedDrivers },
+    basis: '每15分钟固定复盘一次，并补充当前最新节点；每个时点从细分板块中选取最明显方向及显著反向分支。启动/延续强势要求板块5个有效交易分钟明显上行；先走强后回落标为兑现，未走强直接下行标为走弱，小幅变化标为震荡观察。同窗确认股仅覆盖波动最显著的重点节点；扩展异动股展示该板块当日最新涨跌，不把当前排名冒充历史时点因果。',
+    coverage: {
+      sectors: boardTrends.length,
+      events: events.length,
+      timeNodes: new Set(events.map((event) => event.time)).size,
+      indices: indices.length,
+      confirmedDrivers,
+      relatedStocks: new Set(events.flatMap((event) => event.relatedStocks.map((stock) => stock.code))).size,
+    },
     events,
   };
   timelineSnapshotCache = { expiresAt: Date.now() + 45_000, value };
