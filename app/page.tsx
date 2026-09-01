@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowDownRight,
+  ArrowLeftRight,
   ArrowUpRight,
   Clock3,
   Layers3,
@@ -14,9 +15,23 @@ import {
   TrendingUp,
   Zap,
 } from 'lucide-react';
+import {
+  CartesianGrid,
+  Line,
+  LineChart as RechartsLineChart,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
 import {
   Card,
   CardAction,
@@ -75,6 +90,42 @@ type RadarData = {
   reason?: string;
   coverage?: { reported: number; available: number };
   events: RadarEvent[];
+};
+
+type SectorFlowPoint = {
+  time: string;
+  mainNetInflow: number;
+};
+
+type SectorFlowSeries = {
+  code: string;
+  name: string;
+  changePct: number | null;
+  latestMainNetInflow: number;
+  delta5m: number | null;
+  delta15m: number | null;
+  points: SectorFlowPoint[];
+};
+
+type FlowData = {
+  status: DataState;
+  curveState: DataState;
+  splitState: DataState;
+  retrievedAt: string;
+  tradeDate: string;
+  phase: string;
+  lastPointTime: string | null;
+  source?: string;
+  basis?: string;
+  reason?: string;
+  coverage?: { requested: number; available: number };
+  series: SectorFlowSeries[];
+  split: {
+    inflow: SectorFlowSeries[];
+    outflow: SectorFlowSeries[];
+    positiveCount: number;
+    negativeCount: number;
+  };
 };
 
 type Promotion = {
@@ -278,8 +329,139 @@ function EmptyState({ children }: { children: React.ReactNode }) {
   return <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">{children}</div>;
 }
 
+const FLOW_COLORS = [
+  '#dc2626', '#e65b33', '#f59e0b', '#a855f7', '#7c3aed', '#2563eb', '#0891b2', '#0d9488',
+  '#16a34a', '#65a30d', '#475569', '#64748b', '#9333ea', '#db2777', '#0f766e', '#4f46e5',
+];
+
+function SectorFlowChart({ data }: { data: FlowData }) {
+  const [mode, setMode] = useState<'all' | 'inflow' | 'outflow'>('all');
+  const colorByCode = useMemo(() => new Map(
+    data.series.map((item, index) => [item.code, FLOW_COLORS[index % FLOW_COLORS.length]]),
+  ), [data.series]);
+  const visible = useMemo(() => data.series.filter((item) => {
+    if (mode === 'inflow') return item.latestMainNetInflow >= 0;
+    if (mode === 'outflow') return item.latestMainNetInflow < 0;
+    return true;
+  }), [data.series, mode]);
+  const chartData = useMemo(() => {
+    const rows = new Map<string, Record<string, string | number>>();
+    for (const item of visible) {
+      for (const point of item.points) {
+        const row = rows.get(point.time) ?? { time: point.time };
+        row[item.code] = point.mainNetInflow / 100_000_000;
+        rows.set(point.time, row);
+      }
+    }
+    return [...rows.values()].sort((a, b) => String(a.time).localeCompare(String(b.time)));
+  }, [visible]);
+  const chartConfig = useMemo(() => Object.fromEntries(visible.map((item) => [
+    item.code,
+    { label: item.name, color: colorByCode.get(item.code) ?? '#64748b' },
+  ])) as ChartConfig, [colorByCode, visible]);
+  const ranking = [...visible].sort((a, b) => b.latestMainNetInflow - a.latestMainNetInflow);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Activity className="size-5" />盘中板块主力净流入曲线</CardTitle>
+        <CardDescription>从开盘累计到当前分钟，单位：亿元；右侧为各板块最新累计值</CardDescription>
+        <CardAction><StateBadge state={data.curveState} label={`${data.coverage?.available ?? 0}/${data.coverage?.requested ?? 0}板块`} /></CardAction>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex gap-1">
+            {([['all', '全部曲线'], ['inflow', '净流入'], ['outflow', '净流出']] as const).map(([value, label]) => (
+              <Button key={value} type="button" size="sm" variant={mode === value ? 'default' : 'outline'} onClick={() => setMode(value)}>{label}</Button>
+            ))}
+          </div>
+          <div className="text-xs text-muted-foreground">{data.tradeDate} · {data.phase} · 最新点 {data.lastPointTime ?? '—'}</div>
+        </div>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_230px]">
+          <ChartContainer config={chartConfig} className="h-[430px] w-full aspect-auto" initialDimension={{ width: 960, height: 430 }}>
+            <RechartsLineChart data={chartData} margin={{ top: 10, right: 12, bottom: 0, left: 4 }} accessibilityLayer>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis dataKey="time" tickLine={false} axisLine={false} minTickGap={36} />
+              <YAxis tickLine={false} axisLine={false} width={58} tickFormatter={(value) => `${Number(value).toFixed(0)}亿`} />
+              <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1.5} />
+              <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
+              {visible.map((item) => (
+                <Line key={item.code} type="monotone" dataKey={item.code} name={item.name} stroke={colorByCode.get(item.code)} strokeWidth={1.8} dot={false} connectNulls={false} isAnimationActive={false} />
+              ))}
+            </RechartsLineChart>
+          </ChartContainer>
+          <div className="grid max-h-[430px] content-start gap-1 overflow-y-auto pr-1" aria-label="板块最新主力净流入排名">
+            {ranking.map((item) => (
+              <div key={item.code} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/70">
+                <span className="flex min-w-0 items-center gap-2"><span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: colorByCode.get(item.code) }} /><span className="truncate">{item.name}</span></span>
+                <span className={`shrink-0 font-mono font-medium ${item.latestMainNetInflow >= 0 ? 'market-up' : 'market-down'}`}>{fmtMoney(item.latestMainNetInflow)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">{data.basis}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FlowSplitList({ title, rows, direction }: {
+  title: string;
+  rows: SectorFlowSeries[];
+  direction: 'inflow' | 'outflow';
+}) {
+  const maxValue = Math.max(...rows.map((item) => Math.abs(item.delta5m ?? 0)), 1);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className={`flex items-center gap-2 ${direction === 'inflow' ? 'market-up' : 'market-down'}`}>
+          {direction === 'inflow' ? <ArrowUpRight className="size-5" /> : <ArrowDownRight className="size-5" />}{title}
+        </CardTitle>
+        <CardDescription>按最近5个有效交易分钟的主力净流入增量排序</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {rows.length ? rows.map((item, index) => (
+          <div key={item.code} className="space-y-1.5">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate"><span className="mr-2 text-xs text-muted-foreground">{index + 1}</span>{item.name}</span>
+              <span className={`shrink-0 font-mono font-medium ${direction === 'inflow' ? 'market-up' : 'market-down'}`}>{fmtMoney(item.delta5m)}</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className={`h-full rounded-full ${direction === 'inflow' ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.max(4, Math.abs(item.delta5m ?? 0) / maxValue * 100)}%` }} />
+            </div>
+            <div className="flex justify-between text-[11px] text-muted-foreground"><span>累计 {fmtMoney(item.latestMainNetInflow)}</span><span>15分钟 {fmtMoney(item.delta15m)}</span></div>
+          </div>
+        )) : <EmptyState>当前样本中暂无这一方向的资金增量</EmptyState>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FlowSplitBoard({ data }: { data: FlowData }) {
+  const leadersIn = data.split.inflow.slice(0, 3).map((item) => item.name).join('、') || '暂无';
+  const leadersOut = data.split.outflow.slice(0, 3).map((item) => item.name).join('、') || '暂无';
+  return (
+    <div className="space-y-4">
+      <section className="grid gap-3 md:grid-cols-3" aria-label="资金分流摘要">
+        <Card size="sm"><CardHeader><CardTitle>流入侧扩散</CardTitle><CardAction><span className="market-up text-lg font-semibold">{data.split.positiveCount}</span></CardAction><CardDescription>{leadersIn}</CardDescription></CardHeader></Card>
+        <Card size="sm"><CardHeader><CardTitle>流出侧扩散</CardTitle><CardAction><span className="market-down text-lg font-semibold">{data.split.negativeCount}</span></CardAction><CardDescription>{leadersOut}</CardDescription></CardHeader></Card>
+        <Card size="sm"><CardHeader><CardTitle>观察窗口</CardTitle><CardAction><StateBadge state={data.splitState} /></CardAction><CardDescription>最近5个有效交易分钟 · {data.phase} {data.lastPointTime ?? '—'}</CardDescription></CardHeader></Card>
+      </section>
+      <div className="rounded-lg border bg-muted/35 px-4 py-3 text-sm">
+        <div className="flex items-center gap-2 font-medium"><ArrowLeftRight className="size-4" />资金分流观察</div>
+        <p className="mt-1 text-muted-foreground">流出侧集中在「{leadersOut}」，流入侧集中在「{leadersIn}」。这是概念板块的方向对照，不代表这些板块之间存在可逐笔证明的一一转移关系。</p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <FlowSplitList title="资金正在流入" rows={data.split.inflow} direction="inflow" />
+        <FlowSplitList title="资金正在流出" rows={data.split.outflow} direction="outflow" />
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const radar = usePolling<RadarData>('/api/radar', 15_000);
+  const flow = usePolling<FlowData>('/api/flow', 60_000);
   const ladder = usePolling<LadderData>('/api/ladder', 30_000);
   const speed = usePolling<SpeedData>('/api/speed', 5_000);
   const radarEvents = useWindowedRadar(radar.data);
@@ -294,18 +476,19 @@ export default function Home() {
   }, [radarEvents, selectedSector]);
 
   const selectedEvent = radarEvents.find((event) => event.code === selectedSector) ?? radarEvents[0];
-  const latestAt = [radar.data?.retrievedAt, ladder.data?.retrievedAt, speed.data?.retrievedAt]
+  const latestAt = [radar.data?.retrievedAt, flow.data?.retrievedAt, ladder.data?.retrievedAt, speed.data?.retrievedAt]
     .filter(Boolean).sort().at(-1);
-  const sourceError = radar.error || ladder.error || speed.error;
+  const sourceError = radar.error || flow.error || ladder.error || speed.error;
   const manualRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([radar.refresh(), ladder.refresh(), speed.refresh()]);
+    await Promise.all([radar.refresh(), flow.refresh(), ladder.refresh(), speed.refresh()]);
     setRefreshing(false);
   };
 
   const ladderSummary = ladder.data?.counts;
   const speedCoverage = speed.data?.coverage;
   const radarCoverage = radar.data?.coverage;
+  const flowCoverage = flow.data?.coverage;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -315,7 +498,7 @@ export default function Home() {
             <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground"><Activity /></div>
             <div className="min-w-0">
               <h1 className="truncate text-base font-semibold tracking-tight sm:text-lg">等风盘中 · 异动与晋级监控</h1>
-              <p className="truncate text-xs text-muted-foreground">板块驱动、连板梯队与打板涨速一屏联动</p>
+              <p className="truncate text-xs text-muted-foreground">板块资金曲线、资金分流、连板梯队与涨速一屏联动</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -336,8 +519,9 @@ export default function Home() {
           </div>
         )}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="数据状态">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="数据状态">
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4 text-emerald-500" />概念板块</CardTitle><CardAction><StateBadge state={radar.data?.status} /></CardAction><CardDescription>{radarCoverage ? `${radarCoverage.available}/${radarCoverage.reported}板块` : '正在连接'} · 15秒刷新</CardDescription></CardHeader></Card>
+          <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="size-4 text-violet-500" />资金曲线</CardTitle><CardAction><StateBadge state={flow.data?.status} /></CardAction><CardDescription>{flowCoverage ? `${flowCoverage.available}/${flowCoverage.requested}板块` : '正在连接'} · 分钟序列</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Layers3 className="size-4 text-sky-500" />驱动成分</CardTitle><CardAction><StateBadge state={selectedEvent?.driverState} label={selectedEvent?.windowReady ? '3分钟就绪' : '预热中'} /></CardAction><CardDescription>{selectedEvent ? `${selectedEvent.directionalCount ?? 0}/${selectedEvent.memberCount ?? 0}只同向` : '等待板块异动'} · 贡献可追溯</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Swords className="size-4 text-amber-500" />连板梯队</CardTitle><CardAction><StateBadge state={ladder.data?.status} /></CardAction><CardDescription>{ladderSummary ? `昨日${ladderSummary.previousLimitUp} · 今封${ladderSummary.todaySealed} · 炸${ladderSummary.todayFailed}` : '正在连接'} · 30秒刷新</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Zap className="size-4 text-rose-500" />涨速样本</CardTitle><CardAction><StateBadge state={speed.data?.status} /></CardAction><CardDescription>{speedCoverage ? `概念${speedCoverage.conceptReady}/${speedCoverage.requested} · 涨停史${speedCoverage.recentLimitReady}/${speedCoverage.requested}` : '正在连接'} · 5秒刷新</CardDescription></CardHeader></Card>
@@ -346,12 +530,14 @@ export default function Home() {
         <Tabs defaultValue="radar" className="gap-4">
           <TabsList variant="line" className="max-w-full overflow-x-auto">
             <TabsTrigger value="radar"><Activity />板块异动</TabsTrigger>
+            <TabsTrigger value="flow"><ArrowLeftRight />资金分流</TabsTrigger>
             <TabsTrigger value="promotion"><TrendingUp />连板晋级</TabsTrigger>
             <TabsTrigger value="competition"><Swords />梯队竞争</TabsTrigger>
             <TabsTrigger value="speed"><Zap />涨速榜</TabsTrigger>
           </TabsList>
 
           <TabsContent value="radar" className="space-y-4">
+            {flow.data?.series?.length ? <SectorFlowChart data={flow.data} /> : <EmptyState>{flow.loading ? '正在读取板块主力净流入分钟曲线…' : flow.data?.reason || flow.error || '当前没有可用的板块资金曲线'}</EmptyState>}
             {!radarEvents.length ? <EmptyState>{radar.loading ? '正在建立板块监控…' : radar.data?.reason || radar.error || '当前没有达到阈值的板块异动'}</EmptyState> : (
               <>
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -390,6 +576,10 @@ export default function Home() {
                 )}
               </>
             )}
+          </TabsContent>
+
+          <TabsContent value="flow">
+            {flow.data?.series?.length ? <FlowSplitBoard data={flow.data} /> : <EmptyState>{flow.loading ? '正在计算盘中资金分流…' : flow.data?.reason || flow.error || '当前没有可用的资金分流样本'}</EmptyState>}
           </TabsContent>
 
           <TabsContent value="promotion">

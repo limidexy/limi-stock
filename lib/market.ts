@@ -23,8 +23,44 @@ export type LimitHistory = {
   reason?: string;
 };
 
+export type SectorFlowPoint = {
+  time: string;
+  mainNetInflow: number;
+};
+
+export type SectorFlowSeries = {
+  code: string;
+  name: string;
+  changePct: number | null;
+  latestMainNetInflow: number;
+  delta5m: number | null;
+  delta15m: number | null;
+  points: SectorFlowPoint[];
+};
+
+export type FlowSnapshot = {
+  status: DataState;
+  curveState: DataState;
+  splitState: DataState;
+  retrievedAt: string;
+  tradeDate: string;
+  phase: string;
+  lastPointTime: string | null;
+  source: string;
+  basis: string;
+  coverage: { requested: number; available: number };
+  series: SectorFlowSeries[];
+  split: {
+    inflow: SectorFlowSeries[];
+    outflow: SectorFlowSeries[];
+    positiveCount: number;
+    negativeCount: number;
+  };
+};
+
 type ClistRow = Record<string, string | number | null>;
 type PoolRow = Record<string, unknown>;
+let flowSnapshotCache: CacheRecord<FlowSnapshot> | null = null;
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -342,6 +378,128 @@ export async function getRadarSnapshot() {
     events,
     latencyMs: Date.now() - startedAt,
   };
+}
+
+function shanghaiMarketPhase(value = new Date()): string {
+  const clock = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(value);
+  if (clock < '09:30') return '盘前';
+  if (clock <= '11:30') return '上午盘';
+  if (clock < '13:00') return '午间休市';
+  if (clock <= '15:00') return '下午盘';
+  return '收盘后';
+}
+
+async function fetchSectorFlowSeries(board: {
+  code: string;
+  name: string;
+  changePct: number | null;
+}, tradeDate: string): Promise<SectorFlowSeries> {
+  const params = new URLSearchParams({
+    lmt: '0',
+    klt: '1',
+    secid: `90.${board.code}`,
+    fields1: 'f1,f2,f3,f7',
+    fields2: 'f51,f52,f53,f54,f55,f56',
+    ut: PUBLIC_CLIENT_TOKEN,
+  });
+  const failures: string[] = [];
+  let payload: Record<string, unknown> | null = null;
+  for (const host of ['push2delay.eastmoney.com', 'push2his.eastmoney.com']) {
+    try {
+      payload = await fetchJson(`https://${host}/api/qt/stock/fflow/kline/get?${params}`, 12_000);
+      const data = (payload.data ?? {}) as Record<string, unknown>;
+      if (Array.isArray(data.klines) && data.klines.length) break;
+      failures.push(`${host}:分时为空`);
+      payload = null;
+    } catch (error) {
+      failures.push(`${host}:${String(error)}`);
+    }
+  }
+  if (!payload) throw new Error(`${board.name}分时不可用 ${failures.join(' | ')}`);
+  const data = (payload.data ?? {}) as Record<string, unknown>;
+  const points = (data.klines as string[])
+    .map((row) => {
+      const [stamp, main] = String(row).split(',');
+      const rowDate = stamp.slice(0, 10).replaceAll('-', '');
+      const value = Number(main);
+      if (rowDate !== tradeDate || !Number.isFinite(value)) return null;
+      return { time: stamp.slice(11, 16), mainNetInflow: value };
+    })
+    .filter(Boolean) as SectorFlowPoint[];
+  if (!points.length) throw new Error(`${board.name}未返回${tradeDate}的分钟资金`);
+  const latest = points.at(-1)?.mainNetInflow ?? 0;
+  const deltaFrom = (minutes: number) => points.length > minutes
+    ? latest - points[points.length - 1 - minutes].mainNetInflow
+    : null;
+  return {
+    ...board,
+    latestMainNetInflow: latest,
+    delta5m: deltaFrom(5),
+    delta15m: deltaFrom(15),
+    points,
+  };
+}
+
+export async function getFlowSnapshot(): Promise<FlowSnapshot> {
+  if (flowSnapshotCache && flowSnapshotCache.expiresAt > Date.now()) return flowSnapshotCache.value;
+  const tradeDate = shanghaiDate();
+  const boardList = await fetchClist({
+    fs: 'm:90+t:3', fid: 'f62', pageSize: 1000,
+    fields: 'f12,f14,f3,f62',
+  });
+  const boards = boardList.rows
+    .map((row) => ({
+      code: String(row.f12 ?? ''),
+      name: String(row.f14 ?? ''),
+      changePct: numberOrNull(row.f3),
+      mainNetInflow: numberOrNull(row.f62),
+    }))
+    .filter((row) => row.code && row.name && row.mainNetInflow !== null);
+  const byFlow = [...boards].sort((a, b) => (b.mainNetInflow ?? 0) - (a.mainNetInflow ?? 0));
+  const candidates = [...byFlow.slice(0, 8), ...byFlow.slice(-8)]
+    .map(({ code, name, changePct }) => ({ code, name, changePct }));
+  const settled = await mapLimit(candidates, 4, async (board) => {
+    try {
+      return await fetchSectorFlowSeries(board, tradeDate);
+    } catch {
+      return null;
+    }
+  });
+  const series = settled.filter(Boolean) as SectorFlowSeries[];
+  const splitReady = series.filter((item) => item.delta5m !== null);
+  const inflow = [...splitReady]
+    .filter((item) => (item.delta5m ?? 0) > 0)
+    .sort((a, b) => (b.delta5m ?? 0) - (a.delta5m ?? 0))
+    .slice(0, 6);
+  const outflow = [...splitReady]
+    .filter((item) => (item.delta5m ?? 0) < 0)
+    .sort((a, b) => (a.delta5m ?? 0) - (b.delta5m ?? 0))
+    .slice(0, 6);
+  const curveState: DataState = series.length === candidates.length ? 'READY' : series.length ? 'DEGRADED' : 'MISSING';
+  const splitState: DataState = splitReady.length === series.length && splitReady.length > 0 ? 'READY' : splitReady.length ? 'DEGRADED' : 'MISSING';
+  const value: FlowSnapshot = {
+    status: curveState === 'READY' && splitState === 'READY' ? 'READY' : series.length ? 'DEGRADED' : 'MISSING',
+    curveState,
+    splitState,
+    retrievedAt: new Date().toISOString(),
+    tradeDate,
+    phase: shanghaiMarketPhase(),
+    lastPointTime: series.flatMap((item) => item.points.map((point) => point.time)).sort().at(-1) ?? null,
+    source: '东方财富公开概念板块与主力资金分钟序列',
+    basis: '曲线为当日累计主力净流入；资金分流为最近5个有效交易分钟的增量。概念成分重叠，不作资金守恒解释。',
+    coverage: { requested: candidates.length, available: series.length },
+    series,
+    split: {
+      inflow,
+      outflow,
+      positiveCount: splitReady.filter((item) => (item.delta5m ?? 0) > 0).length,
+      negativeCount: splitReady.filter((item) => (item.delta5m ?? 0) < 0).length,
+    },
+  };
+  flowSnapshotCache = { expiresAt: Date.now() + 45_000, value };
+  return value;
 }
 
 async function fetchPool(pool: 'ZTPool' | 'ZBPool', tradeDate: string) {
