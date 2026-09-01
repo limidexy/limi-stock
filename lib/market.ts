@@ -42,6 +42,7 @@ export type SectorFlowSeries = {
   delta15m: number | null;
   delta30m: number | null;
   points: SectorFlowPoint[];
+  persistenceLabel?: string;
   detailState?: DataState;
   detailBasis?: string;
   subgroups?: Array<{ name: string; count: number; leaders: string[] }>;
@@ -183,7 +184,7 @@ async function fetchClist(options: {
       const data = (payload.data ?? {}) as Record<string, unknown>;
       const rows = Array.isArray(data.diff) ? (data.diff as ClistRow[]) : [];
       const value = { total: Number(data.total ?? rows.length), rows, host, stale: false };
-      clistCache.set(cacheKey, { expiresAt: Date.now() + 1_200, staleUntil: Date.now() + 5 * 60_000, value });
+      clistCache.set(cacheKey, { expiresAt: Date.now() + 850, staleUntil: Date.now() + 5 * 60_000, value });
       return value;
     } catch (error) {
       failures.push(`${host}:${String(error)}`);
@@ -600,12 +601,32 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
     .sort((a, b) => a.latestMainNetInflow - b.latestMainNetInflow)
     .slice(0, 6);
   const persistentStrong = [...series]
-    .filter((item) => (item.delta30m ?? 0) > 0 && item.latestMainNetInflow > 0 && (item.changePct ?? 0) > 0)
-    .sort((a, b) => (b.delta30m ?? 0) - (a.delta30m ?? 0))
+    .filter((item) => item.latestMainNetInflow > 0 && (item.changePct ?? 0) > 0)
+    .map((item) => ({
+      ...item,
+      persistenceLabel: item.delta30m === null
+        ? '30分钟窗口建立中'
+        : item.delta30m > 0 ? '资金持续流入' : '日内强势·30分钟转弱',
+    }))
+    .sort((a, b) => {
+      const rankA = a.delta30m === null ? 1 : a.delta30m > 0 ? 0 : 2;
+      const rankB = b.delta30m === null ? 1 : b.delta30m > 0 ? 0 : 2;
+      return rankA - rankB || b.latestMainNetInflow - a.latestMainNetInflow;
+    })
     .slice(0, 6);
   const persistentWeak = [...series]
-    .filter((item) => (item.delta30m ?? 0) < 0 && item.latestMainNetInflow < 0 && (item.changePct ?? 0) < 0)
-    .sort((a, b) => (a.delta30m ?? 0) - (b.delta30m ?? 0))
+    .filter((item) => item.latestMainNetInflow < 0 && (item.changePct ?? 0) < 0)
+    .map((item) => ({
+      ...item,
+      persistenceLabel: item.delta30m === null
+        ? '30分钟窗口建立中'
+        : item.delta30m < 0 ? '资金持续流出' : '日内弱势·30分钟回流',
+    }))
+    .sort((a, b) => {
+      const rankA = a.delta30m === null ? 1 : a.delta30m < 0 ? 0 : 2;
+      const rankB = b.delta30m === null ? 1 : b.delta30m < 0 ? 0 : 2;
+      return rankA - rankB || a.latestMainNetInflow - b.latestMainNetInflow;
+    })
     .slice(0, 6);
   const curveState: DataState = series.length === candidates.length ? 'READY' : series.length ? 'DEGRADED' : 'MISSING';
   const splitState: DataState = splitReady.length === series.length && splitReady.length > 0 ? 'READY' : splitReady.length ? 'DEGRADED' : 'MISSING';
@@ -621,7 +642,7 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
     source: '东方财富公开概念板块与主力资金分钟序列',
     sourceState: sourceStale ? 'STALE' : 'LIVE',
     reason: sourceStale ? '资金排名端点短暂波动，已使用同交易日最近快照' : undefined,
-    basis: '曲线为当日累计主力净流入；短时分流为最近5个有效交易分钟的增量，持续强弱使用30个有效交易分钟。概念成分重叠，不作资金守恒解释。',
+    basis: '曲线为当日累计主力净流入；短时分流为最近5个有效交易分钟的增量。长周期强弱先看开盘至今价格与累计资金是否同向，再标注最近30分钟是持续、回流还是转弱。概念成分重叠，不作资金守恒解释。',
     coverage: { requested: candidates.length, available: series.length },
     series,
     split: {

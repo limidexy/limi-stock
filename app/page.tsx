@@ -107,6 +107,7 @@ type SectorFlowSeries = {
   delta15m: number | null;
   delta30m: number | null;
   points: SectorFlowPoint[];
+  persistenceLabel?: string;
   detailState?: DataState;
   detailBasis?: string;
   subgroups?: Array<{ name: string; count: number; leaders: string[] }>;
@@ -337,6 +338,14 @@ function fmtMoney(value: number | null | undefined) {
   return `${amount > 0 ? '+' : ''}${amount.toFixed(2)}亿`;
 }
 
+function fmtFlowDirection(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '数据待补';
+  const magnitude = `${(Math.abs(value) / 100_000_000).toFixed(2)}亿`;
+  if (value > 0) return `净流入 ${magnitude}`;
+  if (value < 0) return `净流出 ${magnitude}`;
+  return '净额 0';
+}
+
 function fmtAmount(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
   return `${(value / 100_000_000).toFixed(1)}亿`;
@@ -445,7 +454,7 @@ function SectorDetailLine({ item }: { item: SectorFlowSeries }) {
         <span>成分细分：</span>
         {subgroups.length ? subgroups.map((group) => <Badge key={group.name} variant="secondary" className="h-5 px-1.5 text-[10px]">{group.name} {group.count}</Badge>) : <span>暂未补齐</span>}
       </div>
-      <div className="truncate">资金活跃股（当日累计）：{representatives.length ? representatives.map((row) => `${row.name}(${fmtMoney(row.mainNetInflow)})`).join(' · ') : '暂未补齐'}</div>
+      <div className="truncate">活跃股当日主力资金：{representatives.length ? representatives.map((row) => `${row.name}（${fmtFlowDirection(row.mainNetInflow)}）`).join(' · ') : '暂未补齐'}</div>
     </div>
   );
 }
@@ -494,14 +503,14 @@ function HorizonFlowList({ title, rows, direction, horizon }: {
     <div className="rounded-lg border bg-card p-3">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h4 className={`text-sm font-medium ${direction === 'inflow' ? 'market-up' : 'market-down'}`}>{title}</h4>
-        <span className="text-[11px] text-muted-foreground">{horizon === 'day' ? '开盘至今' : '30个交易分钟'}</span>
+        <span className="text-[11px] text-muted-foreground">{horizon === 'day' ? '开盘至今' : '日内方向 · 30分钟状态'}</span>
       </div>
       <div className="grid gap-2">
         {rows.length ? rows.map((item, index) => (
           <div key={item.code} className="rounded-md bg-muted/45 px-2.5 py-2">
             <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0"><div className="truncate text-sm"><span className="mr-2 text-xs text-muted-foreground">{index + 1}</span>{item.name}</div><div className="mt-0.5 text-[11px] text-muted-foreground">板块涨跌 {fmtPct(item.changePct)} · 累计 {fmtMoney(item.latestMainNetInflow)}</div></div>
-              <span className={`shrink-0 font-mono text-sm font-medium ${direction === 'inflow' ? 'market-up' : 'market-down'}`}>{fmtMoney(valueOf(item))}</span>
+              <div className="min-w-0"><div className="flex min-w-0 items-center gap-1.5"><div className="truncate text-sm"><span className="mr-2 text-xs text-muted-foreground">{index + 1}</span>{item.name}</div>{horizon === '30m' && item.persistenceLabel ? <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[10px]">{item.persistenceLabel}</Badge> : null}</div><div className="mt-0.5 text-[11px] text-muted-foreground">板块涨跌 {fmtPct(item.changePct)} · 累计 {fmtMoney(item.latestMainNetInflow)}</div></div>
+              <span className={`shrink-0 font-mono text-sm font-medium ${(valueOf(item) ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtMoney(valueOf(item))}</span>
             </div>
             <div className="mt-2"><SectorDetailLine item={item} /></div>
           </div>
@@ -515,8 +524,8 @@ function PersistentStrengthBoard({ data }: { data: FlowData }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>30分钟持续强弱</CardTitle>
-        <CardDescription>区别于上方短时异动：同时要求30分钟资金增量、当日累计资金和板块涨跌方向一致</CardDescription>
+        <CardTitle>长周期持续强弱</CardTitle>
+        <CardDescription>先按开盘至今板块涨跌与累计主力资金同向筛选，再标注最近30分钟是持续、回流还是转弱；短时反抽不再让日内弱势整体消失</CardDescription>
         <CardAction><StateBadge state={data.series.some((item) => item.delta30m !== null) ? 'READY' : 'DEGRADED'} label="长周期" /></CardAction>
       </CardHeader>
       <CardContent className="grid gap-3 lg:grid-cols-2">
@@ -560,7 +569,7 @@ export default function Home() {
   const radar = usePolling<RadarData>('/api/radar', 15_000);
   const flow = usePolling<FlowData>('/api/flow', 60_000);
   const ladder = usePolling<LadderData>('/api/ladder', 30_000);
-  const speed = usePolling<SpeedData>('/api/speed', 2_000);
+  const speed = usePolling<SpeedData>('/api/speed', 1_000);
   const radarEvents = useWindowedRadar(radar.data);
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -622,7 +631,7 @@ export default function Home() {
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="size-4 text-violet-500" />资金曲线</CardTitle><CardAction><StateBadge state={flow.data?.status} /></CardAction><CardDescription>{flowCoverage ? `${flowCoverage.available}/${flowCoverage.requested}板块` : '正在连接'} · 分钟序列</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Layers3 className="size-4 text-sky-500" />驱动成分</CardTitle><CardAction><StateBadge state={selectedEvent?.driverState} label={selectedEvent?.windowReady ? '3分钟就绪' : '预热中'} /></CardAction><CardDescription>{selectedEvent ? `${selectedEvent.directionalCount ?? 0}/${selectedEvent.memberCount ?? 0}只同向` : '等待板块异动'} · 贡献可追溯</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Swords className="size-4 text-amber-500" />连板梯队</CardTitle><CardAction><StateBadge state={ladder.data?.status} /></CardAction><CardDescription>{ladderSummary ? `昨日${ladderSummary.previousLimitUp} · 今封${ladderSummary.todaySealed} · 炸${ladderSummary.todayFailed}` : '正在连接'} · 30秒刷新</CardDescription></CardHeader></Card>
-          <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Zap className="size-4 text-rose-500" />涨速样本</CardTitle><CardAction><StateBadge state={speed.data?.status} /></CardAction><CardDescription>{speedCoverage ? `概念${speedCoverage.conceptReady}/${speedCoverage.requested} · 涨停史${speedCoverage.recentLimitReady}/${speedCoverage.requested}` : '正在连接'} · 约2秒刷新</CardDescription></CardHeader></Card>
+          <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Zap className="size-4 text-rose-500" />涨速样本</CardTitle><CardAction><StateBadge state={speed.data?.status} /></CardAction><CardDescription>{speedCoverage ? `概念${speedCoverage.conceptReady}/${speedCoverage.requested} · 涨停史${speedCoverage.recentLimitReady}/${speedCoverage.requested}` : '正在连接'} · 每秒刷新</CardDescription></CardHeader></Card>
         </section>
 
         <Tabs defaultValue="radar" className="gap-4">
