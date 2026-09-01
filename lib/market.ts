@@ -368,6 +368,32 @@ export async function fetchStockMetadata(code: string): Promise<StockMetadata> {
   return value;
 }
 
+async function fetchStockChangesAndSpeeds(codes: string[]) {
+  const params = new URLSearchParams({
+    secids: codes.map(secid).join(','),
+    fields: 'f12,f3,f22',
+    ut: PUBLIC_CLIENT_TOKEN,
+    fltt: '2',
+    invt: '2',
+  });
+  const failures: string[] = [];
+  for (const host of ['push2delay.eastmoney.com', 'push2.eastmoney.com']) {
+    try {
+      const payload = await fetchJsonOnce(`https://${host}/api/qt/ulist.np/get?${params}`, 7_000);
+      const data = (payload.data ?? {}) as Record<string, unknown>;
+      const rows = Array.isArray(data.diff) ? data.diff as ClistRow[] : [];
+      if (!rows.length) throw new Error('涨幅与涨速列表为空');
+      return new Map(rows.map((row) => [String(row.f12 ?? ''), {
+        changePct: numberOrNull(row.f3),
+        speedPct: numberOrNull(row.f22),
+      }]));
+    } catch (error) {
+      failures.push(`${host}:${String(error)}`);
+    }
+  }
+  throw new Error(`个股涨速不可用 ${failures.join(' | ')}`);
+}
+
 function limitBand(code: string, name: string): [number, number] {
   const upperName = name.toUpperCase();
   if (upperName.includes('ST')) return [4.7, 5.6];
@@ -1190,7 +1216,7 @@ export async function getLadderSnapshot() {
     };
   });
 
-  const competitors = previous.rows.map((prior) => {
+  const competitorBase = previous.rows.map((prior) => {
     const code = poolCode(prior);
     const sealed = sealedByCode.get(code);
     const failed = failedByCode.get(code);
@@ -1206,6 +1232,19 @@ export async function getLadderSnapshot() {
       sealFund: sealed ? poolNumber(current, 'fund') : null,
     };
   }).filter(Boolean) as Array<Record<string, unknown>>;
+  let quoteMap = new Map<string, { changePct: number | null; speedPct: number | null }>();
+  try {
+    quoteMap = await fetchStockChangesAndSpeeds(competitorBase.map((row) => String(row.code)));
+  } catch {
+    quoteMap = new Map();
+  }
+  const competitorQuotes = competitorBase.map((row) => quoteMap.get(String(row.code)) ?? null);
+  const competitors = competitorBase.map((row, index) => ({
+    ...row,
+    changePct: competitorQuotes[index]?.changePct ?? numberOrNull(row.changePct),
+    speedPct: competitorQuotes[index]?.speedPct ?? null,
+    quoteState: competitorQuotes[index] ? 'READY' as DataState : 'MISSING' as DataState,
+  }));
   competitors.sort((a, b) => {
     const height = Number(b.toHeight) - Number(a.toHeight);
     if (height) return height;
@@ -1215,13 +1254,14 @@ export async function getLadderSnapshot() {
   });
 
   return {
-    status: previous.dateState === 'READY' ? 'READY' as DataState : 'DEGRADED' as DataState,
+    status: previous.dateState === 'READY' && competitorQuotes.every(Boolean) ? 'READY' as DataState : 'DEGRADED' as DataState,
     tradeDate,
     previousTradeDate: previous.tradeDate,
     priorDateState: previous.dateState,
     priorProviderQdate: previous.providerQdate,
-    retrievedAt: new Date().toISOString(), source: '东方财富公开涨停与炸板池',
+    retrievedAt: new Date().toISOString(), source: '东方财富公开涨停、炸板池与个股实时行情',
     counts: { previousLimitUp: previous.rows.length, todaySealed: todayLimit.rows.length, todayFailed: todayFailed.rows.length },
+    coverage: { competitors: competitors.length, quoteReady: competitorQuotes.filter(Boolean).length },
     promotion, competitors,
   };
 }

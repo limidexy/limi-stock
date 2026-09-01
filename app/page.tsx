@@ -163,6 +163,8 @@ type Competitor = {
   toHeight: number;
   state: 'SEALED' | 'FAILED';
   changePct: number | null;
+  speedPct: number | null;
+  quoteState: DataState;
   amount: number | null;
   firstTouch: string | null;
   lastSeal: string | null;
@@ -179,6 +181,7 @@ type LadderData = {
   priorDateState?: DataState;
   reason?: string;
   counts?: { previousLimitUp: number; todaySealed: number; todayFailed: number };
+  coverage?: { competitors: number; quoteReady: number };
   promotion: Promotion[];
   competitors: Competitor[];
 };
@@ -909,8 +912,8 @@ export default function Home() {
 
           <TabsContent value="competition">
             <Card>
-              <CardHeader><CardTitle>同梯队竞争</CardTitle><CardDescription>同身位比较封板状态、首次触板、最终回封、开板次数与成交容量</CardDescription></CardHeader>
-              <CardContent>{ladder.data?.competitors?.length ? <Table><TableHeader><TableRow><TableHead>目标梯队</TableHead><TableHead>个股</TableHead><TableHead>行业</TableHead><TableHead>状态</TableHead><TableHead>首次触板</TableHead><TableHead>最终回封</TableHead><TableHead className="text-right">开板</TableHead><TableHead className="text-right">成交额</TableHead><TableHead className="text-right">封单</TableHead></TableRow></TableHeader><TableBody>{ladder.data.competitors.map((row) => <TableRow key={`${row.code}-${row.toHeight}`}><TableCell><Badge variant="secondary">{row.toHeight}板</Badge></TableCell><TableCell><div className="font-medium">{row.name}</div><div className="text-xs text-muted-foreground">{row.code}</div></TableCell><TableCell>{row.industry}</TableCell><TableCell>{row.state === 'SEALED' ? <Badge variant="outline" className="status-ready">封板</Badge> : <Badge variant="outline" className="status-degraded">炸板</Badge>}</TableCell><TableCell className="tabular-nums">{row.firstTouch ?? '—'}</TableCell><TableCell className="tabular-nums">{row.lastSeal ?? '—'}</TableCell><TableCell className="text-right">{row.breakCount}</TableCell><TableCell className="text-right">{fmtAmount(row.amount)}</TableCell><TableCell className="text-right">{fmtAmount(row.sealFund)}</TableCell></TableRow>)}</TableBody></Table> : <EmptyState>{ladder.loading ? '正在比较同梯队个股…' : ladder.data?.reason || ladder.error || '当前没有封板或炸板竞争者'}</EmptyState>}</CardContent>
+              <CardHeader><CardTitle>同梯队竞争</CardTitle><CardDescription>同身位比较封板状态、当前涨幅与涨速、首次触板、最终回封、开板次数和成交容量</CardDescription><CardAction>{ladder.data?.coverage ? <StateBadge state={ladder.data.coverage.quoteReady === ladder.data.coverage.competitors ? 'READY' : 'DEGRADED'} label={`行情 ${ladder.data.coverage.quoteReady}/${ladder.data.coverage.competitors}`} /> : null}</CardAction></CardHeader>
+              <CardContent>{ladder.data?.competitors?.length ? <Table><TableHeader><TableRow><TableHead>目标梯队</TableHead><TableHead>个股</TableHead><TableHead>行业</TableHead><TableHead>状态</TableHead><TableHead className="text-right">涨幅</TableHead><TableHead className="text-right">涨速</TableHead><TableHead>首次触板</TableHead><TableHead>最终回封</TableHead><TableHead className="text-right">开板</TableHead><TableHead className="text-right">成交额</TableHead><TableHead className="text-right">封单</TableHead></TableRow></TableHeader><TableBody>{ladder.data.competitors.map((row) => <TableRow key={`${row.code}-${row.toHeight}`}><TableCell><Badge variant="secondary">{row.toHeight}板</Badge></TableCell><TableCell><div className="font-medium">{row.name}</div><div className="text-xs text-muted-foreground">{row.code}</div></TableCell><TableCell>{row.industry}</TableCell><TableCell>{row.state === 'SEALED' ? <Badge variant="outline" className="status-ready">封板</Badge> : <Badge variant="outline" className="status-degraded">炸板</Badge>}</TableCell><TableCell className={`text-right font-medium ${(row.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.changePct)}</TableCell><TableCell className={`text-right font-medium ${(row.speedPct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.speedPct)}</TableCell><TableCell className="tabular-nums">{row.firstTouch ?? '—'}</TableCell><TableCell className="tabular-nums">{row.lastSeal ?? '—'}</TableCell><TableCell className="text-right">{row.breakCount}</TableCell><TableCell className="text-right">{fmtAmount(row.amount)}</TableCell><TableCell className="text-right">{fmtAmount(row.sealFund)}</TableCell></TableRow>)}</TableBody></Table> : <EmptyState>{ladder.loading ? '正在比较同梯队个股…' : ladder.data?.reason || ladder.error || '当前没有封板或炸板竞争者'}</EmptyState>}</CardContent>
             </Card>
           </TabsContent>
 
