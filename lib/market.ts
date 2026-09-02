@@ -1215,8 +1215,16 @@ export async function getLadderSnapshot() {
   }
   const sealedByCode = new Map(todayLimit.rows.map((row) => [poolCode(row), row]));
   const failedByCode = new Map(todayFailed.rows.map((row) => [poolCode(row), row]));
-  const groups = new Map<number, PoolRow[]>();
+  const previousByCode = new Map<string, PoolRow>();
   for (const row of previous.rows) {
+    const code = poolCode(row);
+    const existing = previousByCode.get(code);
+    if (!existing || Number(row.lbc ?? 1) > Number(existing.lbc ?? 1)) previousByCode.set(code, row);
+  }
+  const previousRows = [...previousByCode.values()];
+  const duplicatesRemoved = previous.rows.length - previousRows.length;
+  const groups = new Map<number, PoolRow[]>();
+  for (const row of previousRows) {
     const height = Math.max(1, Number(row.lbc ?? 1));
     groups.set(height, [...(groups.get(height) ?? []), row]);
   }
@@ -1235,7 +1243,7 @@ export async function getLadderSnapshot() {
     };
   });
 
-  const competitorBase = previous.rows.map((prior) => {
+  const competitorBase = previousRows.map((prior) => {
     const code = poolCode(prior);
     const sealed = sealedByCode.get(code);
     const failed = failedByCode.get(code);
@@ -1288,8 +1296,8 @@ export async function getLadderSnapshot() {
     priorDateState: previous.dateState,
     priorProviderQdate: previous.providerQdate,
     retrievedAt: new Date().toISOString(), source: '东方财富公开涨停、炸板池与个股实时行情',
-    counts: { previousLimitUp: previous.rows.length, todaySealed: todayLimit.rows.length, todayFailed: todayFailed.rows.length },
-    coverage: { competitors: competitors.length, quoteReady },
+    counts: { previousLimitUp: previousRows.length, todaySealed: todayLimit.rows.length, todayFailed: todayFailed.rows.length },
+    coverage: { competitors: competitors.length, quoteReady, duplicatesRemoved },
     promotion, competitors,
   };
 }

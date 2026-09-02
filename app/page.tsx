@@ -181,7 +181,7 @@ type LadderData = {
   priorDateState?: DataState;
   reason?: string;
   counts?: { previousLimitUp: number; todaySealed: number; todayFailed: number };
-  coverage?: { competitors: number; quoteReady: number };
+  coverage?: { competitors: number; quoteReady: number; duplicatesRemoved?: number };
   promotion: Promotion[];
   competitors: Competitor[];
 };
@@ -640,6 +640,19 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
     return grouped;
   }, new Map<string, MarketTimelineEvent[]>()).entries()]
     .sort(([a], [b]) => b.localeCompare(a));
+  const timelineDriverCodes = new Set(data.events.flatMap((event) => event.drivers.map((driver) => driver.code)));
+  const stockPrimaryTime = new Map<string, string>();
+  const stockSectors = new Map<string, Set<string>>();
+  for (const [time, events] of groups) {
+    for (const event of events) {
+      for (const stock of event.relatedStocks ?? []) {
+        const sectors = stockSectors.get(stock.code) ?? new Set<string>();
+        sectors.add(event.sectorName);
+        stockSectors.set(stock.code, sectors);
+        if (!timelineDriverCodes.has(stock.code) && !stockPrimaryTime.has(stock.code)) stockPrimaryTime.set(stock.code, time);
+      }
+    }
+  }
 
   const eventPhrase = (events: MarketTimelineEvent[]) => {
     const phrases: string[] = [];
@@ -688,10 +701,14 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
             <div>
               {groups.map(([time, events], groupIndex) => {
                 const bullish = events.reduce((sum, event) => sum + (event.sectorWindowChangePct ?? 0), 0) >= 0;
-                const relatedStocks = [...events.flatMap((event) => event.relatedStocks ?? []).reduce((stocks, stock) => {
+                const groupRelatedStocks = [...events.flatMap((event) => event.relatedStocks ?? []).reduce((stocks, stock) => {
                   if (!stocks.has(stock.code)) stocks.set(stock.code, stock);
                   return stocks;
-                }, new Map<string, MarketTimelineRelatedStock>()).values()].slice(0, 16);
+                }, new Map<string, MarketTimelineRelatedStock>()).values()];
+                const relatedStocks = groupRelatedStocks
+                  .filter((stock) => !timelineDriverCodes.has(stock.code) && stockPrimaryTime.get(stock.code) === time)
+                  .slice(0, 16);
+                const mergedRelatedCount = groupRelatedStocks.length - relatedStocks.length;
                 const confirmedDrivers = [...events.flatMap((event) => event.drivers.filter((driver) => driver.role === '同窗价格确认')).reduce((drivers, driver) => {
                   if (!drivers.has(driver.code)) drivers.set(driver.code, driver);
                   return drivers;
@@ -744,17 +761,18 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                       </div>
 
                       <div className="mt-4">
-                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-medium">板块相关异动股</span><span className="text-[11px] text-muted-foreground">当日最新排名 · 与历史节点分开</span></div>
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-medium">去重后的板块相关异动股</span><span className="text-[11px] text-muted-foreground">同窗核验股不重复列出 · 跨节点只保留最新一次</span></div>
                         {relatedStocks.length ? (
                           <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-4">
-                            {relatedStocks.map((stock) => (
-                              <div key={stock.code} className="flex min-w-0 items-center justify-between gap-2 rounded-md bg-muted/70 px-2.5 py-2 text-xs">
-                                <span className="min-w-0 truncate" title={`${stock.name} · ${stock.industry}`}>{stock.name}</span>
+                            {relatedStocks.map((stock) => {
+                              const sectors = [...(stockSectors.get(stock.code) ?? [])];
+                              return <div key={stock.code} className="flex min-w-0 items-center justify-between gap-2 rounded-md bg-muted/70 px-2.5 py-2 text-xs">
+                                <span className="flex min-w-0 items-center gap-1.5"><span className="truncate" title={`${stock.name} · ${stock.industry} · ${sectors.join('、')}`}>{stock.name}</span>{sectors.length > 1 ? <span className="shrink-0 rounded bg-sky-500/10 px-1 py-0.5 text-[10px] text-sky-700 dark:text-sky-300">跨{sectors.length}板块</span> : null}</span>
                                 <span className={`shrink-0 font-mono font-semibold ${(stock.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(stock.changePct)}</span>
-                              </div>
-                            ))}
+                              </div>;
+                            })}
                           </div>
-                        ) : <EmptyState>相关异动股当前不可用</EmptyState>}
+                        ) : <EmptyState>{mergedRelatedCount ? `本节点${mergedRelatedCount}只重叠股已合并到同窗核验或更新节点` : '相关异动股当前不可用'}</EmptyState>}
                       </div>
                       <p className="mt-3 text-[11px] leading-5 text-muted-foreground">{events.map((event) => `${event.sectorName}：${event.driverBasis}`).join('；')}</p>
                     </div>
@@ -923,7 +941,7 @@ export default function Home() {
 
           <TabsContent value="competition">
             <Card>
-              <CardHeader><CardTitle>同梯队竞争</CardTitle><CardDescription>昨日涨停池全量展示；目标梯队从高到低，同梯队内涨幅、涨速靠前，下跌掉队股保留在后</CardDescription><CardAction>{ladder.data?.coverage ? <StateBadge state={ladder.data.coverage.quoteReady === ladder.data.coverage.competitors ? 'READY' : 'DEGRADED'} label={`全量 ${ladder.data.coverage.competitors}只 · 行情 ${ladder.data.coverage.quoteReady}/${ladder.data.coverage.competitors}`} /> : null}</CardAction></CardHeader>
+              <CardHeader><CardTitle>同梯队竞争</CardTitle><CardDescription>昨日涨停池按股票代码去重展示；目标梯队从高到低，同梯队内涨幅、涨速靠前</CardDescription><CardAction>{ladder.data?.coverage ? <StateBadge state={ladder.data.coverage.quoteReady === ladder.data.coverage.competitors ? 'READY' : 'DEGRADED'} label={`去重后 ${ladder.data.coverage.competitors}只 · 行情 ${ladder.data.coverage.quoteReady}/${ladder.data.coverage.competitors}${ladder.data.coverage.duplicatesRemoved ? ` · 已合并${ladder.data.coverage.duplicatesRemoved}` : ''}`} /> : null}</CardAction></CardHeader>
               <CardContent>{ladder.data?.competitors?.length ? <Table><TableHeader><TableRow><TableHead>目标梯队</TableHead><TableHead>个股</TableHead><TableHead>行业</TableHead><TableHead>状态</TableHead><TableHead className="text-right">涨幅</TableHead><TableHead className="text-right">涨速</TableHead><TableHead>首次触板</TableHead><TableHead>最终回封</TableHead><TableHead className="text-right">开板</TableHead><TableHead className="text-right">成交额</TableHead><TableHead className="text-right">封单</TableHead></TableRow></TableHeader><TableBody>{ladder.data.competitors.map((row) => <TableRow key={`${row.code}-${row.toHeight}`}><TableCell><Badge variant="secondary">{row.toHeight}板</Badge></TableCell><TableCell><div className="font-medium">{row.name}</div><div className="text-xs text-muted-foreground">{row.code}</div></TableCell><TableCell>{row.industry}</TableCell><TableCell>{row.state === 'SEALED' ? <Badge variant="outline" className="status-ready">封板</Badge> : row.state === 'FAILED' ? <Badge variant="outline" className="status-degraded">炸板</Badge> : <Badge variant="outline" className={(row.changePct ?? 0) < 0 ? 'market-down' : 'text-muted-foreground'}>{(row.changePct ?? 0) < 0 ? '下跌掉队' : '未触板'}</Badge>}</TableCell><TableCell className={`text-right font-medium ${(row.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.changePct)}</TableCell><TableCell className={`text-right font-medium ${(row.speedPct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}>{fmtPct(row.speedPct)}</TableCell><TableCell className="tabular-nums">{row.firstTouch ?? '—'}</TableCell><TableCell className="tabular-nums">{row.lastSeal ?? '—'}</TableCell><TableCell className="text-right">{row.breakCount}</TableCell><TableCell className="text-right">{fmtAmount(row.amount)}</TableCell><TableCell className="text-right">{fmtAmount(row.sealFund)}</TableCell></TableRow>)}</TableBody></Table> : <EmptyState>{ladder.loading ? '正在比较同梯队个股…' : ladder.data?.reason || ladder.error || '当前没有上一交易日涨停池数据'}</EmptyState>}</CardContent>
             </Card>
           </TabsContent>
