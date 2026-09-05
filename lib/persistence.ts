@@ -1,11 +1,16 @@
 import { env } from 'cloudflare:workers';
 
 import seedDocument from '@/lib/close-history.generated.json';
+import marketSeedDocument from '@/lib/market-snapshots.generated.json';
 import type { CloseHistoryDocument, CloseSnapshot } from '@/lib/close-history';
 
 type PersistedRow = {
   payload_json: string;
   captured_at?: string;
+};
+
+type MarketSeedDocument = {
+  snapshots: Record<string, { tradeDate?: string; date?: string }>;
 };
 
 let schemaReady: Promise<void> | null = null;
@@ -145,7 +150,7 @@ export async function loadLatestModuleSnapshot<T>(
 ): Promise<(T & { persistedAt?: string }) | null> {
   await ensureSchema();
   const database = getDatabase();
-  const row = await database
+  let row = await database
     .prepare(`SELECT payload_json, captured_at
       FROM market_module_snapshots
       WHERE module = ?
@@ -153,6 +158,22 @@ export async function loadLatestModuleSnapshot<T>(
       LIMIT 1`)
     .bind(module)
     .first<PersistedRow>();
+  if (!row) {
+    const seed = (marketSeedDocument as MarketSeedDocument).snapshots[module];
+    if (seed) {
+      await saveModuleSnapshot(module, seed);
+      row = await database
+        .prepare(
+          `SELECT payload_json, captured_at
+          FROM market_module_snapshots
+          WHERE module = ?
+          ORDER BY trade_date DESC, captured_at DESC
+          LIMIT 1`,
+        )
+        .bind(module)
+        .first<PersistedRow>();
+    }
+  }
   if (!row) return null;
   return {
     ...(JSON.parse(row.payload_json) as T),

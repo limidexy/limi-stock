@@ -10,6 +10,7 @@
     "build": "vinext build",
     "db:generate": "drizzle-kit generate",
     "history:build": "node scripts/build-close-history.mjs",
+    "seed:build": "node scripts/build-market-seed.mjs",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt"
