@@ -1,4 +1,5 @@
 import { getFlowSnapshot } from '@/lib/market';
+import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
   loadLatestModuleSnapshot,
   saveModuleSnapshot,
@@ -8,6 +9,14 @@ export const dynamic = 'force-dynamic';
 let lastSnapshot: Awaited<ReturnType<typeof getFlowSnapshot>> | null = null;
 
 export async function GET() {
+  const archived =
+    await loadArchivedSessionSnapshot<
+      Awaited<ReturnType<typeof getFlowSnapshot>>
+    >('flow');
+  if (archived)
+    return Response.json(archived, {
+      headers: { 'cache-control': 'no-store' },
+    });
   try {
     const snapshot = await getFlowSnapshot();
     if (snapshot.series.length) {

@@ -1,4 +1,5 @@
 import { getMarketTimelineSnapshot } from '@/lib/market';
+import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
   loadLatestModuleSnapshot,
   saveModuleSnapshot,
@@ -29,6 +30,14 @@ async function withTimeout<T>(
 }
 
 export async function GET() {
+  const archived =
+    await loadArchivedSessionSnapshot<
+      Awaited<ReturnType<typeof getMarketTimelineSnapshot>>
+    >('timeline');
+  if (archived)
+    return Response.json(archived, {
+      headers: { 'cache-control': 'no-store' },
+    });
   try {
     const snapshot = await withTimeout(getMarketTimelineSnapshot(), 55_000);
     if (snapshot.events.length) {

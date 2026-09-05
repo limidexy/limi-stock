@@ -1,4 +1,5 @@
 import { getRadarSnapshot } from '@/lib/market';
+import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
   loadLatestModuleSnapshot,
   saveModuleSnapshot,
@@ -8,6 +9,14 @@ export const dynamic = 'force-dynamic';
 let lastSnapshot: Awaited<ReturnType<typeof getRadarSnapshot>> | null = null;
 
 export async function GET() {
+  const archived =
+    await loadArchivedSessionSnapshot<
+      Awaited<ReturnType<typeof getRadarSnapshot>>
+    >('radar');
+  if (archived)
+    return Response.json(archived, {
+      headers: { 'cache-control': 'no-store' },
+    });
   try {
     const snapshot = await getRadarSnapshot();
     if (snapshot.events.length) {
