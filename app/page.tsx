@@ -1044,21 +1044,141 @@ function FlowSplitBoard({ data }: { data: FlowData }) {
   );
 }
 
+function LadderHeightTrend({ history }: { history: CloseHistoryDocument }) {
+  const rows = history.snapshots.slice(-15).map((snapshot) => ({
+    date: snapshot.date,
+    day: snapshot.date.slice(5).replace('-', '/'),
+    highestBoard: snapshot.highestBoard,
+    consecutiveCount: snapshot.consecutiveCount,
+  }));
+  const latest = rows.at(-1);
+  const previous = rows.at(-2);
+  const heightChange =
+    latest && previous ? latest.highestBoard - previous.highestBoard : 0;
+  const config = {
+    highestBoard: { label: '最高板高度', color: '#ef4444' },
+    consecutiveCount: { label: '连板家数', color: '#f59e0b' },
+  } satisfies ChartConfig;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <TrendingUp className="size-5 text-rose-500" />
+          连板高度趋势
+        </CardTitle>
+        <CardDescription>
+          红线看市场最高板，黄线看连板家数；点位均为15:00收盘定格
+        </CardDescription>
+        <CardAction>
+          <Badge variant="outline" className="font-mono">
+            {latest
+              ? `${latest.highestBoard}板 · 较前日${heightChange > 0 ? '+' : ''}${heightChange}`
+              : '暂无数据'}
+          </Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        {rows.length > 1 ? (
+          <ChartContainer
+            config={config}
+            className="h-[280px] w-full aspect-auto"
+          >
+            <RechartsLineChart
+              accessibilityLayer
+              data={rows}
+              margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis
+                dataKey="day"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={10}
+              />
+              <YAxis
+                yAxisId="height"
+                allowDecimals={false}
+                tickLine={false}
+                axisLine={false}
+                width={34}
+                domain={[0, 'dataMax + 1']}
+                tickFormatter={(value) => `${value}板`}
+              />
+              <YAxis
+                yAxisId="count"
+                orientation="right"
+                allowDecimals={false}
+                tickLine={false}
+                axisLine={false}
+                width={34}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={(_, payload) =>
+                      String(payload?.[0]?.payload?.date ?? '')
+                    }
+                  />
+                }
+              />
+              <Line
+                yAxisId="height"
+                type="monotone"
+                dataKey="highestBoard"
+                stroke="var(--color-highestBoard)"
+                strokeWidth={3}
+                dot={{ r: 3, fill: 'var(--color-highestBoard)' }}
+                activeDot={{ r: 5 }}
+              />
+              <Line
+                yAxisId="count"
+                type="monotone"
+                dataKey="consecutiveCount"
+                stroke="var(--color-consecutiveCount)"
+                strokeWidth={2}
+                strokeDasharray="5 4"
+                dot={{ r: 2.5, fill: 'var(--color-consecutiveCount)' }}
+                activeDot={{ r: 4 }}
+              />
+            </RechartsLineChart>
+          </ChartContainer>
+        ) : (
+          <EmptyState>至少需要两个收盘交易日才能绘制趋势</EmptyState>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
-  const starts = data.events.filter((event) => event.kind === 'START');
-  const strongs = data.events.filter((event) => event.kind === 'STRONG');
-  const cashouts = data.events.filter((event) => event.kind === 'CASHOUT');
-  const weakens = data.events.filter((event) => event.kind === 'WEAKEN');
-  const strongest = [...starts].sort(
-    (a, b) => (b.sectorWindowChangePct ?? 0) - (a.sectorWindowChangePct ?? 0),
+  const events = data.events.filter(
+    (event) =>
+      !/^(MSCI中国|融资融券|富时罗素|历史新高|近期新高|破增发价股|百元股|昨日.*)$/.test(
+        event.sectorName,
+      ),
+  );
+  const starts = events.filter((event) => event.kind === 'START');
+  const strongs = events.filter((event) => event.kind === 'STRONG');
+  const cashouts = events.filter((event) => event.kind === 'CASHOUT');
+  const weakens = events.filter((event) => event.kind === 'WEAKEN');
+  const strongest = [...starts, ...strongs].sort(
+    (a, b) => Math.abs(b.flowDelta) - Math.abs(a.flowDelta),
   )[0];
+  const leadingSectors = [
+    ...new Set([...starts, ...strongs].map((e) => e.sectorName)),
+  ].slice(0, 3);
+  const fadingSectors = [
+    ...new Set([...cashouts, ...weakens].map((e) => e.sectorName)),
+  ].slice(0, 3);
   const relatedCount = new Set(
-    data.events.flatMap((event) =>
+    events.flatMap((event) =>
       (event.relatedStocks ?? []).map((stock) => stock.code),
     ),
   ).size;
   const groups = [
-    ...data.events
+    ...events
       .reduce((grouped, event) => {
         const sameMinute = grouped.get(event.time) ?? [];
         sameMinute.push(event);
@@ -1068,8 +1188,14 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
       .entries(),
   ].sort(([a], [b]) => b.localeCompare(a));
   const timelineDriverCodes = new Set(
-    data.events.flatMap((event) => event.drivers.map((driver) => driver.code)),
+    events.flatMap((event) => event.drivers.map((driver) => driver.code)),
   );
+  const checkedDriverCount = events
+    .flatMap((event) => event.drivers)
+    .filter((driver) => driver.windowChangePct !== null).length;
+  const confirmedDriverCount = events
+    .flatMap((event) => event.drivers)
+    .filter((driver) => driver.role === '同窗价格确认').length;
   const stockPrimaryTime = new Map<string, string>();
   const stockSectors = new Map<string, Set<string>>();
   for (const [time, events] of groups) {
@@ -1112,11 +1238,11 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
 
   const indexPhrase = (events: MarketTimelineEvent[]) => {
     const indices = events.find((event) => event.indices.length)?.indices ?? [];
-    if (!indices.length) return '指数同窗数据待补。';
+    if (!indices.length) return '指数同窗数据暂时不可用。';
     const detail = indices
       .map(
         (marketIndex) =>
-          `${marketIndex.name}当时${fmtPct(marketIndex.changePct)}、转折窗${fmtPct(marketIndex.windowChangePct)}`,
+          `${marketIndex.name}${fmtPct(marketIndex.changePct)}（近3分钟${fmtPct(marketIndex.windowChangePct)}）`,
       )
       .join('，');
     const windows = indices
@@ -1135,7 +1261,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
       relation = hasStart ? '题材逆指数启动' : '板块回落与指数同向';
     if (hasStart && hasExit)
       relation = '同一分钟板块发生切换，指数仅作环境参照';
-    return `${detail}，${relation}。`;
+    return `指数环境：${detail}，${relation}。`;
   };
   return (
     <div className="space-y-4">
@@ -1145,15 +1271,17 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
       >
         <Card size="sm">
           <CardHeader>
-            <CardTitle>启动 / 延续</CardTitle>
+            <CardTitle>主线与回流</CardTitle>
             <CardAction>
               <span className="market-up text-lg font-semibold">
                 {starts.length + strongs.length}
               </span>
             </CardAction>
             <CardDescription>
-              启动{starts.length} · 延续{strongs.length} ·{' '}
-              {data.coverage?.timeNodes ?? groups.length}个资金转折
+              {leadingSectors.join(' · ') || '尚无明显主线'}
+              <span className="mt-1 block">
+                启动{starts.length} · 延续{strongs.length}
+              </span>
             </CardDescription>
           </CardHeader>
         </Card>
@@ -1166,33 +1294,38 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
               </span>
             </CardAction>
             <CardDescription>
-              兑现{cashouts.length} · 走弱{weakens.length}
+              {fadingSectors.join(' · ') || '尚无明显负反馈'}
+              <span className="mt-1 block">
+                兑现{cashouts.length} · 走弱{weakens.length}
+              </span>
             </CardDescription>
           </CardHeader>
         </Card>
         <Card size="sm">
           <CardHeader>
-            <CardTitle>最强启动</CardTitle>
+            <CardTitle>关键转折</CardTitle>
             <CardAction>
               <ArrowUpRight className="size-4 market-up" />
             </CardAction>
             <CardDescription>
               {strongest
-                ? `${strongest.time} ${strongest.sectorName} ${fmtPct(strongest.sectorWindowChangePct)}`
-                : '等待新启动'}
+                ? `${strongest.time} ${strongest.sectorName}${strongest.label}`
+                : '等待新转折'}
+              <span className="mt-1 block">
+                {groups.length}个时点 · {events.length}个板块节点
+              </span>
             </CardDescription>
           </CardHeader>
         </Card>
         <Card size="sm">
           <CardHeader>
-            <CardTitle>个股覆盖</CardTitle>
+            <CardTitle>个股同步度</CardTitle>
             <CardAction>
               <StateBadge state={data.status} />
             </CardAction>
             <CardDescription>
-              {data.coverage
-                ? `${data.coverage.confirmedDrivers}只同向确认 · ${data.coverage.checkedDrivers ?? data.coverage.confirmedDrivers}只已核验 · ${relatedCount}只当日异动`
-                : '正在对齐分钟序列'}
+              {confirmedDriverCount}只同向 · {checkedDriverCount}只已核验 ·{' '}
+              {relatedCount}只关联股
             </CardDescription>
           </CardHeader>
         </Card>
@@ -1202,11 +1335,11 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Clock3 className="size-5" />
-            今日盘面直播
+            今日盘面脉络
           </CardTitle>
           <CardDescription>
-            最新在上 ·
-            仅在板块资金方向反转或流入/流出明显加速时记录，时间取真实转折分钟
+            最新在上 · 每个节点按“指数环境 → 板块动作 → 核心个股 →
+            跟随个股”阅读，时间取真实资金转折分钟
           </CardDescription>
           <CardAction>
             <StateBadge
@@ -1220,10 +1353,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
             <div>
               {groups.map(([time, events], groupIndex) => {
                 const bullish =
-                  events.reduce(
-                    (sum, event) => sum + (event.sectorWindowChangePct ?? 0),
-                    0,
-                  ) >= 0;
+                  events.reduce((sum, event) => sum + event.flowDelta, 0) >= 0;
                 const groupRelatedStocks = [
                   ...events
                     .flatMap((event) => event.relatedStocks ?? [])
@@ -1276,18 +1406,24 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                 const unavailableDrivers = events
                   .flatMap((event) => event.drivers)
                   .filter((driver) => driver.windowChangePct === null);
-                const moveText = events
+                const sectorNarrative = events
                   .map(
                     (event) =>
-                      `${event.sectorName}${fmtPct(event.sectorWindowChangePct)}`,
-                  )
-                  .join('、');
-                const flowText = events
-                  .map(
-                    (event) =>
-                      `${event.sectorName}${fmtFlowDirection(event.flowDelta)}，前窗${fmtFlowDirection(event.flowPreviousDelta)}`,
+                      `${event.sectorName}${event.label}，近3分钟${fmtPct(event.sectorWindowChangePct)}，主力${fmtFlowDirection(event.flowDelta)}`,
                   )
                   .join('；');
+                const coreDrivers = [
+                  ...confirmedDrivers,
+                  ...checkedButUnaligned,
+                ].slice(0, 6);
+                const driverNarrative = coreDrivers.length
+                  ? `核心个股：${coreDrivers
+                      .map(
+                        (driver) =>
+                          `${driver.name}${fmtPct(driver.windowChangePct)}`,
+                      )
+                      .join('、')}。`
+                  : '核心个股的该时窗分钟价格暂时不可用。';
                 return (
                   <article
                     key={`${time}-${events.map((event) => event.id).join('-')}`}
@@ -1313,7 +1449,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                             key={event.id}
                             variant="outline"
                             className={
-                              (event.sectorWindowChangePct ?? 0) >= 0
+                              event.flowDelta >= 0
                                 ? 'status-ready'
                                 : 'status-degraded'
                             }
@@ -1322,9 +1458,12 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                           </Badge>
                         ))}
                       </div>
-                      <p className="mt-3 text-[15px] font-medium leading-7 sm:text-base">
-                        {eventPhrase(events)}。资金转折窗：{flowText}
-                        ；同期板块价格变化为{moveText}。{indexPhrase(events)}
+                      <p className="mt-3 text-[15px] leading-7 sm:text-base">
+                        <span className="font-medium">
+                          {indexPhrase(events)}
+                        </span>{' '}
+                        {eventPhrase(events)}：{sectorNarrative}。
+                        {driverNarrative}
                       </p>
 
                       <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -1344,20 +1483,20 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                               </span>
                             </div>
                             <div className="text-muted-foreground">
-                              3分钟资金 {fmtFlowDirection(event.flowDelta)} ·
-                              较前窗加速度 {fmtMoney(event.flowAcceleration)}
+                              节点时{fmtPct(event.sectorAtTimeChangePct)} ·
+                              近3分钟
+                              {fmtPct(event.sectorWindowChangePct)}
                             </div>
                             <div className="text-muted-foreground">
-                              当时 {fmtPct(event.sectorAtTimeChangePct)} · 最新{' '}
-                              {fmtPct(event.sectorChangePct)} · 当日主力{' '}
-                              {fmtFlowDirection(event.sectorDailyFlow)}
+                              近3分钟资金{fmtFlowDirection(event.flowDelta)} ·
+                              当日累计{fmtFlowDirection(event.sectorDailyFlow)}
                             </div>
                           </div>
                         ))}
                       </div>
 
                       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-medium">同窗个股核验</span>
+                        <span className="font-medium">节点核心带动 / 拖累</span>
                         {confirmedDrivers.length
                           ? confirmedDrivers.map((driver) => (
                               <span
@@ -1375,7 +1514,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                                   {fmtPct(driver.windowChangePct)}
                                 </span>{' '}
                                 <span className="text-muted-foreground">
-                                  同向
+                                  同步
                                 </span>
                               </span>
                             ))
@@ -1399,7 +1538,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                                 <span className="text-muted-foreground">
                                   {driver.role === '同窗价格持平'
                                     ? '持平'
-                                    : '反向'}
+                                    : '未同步'}
                                 </span>
                               </span>
                             ))
@@ -1410,8 +1549,8 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                             state="DEGRADED"
                             label={
                               unavailableDrivers.length
-                                ? `分钟价格暂不可用 ${unavailableDrivers.length}只`
-                                : '成分股暂不可用'
+                                ? `节点价格暂不可用 ${unavailableDrivers.length}只`
+                                : '核心成分股暂不可用'
                             }
                           />
                         ) : null}
@@ -1420,10 +1559,10 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                       <div className="mt-4">
                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs font-medium">
-                            去重后的板块相关异动股
+                            板块内跟随个股（当前涨幅）
                           </span>
                           <span className="text-[11px] text-muted-foreground">
-                            同窗核验股不重复列出 · 跨节点只保留最新一次
+                            不冒充节点时刻的历史涨幅 · 个股跨节点去重
                           </span>
                         </div>
                         {relatedStocks.length ? (
@@ -1467,14 +1606,19 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                           </EmptyState>
                         )}
                       </div>
-                      <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
-                        {events
-                          .map(
-                            (event) =>
-                              `${event.sectorName}：${event.driverBasis}`,
-                          )
-                          .join('；')}
-                      </p>
+                      <details className="mt-3 rounded-md border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
+                        <summary className="cursor-pointer font-medium text-foreground/75">
+                          查看资金转折判定与数据边界
+                        </summary>
+                        <p className="mt-2 leading-5">
+                          {events
+                            .map(
+                              (event) =>
+                                `${event.sectorName}：资金较前窗变化${fmtMoney(event.flowAcceleration)}；${event.driverBasis}`,
+                            )
+                            .join('；')}
+                        </p>
+                      </details>
                     </div>
                   </article>
                 );
@@ -2117,7 +2261,8 @@ export default function Home() {
             )}
           </TabsContent>
 
-          <TabsContent value="promotion">
+          <TabsContent value="promotion" className="space-y-4">
+            <LadderHeightTrend history={history} />
             <Card>
               <CardHeader>
                 <CardTitle>连板晋级漏斗</CardTitle>

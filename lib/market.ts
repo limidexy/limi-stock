@@ -1261,7 +1261,7 @@ async function fetchTimelineBoards() {
       if (
         !code ||
         !name ||
-        /^(MSCI中国|融资融券|富时罗素|破增发价股|2026中报预增|科技风格|昨日.*)$/.test(
+        /^(MSCI中国|融资融券|富时罗素|破增发价股|历史新高|近期新高|百元股|2026中报预增|科技风格|昨日.*)$/.test(
           name,
         )
       )
