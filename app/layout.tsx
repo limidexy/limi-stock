@@ -14,10 +14,10 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: '李米看板',
-  description: '板块驱动、连板晋级、同梯队竞争与打板涨速监控。',
+  description: '盘中板块驱动、连板晋级、打板涨速监控与15:00收盘情绪周期定格。',
   openGraph: {
     title: '李米看板',
-    description: '板块异动 · 连板晋级 · 梯队竞争 · 涨速观察',
+    description: '板块异动 · 情绪周期 · 连板晋级 · 涨速观察',
     type: 'website',
     images: [
       {
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: '李米看板',
-    description: '板块异动 · 连板晋级 · 梯队竞争 · 涨速观察',
+    description: '板块异动 · 情绪周期 · 连板晋级 · 涨速观察',
     images: ['/og.png'],
   },
 };

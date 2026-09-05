@@ -6,6 +6,7 @@ import {
   ArrowDownRight,
   ArrowLeftRight,
   ArrowUpRight,
+  CalendarDays,
   Clock3,
   Layers3,
   RefreshCw,
@@ -26,6 +27,7 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CloseDatePicker, EmotionCycleBoard } from '@/components/emotion-cycle-board';
 import {
   ChartContainer,
   ChartTooltip,
@@ -49,6 +51,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { LATEST_CLOSE_DATE } from '@/lib/close-history';
 
 type DataState = 'READY' | 'DEGRADED' | 'MISSING';
 
@@ -796,6 +799,8 @@ export default function Home() {
   const speed = usePolling<SpeedData>('/api/speed', 1_000);
   const radarEvents = useWindowedRadar(radar.data);
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
+  const [selectedCloseDate, setSelectedCloseDate] = useState(LATEST_CLOSE_DATE);
+  const [activeTab, setActiveTab] = useState('timeline');
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -814,6 +819,10 @@ export default function Home() {
     setRefreshing(true);
     await Promise.all([radar.refresh(), flow.refresh(), timeline.refresh(), ladder.refresh(), speed.refresh()]);
     setRefreshing(false);
+  };
+  const selectCloseDate = (date: string) => {
+    setSelectedCloseDate(date);
+    setActiveTab('emotion');
   };
 
   const ladderSummary = ladder.data?.counts;
@@ -845,6 +854,7 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="hidden gap-1.5 sm:inline-flex"><span className={`size-1.5 rounded-full ${sourceNotice ? 'bg-amber-500' : 'bg-emerald-500'}`} />{sourceNotice ? '自动降级' : '监控中'} {fmtTime(latestAt)}</Badge>
+            <CloseDatePicker value={selectedCloseDate} onChange={selectCloseDate} compact />
             <Button variant="outline" size="sm" onClick={() => void manualRefresh()} aria-label="刷新盘中数据">
               <RefreshCw className={refreshing ? 'animate-spin' : ''} />
               <span className="hidden sm:inline">刷新</span>
@@ -861,18 +871,20 @@ export default function Home() {
           </div>
         )}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6" aria-label="数据状态">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7" aria-label="数据状态">
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="size-4 text-cyan-500" />盘面脉络</CardTitle><CardAction><StateBadge state={timeline.data?.status} /></CardAction><CardDescription>{timelineCoverage ? `${timelineCoverage.timeNodes ?? timelineCoverage.events}个资金转折 · ${timelineCoverage.events}个板块节点` : '正在重建时间轴'} · 60秒刷新</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4 text-emerald-500" />概念板块</CardTitle><CardAction><StateBadge state={radar.data?.status} /></CardAction><CardDescription>{radarCoverage ? `${radarCoverage.available}/${radarCoverage.reported}板块` : '正在连接'} · 15秒刷新</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="size-4 text-violet-500" />资金曲线</CardTitle><CardAction><StateBadge state={flow.data?.status} /></CardAction><CardDescription>{flowCoverage ? `${flowCoverage.available}/${flowCoverage.requested}板块` : '正在连接'} · 分钟序列</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Layers3 className="size-4 text-sky-500" />驱动成分</CardTitle><CardAction><StateBadge state={selectedEvent?.driverState} label={selectedEvent?.windowReady ? '3分钟就绪' : '预热中'} /></CardAction><CardDescription>{selectedEvent ? `${selectedEvent.directionalCount ?? 0}/${selectedEvent.memberCount ?? 0}只同向` : '等待板块异动'} · 贡献可追溯</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Swords className="size-4 text-amber-500" />连板梯队</CardTitle><CardAction><StateBadge state={ladder.data?.status} /></CardAction><CardDescription>{ladderSummary ? `昨日${ladderSummary.previousLimitUp} · 今封${ladderSummary.todaySealed} · 炸${ladderSummary.todayFailed}` : '正在连接'} · 30秒刷新</CardDescription></CardHeader></Card>
           <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Zap className="size-4 text-rose-500" />涨速样本</CardTitle><CardAction><StateBadge state={speed.data?.status} /></CardAction><CardDescription>{speedCoverage ? `概念${speedCoverage.conceptReady}/${speedCoverage.requested} · 涨停史${speedCoverage.recentLimitReady}/${speedCoverage.requested}` : '正在连接'} · 每秒刷新</CardDescription></CardHeader></Card>
+          <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="size-4 text-amber-500" />收盘定格</CardTitle><CardAction><StateBadge state="READY" label="15:00" /></CardAction><CardDescription>{selectedCloseDate || '暂无快照'} · 历史可选</CardDescription></CardHeader></Card>
         </section>
 
-        <Tabs defaultValue="timeline" className="gap-4">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value)} className="gap-4">
           <TabsList variant="line" className="max-w-full overflow-x-auto">
             <TabsTrigger value="timeline"><Clock3 />盘面脉络</TabsTrigger>
+            <TabsTrigger value="emotion"><CalendarDays />情绪周期</TabsTrigger>
             <TabsTrigger value="radar"><Activity />板块异动</TabsTrigger>
             <TabsTrigger value="flow"><ArrowLeftRight />资金分流</TabsTrigger>
             <TabsTrigger value="promotion"><TrendingUp />连板晋级</TabsTrigger>
@@ -882,6 +894,10 @@ export default function Home() {
 
           <TabsContent value="timeline">
             {timeline.data?.events?.length ? <MarketTimelineBoard data={timeline.data} /> : <EmptyState>{timeline.loading ? '正在对齐板块、指数与个股的分钟节点…' : timeline.data?.reason || timeline.error || '当前还没有达到阈值的盘面节点'}</EmptyState>}
+          </TabsContent>
+
+          <TabsContent value="emotion">
+            <EmotionCycleBoard selectedDate={selectedCloseDate} onDateChange={selectCloseDate} />
           </TabsContent>
 
           <TabsContent value="radar" className="space-y-4">
