@@ -3,6 +3,21 @@ import type {
   CloseStock,
   IntradayEmotionSnapshot,
 } from '@/lib/close-history';
+import { archivedQuote, archivedTrend } from '@/lib/archive-evidence';
+import { CLOSE_HISTORY } from '@/lib/close-history';
+import { loadCloseHistory } from '@/lib/persistence';
+import { emotionReading } from '@/lib/market-reading';
+import {
+  mergeQuoteRows,
+  quoteComplete,
+  quoteDate,
+  type StockQuote,
+} from '@/lib/quote-evidence';
+import {
+  parseTrendPoints,
+  priceLimitState,
+  trendWindow,
+} from '@/lib/timeline-evidence';
 
 const PUBLIC_CLIENT_TOKEN = '7eea3edcaed734bea9cbfc24409ed989';
 const MARKET_FILTER = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048';
@@ -155,6 +170,7 @@ export type MarketTimelineEvent = {
 };
 
 export type MarketTimelineSnapshot = {
+  evidenceVersion?: number;
   status: DataState;
   retrievedAt: string;
   tradeDate: string;
@@ -193,6 +209,8 @@ const trendCache = new Map<
     value: IntradayTrend;
   }
 >();
+const trendPending = new Map<string, Promise<IntradayTrend>>();
+const trendFailures = new Map<string, number>();
 
 type IntradayTrend = {
   code: string;
@@ -467,21 +485,24 @@ export async function fetchStockMetadata(code: string): Promise<StockMetadata> {
   return value;
 }
 
-async function fetchStockChangesAndSpeeds(codes: string[]) {
+async function fetchStockChangesAndSpeeds(codes: string[], tradeDate: string) {
   const uniqueCodes = [...new Set(codes.filter(Boolean))];
   const batches = Array.from(
     { length: Math.ceil(uniqueCodes.length / 40) },
     (_, index) => uniqueCodes.slice(index * 40, index * 40 + 40),
   );
   const batchMaps = await mapLimit(batches, 2, async (batch) => {
-    const params = new URLSearchParams({
-      secids: batch.map(secid).join(','),
-      fields: 'f12,f3,f6,f22',
-      ut: PUBLIC_CLIENT_TOKEN,
-      fltt: '2',
-      invt: '2',
-    });
+    const quotes = new Map<string, StockQuote>();
     for (const host of ['push2delay.eastmoney.com', 'push2.eastmoney.com']) {
+      const missing = batch.filter((code) => !quoteComplete(quotes.get(code)));
+      if (!missing.length) break;
+      const params = new URLSearchParams({
+        secids: missing.map(secid).join(','),
+        fields: 'f12,f3,f6,f22,f124',
+        ut: PUBLIC_CLIENT_TOKEN,
+        fltt: '2',
+        invt: '2',
+      });
       try {
         const payload = await fetchJsonOnce(
           `https://${host}/api/qt/ulist.np/get?${params}`,
@@ -489,34 +510,49 @@ async function fetchStockChangesAndSpeeds(codes: string[]) {
         );
         const data = (payload.data ?? {}) as Record<string, unknown>;
         const rows = Array.isArray(data.diff) ? (data.diff as ClistRow[]) : [];
-        if (!rows.length) throw new Error('涨幅与涨速列表为空');
-        return new Map(
-          rows.map((row) => [
-            String(row.f12 ?? ''),
-            {
-              changePct: numberOrNull(row.f3),
-              speedPct: numberOrNull(row.f22),
-              amount: numberOrNull(row.f6),
-            },
-          ]),
-        );
+        mergeQuoteRows(quotes, rows, missing, tradeDate, host);
       } catch {
         // Try the next public quote host for this batch.
       }
     }
-    return new Map<
-      string,
-      {
-        changePct: number | null;
-        speedPct: number | null;
-        amount: number | null;
-      }
-    >();
+    // A partial batch is not a complete quote result. Retry only missing codes.
+    await mapLimit(
+      batch.filter((code) => !quoteComplete(quotes.get(code))),
+      4,
+      async (code) => {
+        try {
+          const payload = await fetchJsonOnce(
+            `https://push2delay.eastmoney.com/api/qt/ulist.np/get?secids=${secid(code)}&fltt=2&invt=2&fields=f12,f3,f6,f22,f124`,
+            4_000,
+          );
+          const data = (payload.data ?? {}) as Record<string, unknown>;
+          mergeQuoteRows(
+            quotes,
+            Array.isArray(data.diff) ? (data.diff as ClistRow[]) : [],
+            [code],
+            tradeDate,
+            '东方财富个股补查',
+          );
+        } catch {
+          /* Keep valid rows from the batch. */
+        }
+        if (
+          !quoteComplete(quotes.get(code)) &&
+          (tradeDate < shanghaiDate() || shanghaiClock() > '15:00')
+        ) {
+          const historical = archivedQuote(marketSymbol(code), tradeDate);
+          if (historical)
+            quotes.set(code, {
+              ...historical,
+              ...quotes.get(code),
+              changePct: quotes.get(code)?.changePct ?? historical.changePct,
+            });
+        }
+      },
+    );
+    return quotes;
   });
-  const merged = new Map<
-    string,
-    { changePct: number | null; speedPct: number | null; amount: number | null }
-  >();
+  const merged = new Map<string, StockQuote>();
   for (const batchMap of batchMaps) {
     for (const [code, quote] of batchMap) merged.set(code, quote);
   }
@@ -1125,6 +1161,35 @@ async function fetchIntradayTrend(
   instrument: { code: string; secid: string },
   tradeDate: string,
 ): Promise<IntradayTrend> {
+  const key = `${tradeDate}:${instrument.secid}`;
+  const cached = trendCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (tradeDate < shanghaiDate() || shanghaiClock() > '15:00') {
+    const symbol =
+      instrument.secid === '1.000001'
+        ? 'sh000001'
+        : marketSymbol(instrument.code);
+    const historical = archivedTrend(symbol, tradeDate);
+    if (historical) return historical;
+  }
+  if ((trendFailures.get(key) ?? 0) > Date.now())
+    throw new Error('该交易日分钟价格暂不可用');
+  const pending = trendPending.get(key);
+  if (pending) return pending;
+  const request = fetchIntradayTrendUncached(instrument, tradeDate)
+    .catch((error) => {
+      trendFailures.set(key, Date.now() + 30_000);
+      throw error;
+    })
+    .finally(() => trendPending.delete(key));
+  trendPending.set(key, request);
+  return request;
+}
+
+async function fetchIntradayTrendUncached(
+  instrument: { code: string; secid: string },
+  tradeDate: string,
+): Promise<IntradayTrend> {
   const cacheKey = `${tradeDate}:${instrument.secid}`;
   const cached = trendCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
@@ -1145,16 +1210,10 @@ async function fetchIntradayTrend(
         7_000,
       );
       const data = (payload.data ?? {}) as Record<string, unknown>;
-      const points = (Array.isArray(data.trends) ? data.trends : [])
-        .map((row) => {
-          const [stamp, priceText] = String(row).split(',');
-          const rowDate = stamp.slice(0, 10).replaceAll('-', '');
-          const price = Number(priceText);
-          if (rowDate !== tradeDate || !Number.isFinite(price) || price <= 0)
-            return null;
-          return { time: stamp.slice(11, 16), price };
-        })
-        .filter(Boolean) as Array<{ time: string; price: number }>;
+      const points = parseTrendPoints(
+        Array.isArray(data.trends) ? data.trends : [],
+        tradeDate,
+      );
       if (!points.length) throw new Error(`未返回${tradeDate}的分钟价格`);
       const value: IntradayTrend = {
         code: String(data.code ?? instrument.code),
@@ -1176,18 +1235,6 @@ async function fetchIntradayTrend(
   if (cached && cached.staleUntil > Date.now())
     return { ...cached.value, stale: true };
   throw new Error(`分钟价格不可用 ${failures.join(' | ')}`);
-}
-
-function trendWindow(trend: IntradayTrend, startTime: string, endTime: string) {
-  const atOrBefore = (time: string) =>
-    [...trend.points].reverse().find((point) => point.time <= time) ?? null;
-  const start = atOrBefore(startTime);
-  const end = atOrBefore(endTime);
-  return {
-    changePct:
-      end && trend.preClose ? (end.price / trend.preClose - 1) * 100 : null,
-    windowChangePct: start && end ? (end.price / start.price - 1) * 100 : null,
-  };
 }
 
 type TimelineBoard = {
@@ -1430,19 +1477,6 @@ function timelineContextKey(candidate: TimelineCandidate) {
   return `${candidate.sector.code}:${candidate.flowDelta >= 0 ? 'up' : 'down'}`;
 }
 
-function timelineLimitState(
-  code: string,
-  name: string,
-  changePct: number | null,
-): MarketTimelineDriver['limitState'] {
-  if (changePct === null) return 'UNKNOWN';
-  const limitPct = nominalLimitPct(code, name);
-  const tolerance = limitPct <= 5 ? 0.25 : limitPct <= 10 ? 0.35 : 0.6;
-  if (changePct >= limitPct - tolerance) return 'LIMIT_UP';
-  if (changePct <= -limitPct + tolerance) return 'LIMIT_DOWN';
-  return 'NONE';
-}
-
 async function fetchTimelineMembers(candidate: TimelineCandidate) {
   const direction: 0 | 1 = candidate.flowDelta >= 0 ? 1 : 0;
   const members = await fetchClist({
@@ -1466,24 +1500,24 @@ async function fetchTimelineMembers(candidate: TimelineCandidate) {
 }
 
 async function confirmTimelineDrivers(
-  candidate: TimelineCandidate,
+  candidate: Pick<TimelineCandidate, 'windowStartTime' | 'time' | 'flowDelta'>,
   relatedStocks: MarketTimelineRelatedStock[],
   tradeDate: string,
 ) {
   const drivers = await mapLimit(
-    relatedStocks.slice(0, 2),
-    2,
+    [...new Map(relatedStocks.map((stock) => [stock.code, stock])).values()],
+    6,
     async (row): Promise<MarketTimelineDriver> => {
       try {
         const trend = await fetchIntradayTrend(
           { code: row.code, secid: secid(row.code) },
           tradeDate,
         );
-        const { changePct: atTimeChangePct, windowChangePct } = trendWindow(
-          trend,
-          candidate.windowStartTime,
-          candidate.time,
-        );
+        const {
+          changePct: atTimeChangePct,
+          windowChangePct,
+          price,
+        } = trendWindow(trend, candidate.windowStartTime, candidate.time);
         const aligns =
           windowChangePct !== null &&
           (candidate.flowDelta >= 0
@@ -1504,7 +1538,12 @@ async function confirmTimelineDrivers(
           mainNetInflow: row.mainNetInflow,
           atTimeChangePct,
           windowChangePct,
-          limitState: timelineLimitState(row.code, row.name, atTimeChangePct),
+          limitState: priceLimitState(
+            row.code,
+            row.name,
+            price,
+            trend.preClose,
+          ),
           role,
         };
       } catch {
@@ -1593,6 +1632,19 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     },
   );
   const contexts = new Map(contextResults);
+  const uniqueMembers = [
+    ...new Map(
+      [...contexts.values()]
+        .flatMap((context) => context.relatedStocks)
+        .map((stock) => [stock.code, stock]),
+    ).values(),
+  ];
+  await mapLimit(uniqueMembers, 8, async (stock) => {
+    await fetchIntradayTrend(
+      { code: stock.code, secid: secid(stock.code) },
+      tradeDate,
+    ).catch(() => null);
+  });
   const driverGroups = await mapLimit(candidates, 6, async (candidate) => {
     try {
       return await confirmTimelineDrivers(
@@ -1638,7 +1690,10 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
       drivers,
       relatedStocks,
       driverState:
-        checked > 0 && indices.length === 2
+        checked === drivers.length &&
+        drivers.length > 0 &&
+        drivers.every((driver) => driver.atTimeChangePct !== null) &&
+        indices.length === 2
           ? 'READY'
           : drivers.length
             ? 'DEGRADED'
@@ -1668,12 +1723,14 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     events.length &&
     indices.length === 2 &&
     events.every((event) => event.relatedStocks.length) &&
+    events.every((event) => event.driverState === 'READY') &&
     !sourceStale
       ? 'READY'
       : events.length
         ? 'DEGRADED'
         : 'MISSING';
   const value: MarketTimelineSnapshot = {
+    evidenceVersion: 2,
     status,
     retrievedAt: new Date().toISOString(),
     tradeDate,
@@ -1691,7 +1748,7 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
       ? '部分分钟端点短暂波动，已使用同交易日最近快照'
       : undefined,
     basis:
-      '不使用固定时间点。系统逐分钟比较板块最近3个有效交易分钟的主力资金增量与前3分钟增量，只在资金方向反转或流入/流出显著加速，并形成局部峰值时记录节点；同板块20分钟内去重、相近3分钟最多保留两个最强转折。启动/延续/兑现/走弱由资金方向的前后状态判定。每个转折节点都对排名靠前的成分股做同窗价格核验，并分开标记同向、反向和数据缺口；扩展异动股展示该板块当日最新涨跌，不把当前排名冒充历史时点因果。',
+      '按资金方向反转和流入/流出加速记录节点，不使用固定时间点。逐一核验已召回成分股的节点分钟收盘价，涨停/跌停按前收盘价计算的涨跌停价格确认；当天后续涨停不回填到早先节点。方向相反与行情缺失分开统计。',
     coverage: {
       sectors: boardSignals.length,
       events: events.length,
@@ -1708,6 +1765,108 @@ export async function getMarketTimelineSnapshot(): Promise<MarketTimelineSnapsho
     events,
   };
   timelineSnapshotCache = { expiresAt: Date.now() + 45_000, value };
+  return value;
+}
+
+const archivedTimelineRepairs = new Map<
+  string,
+  CacheRecord<MarketTimelineSnapshot>
+>();
+
+export async function repairArchivedTimeline(snapshot: MarketTimelineSnapshot) {
+  const key = `${snapshot.tradeDate}:${snapshot.retrievedAt}`;
+  const cached = archivedTimelineRepairs.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const members = [
+    ...new Map(
+      snapshot.events
+        .flatMap((event) => event.relatedStocks ?? [])
+        .map((stock) => [stock.code, stock]),
+    ).values(),
+  ];
+  await mapLimit(members, 8, async (stock) => {
+    await fetchIntradayTrend(
+      { code: stock.code, secid: secid(stock.code) },
+      snapshot.tradeDate,
+    ).catch(() => null);
+  });
+  const indices = await Promise.all([
+    fetchIntradayTrend(
+      { code: '000001', secid: '1.000001' },
+      snapshot.tradeDate,
+    ).catch(() => null),
+    fetchIntradayTrend(
+      { code: '399006', secid: '0.399006' },
+      snapshot.tradeDate,
+    ).catch(() => null),
+  ]);
+  const events = await mapLimit(snapshot.events, 6, async (event) => {
+    const related = event.relatedStocks ?? [];
+    const drivers = await confirmTimelineDrivers(
+      event,
+      related,
+      snapshot.tradeDate,
+    );
+    const checked = drivers.filter(
+      (driver) =>
+        driver.atTimeChangePct !== null && driver.windowChangePct !== null,
+    ).length;
+    const indexRows = indices
+      .filter((index): index is IntradayTrend => index !== null)
+      .map((index) => ({
+        code: index.code,
+        name: index.code === '000001' ? '上证指数' : '创业板指',
+        ...trendWindow(index, event.windowStartTime, event.time),
+      }));
+    const indexReady =
+      indexRows.length === 2 &&
+      indexRows.every(
+        (index) => index.changePct !== null && index.windowChangePct !== null,
+      );
+    return {
+      ...event,
+      drivers,
+      indices: indexRows,
+      driverState: (drivers.length && checked === drivers.length && indexReady
+        ? 'READY'
+        : drivers.length
+          ? 'DEGRADED'
+          : 'MISSING') as DataState,
+      driverBasis: `节点行情完整${checked}/${drivers.length}只；逐一核验同日分钟收盘价，后续涨停不提前回填`,
+    };
+  });
+  const checked = events
+    .flatMap((event) => event.drivers)
+    .filter(
+      (driver) =>
+        driver.atTimeChangePct !== null && driver.windowChangePct !== null,
+    ).length;
+  const requested = events.reduce(
+    (sum, event) => sum + event.drivers.length,
+    0,
+  );
+  const complete =
+    events.length > 0 && events.every((event) => event.driverState === 'READY');
+  const value: MarketTimelineSnapshot = {
+    ...snapshot,
+    evidenceVersion: 2,
+    events,
+    status: complete && snapshot.sourceState !== 'STALE' ? 'READY' : 'DEGRADED',
+    reason: complete
+      ? undefined
+      : `节点个股分钟行情完整${checked}/${requested}条；缺失项保留空值`,
+    coverage: {
+      ...snapshot.coverage,
+      checkedDrivers: checked,
+      confirmedDrivers: events
+        .flatMap((event) => event.drivers)
+        .filter((driver) => driver.role === '同窗价格确认').length,
+    },
+  };
+  archivedTimelineRepairs.set(key, {
+    expiresAt: Date.now() + (complete ? 300_000 : 45_000),
+    value,
+  });
   return value;
 }
 
@@ -1759,15 +1918,43 @@ export async function getMarketDateContext(): Promise<MarketDateContext> {
 
 async function previousTradingPool(tradeDate: string) {
   const attempts: Array<{ date: string; qdate: string; rows: number }> = [];
+  const closeHistory = await loadCloseHistory().catch(
+    () => CLOSE_HISTORY.snapshots,
+  );
   for (let offset = 1; offset <= 10; offset += 1) {
     const candidate = subtractDays(tradeDate, offset);
+    const weekday = new Date(
+      `${candidate.slice(0, 4)}-${candidate.slice(4, 6)}-${candidate.slice(6, 8)}T12:00:00Z`,
+    ).getUTCDay();
+    if (weekday === 0 || weekday === 6) continue;
+    const archived = closeHistory.find(
+      (snapshot) =>
+        snapshot.date.replaceAll('-', '') === candidate &&
+        snapshot.cutoff === '15:00' &&
+        snapshot.status === 'READY',
+    );
+    if (archived) {
+      return {
+        tradeDate: candidate,
+        rows: archived.ladders.flatMap((level) =>
+          level.stocks.map((stock) => ({
+            c: stock.code,
+            n: stock.name,
+            lbc: stock.height,
+            hybk: stock.industry,
+          })),
+        ) as PoolRow[],
+        providerQdate: '',
+        dateState: 'READY' as DataState,
+      };
+    }
     const pool = await fetchPool('ZTPool', candidate);
     attempts.push({
       date: candidate,
       qdate: pool.qdate,
       rows: pool.rows.length,
     });
-    if (pool.rows.length) {
+    if (pool.rows.length && pool.qdate === candidate) {
       return {
         tradeDate: candidate,
         rows: pool.rows,
@@ -1778,6 +1965,9 @@ async function previousTradingPool(tradeDate: string) {
             : ('DEGRADED' as DataState),
       };
     }
+    throw new Error(
+      `上一交易日候选${candidate}未获精确日期确认；保留缺失，不跳到更早的涨停池`,
+    );
   }
   throw new Error(`10日内未找到上一交易日涨停池 ${JSON.stringify(attempts)}`);
 }
@@ -1886,13 +2076,11 @@ export async function getLadderSnapshot() {
       sealFund: sealed ? poolNumber(current, 'fund') : null,
     };
   });
-  let quoteMap = new Map<
-    string,
-    { changePct: number | null; speedPct: number | null; amount: number | null }
-  >();
+  let quoteMap = new Map<string, StockQuote>();
   try {
     quoteMap = await fetchStockChangesAndSpeeds(
       competitorBase.map((row) => String(row.code)),
+      tradeDate,
     );
   } catch {
     quoteMap = new Map();
@@ -1907,9 +2095,12 @@ export async function getLadderSnapshot() {
       changePct: quote?.changePct ?? numberOrNull(row.changePct),
       speedPct: quote?.speedPct ?? null,
       amount: quote?.amount ?? numberOrNull(row.amount),
-      quoteState:
-        quote && (quote.changePct !== null || quote.speedPct !== null)
-          ? ('READY' as DataState)
+      quoteTime: quote?.quoteTime,
+      quoteSource: quote?.quoteSource,
+      quoteState: quoteComplete(quote)
+        ? ('READY' as DataState)
+        : quote?.changePct != null || row.changePct !== null
+          ? ('DEGRADED' as DataState)
           : ('MISSING' as DataState),
     };
   });
@@ -1956,11 +2147,112 @@ export async function getLadderSnapshot() {
     coverage: {
       competitors: competitors.length,
       quoteReady,
+      priceReady: competitors.filter((row) => row.changePct !== null).length,
+      speedReady: competitors.filter((row) => row.speedPct !== null).length,
       duplicatesRemoved,
     },
     promotion,
+    sealedStocks: [...sealedByCode.values()].map((row) => closeStock(row)),
     competitors,
   };
+}
+
+let archivedLadderRepair: CacheRecord<
+  Awaited<ReturnType<typeof getLadderSnapshot>>
+> | null = null;
+
+export async function repairArchivedLadder(
+  snapshot: Awaited<ReturnType<typeof getLadderSnapshot>>,
+) {
+  if (
+    archivedLadderRepair &&
+    archivedLadderRepair.expiresAt > Date.now() &&
+    archivedLadderRepair.value.tradeDate === snapshot.tradeDate &&
+    archivedLadderRepair.value.retrievedAt === snapshot.retrievedAt
+  )
+    return archivedLadderRepair.value;
+  if (!snapshot.competitors.length || !snapshot.coverage) return snapshot;
+  const archiveHistory = await loadCloseHistory().catch(
+    () => CLOSE_HISTORY.snapshots,
+  );
+  const previousClose = archiveHistory.find(
+    (close) =>
+      close.date.replaceAll('-', '') === snapshot.previousTradeDate &&
+      close.cutoff === '15:00',
+  );
+  const priorStocks =
+    previousClose?.ladders.flatMap((level) => level.stocks) ?? [];
+  const archiveMatches =
+    priorStocks.length === snapshot.competitors.length &&
+    snapshot.competitors.every((row) =>
+      priorStocks.some(
+        (stock) => stock.code === row.code && stock.height === row.fromHeight,
+      ),
+    );
+  const priorDateState = archiveMatches
+    ? ('READY' as DataState)
+    : snapshot.priorDateState;
+  const missing = snapshot.competitors.filter(
+    (row) => !quoteComplete(row) || row.quoteState !== 'READY',
+  );
+  const quotes = missing.length
+    ? await fetchStockChangesAndSpeeds(
+        missing.map((row) => row.code),
+        snapshot.tradeDate,
+      ).catch(() => new Map<string, StockQuote>())
+    : new Map<string, StockQuote>();
+  const competitors = snapshot.competitors
+    .map((row) => {
+      const quote = quotes.get(row.code);
+      const updated = {
+        ...row,
+        changePct: quote?.changePct ?? row.changePct,
+        speedPct: quote?.speedPct ?? row.speedPct,
+        amount: quote?.amount ?? row.amount,
+        quoteTime: quote?.quoteTime ?? row.quoteTime,
+        quoteSource: quote?.quoteSource ?? row.quoteSource,
+      };
+      return {
+        ...updated,
+        quoteState: (quoteComplete(updated)
+          ? 'READY'
+          : updated.changePct !== null
+            ? 'DEGRADED'
+            : 'MISSING') as DataState,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.toHeight - a.toHeight ||
+        (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity) ||
+        (b.speedPct ?? -Infinity) - (a.speedPct ?? -Infinity),
+    );
+  const quoteReady = competitors.filter(
+    (row) => row.quoteState === 'READY',
+  ).length;
+  const currentCloseStocks = archiveHistory
+    .find((close) => close.date.replaceAll('-', '') === snapshot.tradeDate)
+    ?.ladders.flatMap((level) => level.stocks);
+  const value = {
+    ...snapshot,
+    priorDateState,
+    sealedStocks: snapshot.sealedStocks ?? currentCloseStocks,
+    priorDateSource: archiveMatches
+      ? `${snapshot.previousTradeDate} 15:00收盘归档：股票代码与板位逐一匹配`
+      : '东方财富涨停池返回日期',
+    competitors,
+    status: (priorDateState === 'READY' && quoteReady === competitors.length
+      ? 'READY'
+      : 'DEGRADED') as DataState,
+    coverage: {
+      ...snapshot.coverage,
+      quoteReady,
+      priceReady: competitors.filter((row) => row.changePct !== null).length,
+      speedReady: competitors.filter((row) => row.speedPct !== null).length,
+    },
+  };
+  archivedLadderRepair = { expiresAt: Date.now() + 45_000, value };
+  return value;
 }
 
 export async function getSpeedSnapshot() {
@@ -2163,10 +2455,10 @@ async function fetchCloseIndices() {
   }));
 }
 
-async function fetchIntradayIndicesAndBreadth() {
+async function fetchIntradayIndicesAndBreadth(tradeDate: string) {
   const params = new URLSearchParams({
-    secids: '1.000001,0.399001,0.899050',
-    fields: 'f12,f14,f2,f3,f104,f105,f106',
+    secids: '1.000001,0.399001,0.899050,0.399006',
+    fields: 'f12,f14,f2,f3,f104,f105,f106,f124',
     ut: PUBLIC_CLIENT_TOKEN,
     fltt: '2',
     invt: '2',
@@ -2175,7 +2467,9 @@ async function fetchIntradayIndicesAndBreadth() {
     `https://push2delay.eastmoney.com/api/qt/ulist.np/get?${params}`,
   );
   const data = (payload.data ?? {}) as Record<string, unknown>;
-  const rows = Array.isArray(data.diff) ? (data.diff as ClistRow[]) : [];
+  const rows = (
+    Array.isArray(data.diff) ? (data.diff as ClistRow[]) : []
+  ).filter((row) => quoteDate(row.f124) === tradeDate);
   const marketRows = rows.filter((row) =>
     ['000001', '399001', '899050'].includes(String(row.f12 ?? '')),
   );
@@ -2201,7 +2495,7 @@ async function fetchIntradayIndicesAndBreadth() {
       fid: 'f3',
       pageSize,
       page: 1,
-      fields: 'f12,f3',
+      fields: 'f12,f3,f124',
     });
     // Eastmoney sorts suspended rows (f3="-") between flat and falling rows.
     // Translate the active-stock median rank to its actual position in that list.
@@ -2215,23 +2509,54 @@ async function fetchIntradayIndicesAndBreadth() {
       fid: 'f3',
       pageSize,
       page,
-      fields: 'f12,f3',
+      fields: 'f12,f3,f124',
     });
-    medianChangePct = numberOrNull(ranked.rows[offset]?.f3);
+    const central = ranked.rows[offset];
+    medianChangePct =
+      central && quoteDate(central.f124) === tradeDate
+        ? numberOrNull(central.f3)
+        : null;
+    if (medianChangePct !== null && rowsAvailable % 2 === 0) {
+      const nextRank =
+        middleRank + 1 > up + flat
+          ? middleRank + 1 + suspended
+          : middleRank + 1;
+      const nextPage = Math.ceil(nextRank / pageSize);
+      const nextRows =
+        nextPage === page
+          ? ranked
+          : await fetchClist({
+              fs: MARKET_FILTER,
+              fid: 'f3',
+              pageSize,
+              page: nextPage,
+              fields: 'f12,f3,f124',
+            });
+      const nextRow = nextRows.rows[(nextRank - 1) % pageSize];
+      const nextValue =
+        nextRow && quoteDate(nextRow.f124) === tradeDate
+          ? numberOrNull(nextRow.f3)
+          : null;
+      medianChangePct =
+        nextValue === null ? null : (medianChangePct + nextValue) / 2;
+    }
   }
   const names = new Map([
     ['000001', '上证'],
     ['399001', '深证'],
     ['899050', '北证50'],
+    ['399006', '创业板'],
   ]);
   return {
     breadth: { rowsAvailable, up, down, flat, medianChangePct },
-    indices: marketRows.map((row) => ({
-      code: String(row.f12 ?? ''),
-      name: names.get(String(row.f12 ?? '')) ?? String(row.f14 ?? ''),
-      close: numberOrNull(row.f2),
-      changePct: numberOrNull(row.f3),
-    })),
+    indices: rows
+      .filter((row) => ['000001', '399001', '399006'].includes(String(row.f12)))
+      .map((row) => ({
+        code: String(row.f12 ?? ''),
+        name: names.get(String(row.f12 ?? '')) ?? String(row.f14 ?? ''),
+        close: numberOrNull(row.f2),
+        changePct: numberOrNull(row.f3),
+      })),
     ready:
       marketRows.length === 3 &&
       rowsAvailable >= 4_000 &&
@@ -2251,7 +2576,7 @@ export async function getIntradayEmotionSnapshot(): Promise<IntradayEmotionSnaps
     fetchPool('ZTPool', marketDate.tradeDate),
     fetchPool('ZBPool', marketDate.tradeDate),
     fetchPool('DTPool', marketDate.tradeDate),
-    fetchIntradayIndicesAndBreadth(),
+    fetchIntradayIndicesAndBreadth(marketDate.tradeDate),
   ]);
   const pools = [limitPool, failedPool, downPool];
   const poolsReady = pools.filter(
@@ -2308,6 +2633,7 @@ export async function getIntradayEmotionSnapshot(): Promise<IntradayEmotionSnaps
     highestBoard,
     consecutiveCount: limitRows.filter((row) => row.height >= 2).length,
     breadth: market.breadth,
+    indices: market.indices,
     indexMood,
     shortMood: closeShortMood(moodInput),
     cycleNode: closeCycleNode(moodInput),
@@ -2321,6 +2647,21 @@ export async function getIntradayEmotionSnapshot(): Promise<IntradayEmotionSnaps
       breadthReady: market.ready,
     },
   };
+  const reading = emotionReading({
+    ...snapshot,
+    date: snapshot.tradeDate,
+    poolsReady: poolsReady === pools.length,
+    breadthReady: market.ready,
+  });
+  snapshot.indexMood = reading.indexMood;
+  snapshot.shortMood = reading.board;
+  snapshot.cycleNode = reading.headline;
+  if (!reading.indexReady) {
+    snapshot.status = 'DEGRADED';
+    snapshot.reason = [snapshot.reason, '三大指数报价未齐，不参与指数判断']
+      .filter(Boolean)
+      .join('；');
+  }
   intradayEmotionCache = { expiresAt: Date.now() + 25_000, value: snapshot };
   return snapshot;
 }

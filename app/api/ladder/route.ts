@@ -1,4 +1,4 @@
-import { getLadderSnapshot } from '@/lib/market';
+import { getLadderSnapshot, repairArchivedLadder } from '@/lib/market';
 import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
   loadLatestModuleSnapshot,
@@ -14,7 +14,7 @@ export async function GET() {
       Awaited<ReturnType<typeof getLadderSnapshot>>
     >('ladder');
   if (archived)
-    return Response.json(archived, {
+    return Response.json(await repairArchivedLadder(archived), {
       headers: { 'cache-control': 'no-store' },
     });
   try {
@@ -36,7 +36,7 @@ export async function GET() {
           status: 'DEGRADED',
           sourceState: 'STALE',
           staleAt: persisted.persistedAt,
-          retrievedAt: new Date().toISOString(),
+          retrievedAt: persisted.retrievedAt,
           reason: '连板池端点暂时不可用，展示最近成功梯队并单独重连',
         },
         { headers: { 'cache-control': 'no-store' } },
@@ -61,7 +61,7 @@ export async function GET() {
             typeof fallback.persistedAt === 'string'
               ? fallback.persistedAt
               : fallback.retrievedAt,
-          retrievedAt: new Date().toISOString(),
+          retrievedAt: fallback.retrievedAt,
           reason: '行情源短暂波动，展示最近成功快照并自动重连',
         },
         { headers: { 'cache-control': 'no-store' } },

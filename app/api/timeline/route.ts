@@ -1,4 +1,7 @@
-import { getMarketTimelineSnapshot } from '@/lib/market';
+import {
+  getMarketTimelineSnapshot,
+  repairArchivedTimeline,
+} from '@/lib/market';
 import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
   loadLatestModuleSnapshot,
@@ -34,10 +37,19 @@ export async function GET() {
     await loadArchivedSessionSnapshot<
       Awaited<ReturnType<typeof getMarketTimelineSnapshot>>
     >('timeline');
-  if (archived)
-    return Response.json(archived, {
+  if (archived) {
+    const repaired = await withTimeout(
+      repairArchivedTimeline(archived),
+      55_000,
+    ).catch(() => ({
+      ...archived,
+      status: 'DEGRADED',
+      reason: '节点行情补查暂未完成，保留原始归档时间',
+    }));
+    return Response.json(repaired, {
       headers: { 'cache-control': 'no-store' },
     });
+  }
   try {
     const snapshot = await withTimeout(getMarketTimelineSnapshot(), 55_000);
     if (snapshot.events.length) {
@@ -57,7 +69,7 @@ export async function GET() {
           status: 'DEGRADED',
           sourceState: 'STALE',
           staleAt: persisted.persistedAt,
-          retrievedAt: new Date().toISOString(),
+          retrievedAt: persisted.retrievedAt,
           reason: '盘面脉络端点暂时不可用，展示最近成功时间轴并单独重连',
         },
         { headers: { 'cache-control': 'no-store' } },
@@ -82,7 +94,7 @@ export async function GET() {
             typeof fallback.persistedAt === 'string'
               ? fallback.persistedAt
               : fallback.retrievedAt,
-          retrievedAt: new Date().toISOString(),
+          retrievedAt: fallback.retrievedAt,
           reason: '分钟行情源短暂波动，展示同交易日最近盘面脉络并自动重连',
         },
         { headers: { 'cache-control': 'no-store' } },

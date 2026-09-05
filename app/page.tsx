@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { timelineHeadline } from '@/lib/timeline-evidence';
+import { LadderOverview } from '@/components/market-reading-board';
 import {
   Activity,
   ArrowDownRight,
@@ -64,6 +66,7 @@ import {
   LATEST_CLOSE_DATE,
   type CloseHistoryDocument,
   type IntradayEmotionSnapshot,
+  type CloseStock,
 } from '@/lib/close-history';
 
 type DataState = 'READY' | 'DEGRADED' | 'MISSING';
@@ -186,6 +189,8 @@ type Competitor = {
   changePct: number | null;
   speedPct: number | null;
   quoteState: DataState;
+  quoteTime?: string;
+  quoteSource?: string;
   amount: number | null;
   firstTouch: string | null;
   lastSeal: string | null;
@@ -202,6 +207,8 @@ type LadderData = {
   requestedDate?: string;
   phase?: string;
   sessionState?: 'LIVE' | 'CLOSED';
+  sourceState?: 'LIVE' | 'ARCHIVED' | 'STALE';
+  sealedStocks?: CloseStock[];
   priorDateState?: DataState;
   reason?: string;
   counts?: {
@@ -212,6 +219,8 @@ type LadderData = {
   coverage?: {
     competitors: number;
     quoteReady: number;
+    priceReady?: number;
+    speedReady?: number;
     duplicatesRemoved?: number;
   };
   promotion: Promotion[];
@@ -488,33 +497,6 @@ function fmtPct(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined || !Number.isFinite(value))
     return '—';
   return `${value > 0 ? '+' : ''}${value.toFixed(digits)}%`;
-}
-
-function isAtNominalLimit(
-  code: string,
-  name: string,
-  changePct: number | null | undefined,
-  direction: 'up' | 'down',
-) {
-  if (changePct === null || changePct === undefined) return false;
-  const upperName = name.toUpperCase();
-  const limitPct = upperName.includes('ST')
-    ? 5
-    : code.startsWith('8') || code.startsWith('9')
-      ? 30
-      : code.startsWith('300') ||
-          code.startsWith('301') ||
-          code.startsWith('688')
-        ? 20
-        : 10;
-  const tolerance = limitPct <= 5 ? 0.25 : limitPct <= 10 ? 0.35 : 0.6;
-  return direction === 'up'
-    ? changePct >= limitPct - tolerance
-    : changePct <= -limitPct + tolerance;
-}
-
-function compactStockName(name: string) {
-  return name.replace(/\s+/g, '');
 }
 
 function fmtMoney(value: number | null | undefined) {
@@ -1127,7 +1109,7 @@ function LadderHeightTrend({ history }: { history: CloseHistoryDocument }) {
             className="max-w-[360px] text-right font-mono whitespace-normal"
           >
             {latest
-              ? `${latest.highestBoard}板 · ${latest.leaderText} · 较前日${heightChange > 0 ? '+' : ''}${heightChange}`
+              ? `${latest.highestBoard}板 · ${latest.leaderText}${previous ? ` · 较${previous.day} ${heightChange === 0 ? '持平' : `${heightChange > 0 ? '+' : ''}${heightChange}板`}` : ''}`
               : '暂无数据'}
           </Badge>
         </CardAction>
@@ -1215,20 +1197,21 @@ function LadderHeightTrend({ history }: { history: CloseHistoryDocument }) {
                 tickLine={false}
                 axisLine={false}
                 width={34}
+                tickFormatter={(value) => `${value}家`}
               />
               <ChartTooltip
                 cursor={false}
                 content={
                   <ChartTooltipContent
                     labelFormatter={(_, payload) =>
-                      String(payload?.[0]?.payload?.date ?? '')
+                      `${payload?.[0]?.payload?.date ?? ''} · ${payload?.[0]?.payload?.leaderText ?? ''}`
                     }
                   />
                 }
               />
               <Line
                 yAxisId="height"
-                type="monotone"
+                type="linear"
                 dataKey="highestBoard"
                 stroke="var(--color-highestBoard)"
                 strokeWidth={3}
@@ -1237,7 +1220,7 @@ function LadderHeightTrend({ history }: { history: CloseHistoryDocument }) {
               />
               <Line
                 yAxisId="count"
-                type="monotone"
+                type="linear"
                 dataKey="consecutiveCount"
                 stroke="var(--color-consecutiveCount)"
                 strokeWidth={2}
@@ -1339,63 +1322,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
     }
   }
 
-  const eventHeadline = (event: MarketTimelineEvent) => {
-    const rising = event.flowDelta >= 0;
-    const expectedLimitState = rising ? 'LIMIT_UP' : 'LIMIT_DOWN';
-    const exactLimitDrivers = event.drivers.filter(
-      (driver) => driver.limitState === expectedLimitState,
-    );
-    const latestLimitStocks = (event.relatedStocks ?? []).filter((stock) =>
-      isAtNominalLimit(
-        stock.code,
-        stock.name,
-        stock.changePct,
-        rising ? 'up' : 'down',
-      ),
-    );
-    const alignedDrivers = event.drivers.filter(
-      (driver) => driver.role === '同窗价格确认',
-    );
-    const limitNames = [
-      ...new Set([
-        ...exactLimitDrivers.map((driver) => compactStockName(driver.name)),
-        ...latestLimitStocks.map((stock) => compactStockName(stock.name)),
-      ]),
-    ];
-    const fallbackStocks = (
-      alignedDrivers.length
-        ? alignedDrivers.map((driver) => ({
-            name: compactStockName(driver.name),
-            changePct:
-              driver.atTimeChangePct ??
-              event.relatedStocks?.find((stock) => stock.code === driver.code)
-                ?.changePct ??
-              driver.windowChangePct,
-          }))
-        : (event.relatedStocks ?? []).map((stock) => ({
-            name: compactStockName(stock.name),
-            changePct: stock.changePct,
-          }))
-    ).slice(0, 2);
-    const action =
-      event.kind === 'STRONG'
-        ? '延续活跃'
-        : event.kind === 'START'
-          ? '异动拉升'
-          : event.kind === 'CASHOUT'
-            ? '高位兑现'
-            : event.kind === 'WEAKEN'
-              ? '持续走弱'
-              : '震荡观察';
-    const stockAction = limitNames.length
-      ? `${limitNames.join('、')}${rising ? '涨停' : '跌停'}`
-      : fallbackStocks.length
-        ? `${fallbackStocks
-            .map((stock) => `${stock.name}${fmtPct(stock.changePct)}`)
-            .join('、')}${rising ? '领涨' : '领跌'}`
-        : '个股数据暂待补齐';
-    return `${event.sectorName}${action}，${stockAction}`;
-  };
+  const eventHeadline = timelineHeadline;
 
   const indexPhrase = (events: MarketTimelineEvent[]) => {
     const indices = events.find((event) => event.indices.length)?.indices ?? [];
@@ -1500,7 +1427,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
           </CardTitle>
           <CardDescription>
             最新在上 · 先看“板块动作 → 涨停/领涨股”，再看指数环境与量化解释 ·
-            时间取真实资金转折分钟；涨停优先采用节点分钟，旧归档回退到收盘状态
+            时间取真实资金转折分钟，个股涨停按节点分钟价格确认
           </CardDescription>
           <CardAction>
             <StateBadge
@@ -1554,7 +1481,10 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                       event.drivers.filter(
                         (driver) =>
                           driver.windowChangePct !== null &&
-                          driver.role !== '同窗价格确认',
+                          driver.role !== '同窗价格确认' &&
+                          !confirmedDrivers.some(
+                            (confirmed) => confirmed.code === driver.code,
+                          ),
                       ),
                     )
                     .reduce((drivers, driver) => {
@@ -1649,7 +1579,9 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                       </div>
 
                       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-medium">节点核心带动 / 拖累</span>
+                        <span className="font-medium">
+                          节点同步个股 / 反向个股
+                        </span>
                         {confirmedDrivers.length
                           ? confirmedDrivers.map((driver) => (
                               <span
@@ -1699,7 +1631,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                                 <span className="text-muted-foreground">
                                   {driver.role === '同窗价格持平'
                                     ? '持平'
-                                    : '未同步'}
+                                    : '反向变动'}
                                 </span>
                               </span>
                             ))
@@ -1717,56 +1649,58 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                         ) : null}
                       </div>
 
-                      <div className="mt-4">
-                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-xs font-medium">
-                            板块内跟随个股（当前涨幅）
-                          </span>
-                          <span className="text-[11px] text-muted-foreground">
-                            不冒充节点时刻的历史涨幅 · 个股跨节点去重
-                          </span>
-                        </div>
-                        {relatedStocks.length ? (
-                          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-4">
-                            {relatedStocks.map((stock) => {
-                              const sectors = [
-                                ...(stockSectors.get(stock.code) ?? []),
-                              ];
-                              return (
-                                <div
-                                  key={stock.code}
-                                  className="flex min-w-0 items-center justify-between gap-2 rounded-md bg-muted/70 px-2.5 py-2 text-xs"
-                                >
-                                  <span className="flex min-w-0 items-center gap-1.5">
-                                    <span
-                                      className="truncate"
-                                      title={`${stock.name} · ${stock.industry} · ${sectors.join('、')}`}
-                                    >
-                                      {stock.name}
-                                    </span>
-                                    {sectors.length > 1 ? (
-                                      <span className="shrink-0 rounded bg-sky-500/10 px-1 py-0.5 text-[10px] text-sky-700 dark:text-sky-300">
-                                        跨{sectors.length}板块
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                  <span
-                                    className={`shrink-0 font-mono font-semibold ${(stock.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
-                                  >
-                                    {fmtPct(stock.changePct)}
-                                  </span>
-                                </div>
-                              );
-                            })}
+                      {relatedStocks.length > 0 ? (
+                        <div className="mt-4">
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-medium">
+                              板块内跟随个股（当前涨幅）
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              不冒充节点时刻的历史涨幅 · 个股跨节点去重
+                            </span>
                           </div>
-                        ) : (
-                          <EmptyState>
-                            {mergedRelatedCount
-                              ? `本节点${mergedRelatedCount}只重叠股已合并到同窗核验或更新节点`
-                              : '相关异动股当前不可用'}
-                          </EmptyState>
-                        )}
-                      </div>
+                          {relatedStocks.length ? (
+                            <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-4">
+                              {relatedStocks.map((stock) => {
+                                const sectors = [
+                                  ...(stockSectors.get(stock.code) ?? []),
+                                ];
+                                return (
+                                  <div
+                                    key={stock.code}
+                                    className="flex min-w-0 items-center justify-between gap-2 rounded-md bg-muted/70 px-2.5 py-2 text-xs"
+                                  >
+                                    <span className="flex min-w-0 items-center gap-1.5">
+                                      <span
+                                        className="truncate"
+                                        title={`${stock.name} · ${stock.industry} · ${sectors.join('、')}`}
+                                      >
+                                        {stock.name}
+                                      </span>
+                                      {sectors.length > 1 ? (
+                                        <span className="shrink-0 rounded bg-sky-500/10 px-1 py-0.5 text-[10px] text-sky-700 dark:text-sky-300">
+                                          跨{sectors.length}板块
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                    <span
+                                      className={`shrink-0 font-mono font-semibold ${(stock.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
+                                    >
+                                      {fmtPct(stock.changePct)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <EmptyState>
+                              {mergedRelatedCount
+                                ? `本节点${mergedRelatedCount}只重叠股已合并到同窗核验或更新节点`
+                                : '相关异动股当前不可用'}
+                            </EmptyState>
+                          )}
+                        </div>
+                      ) : null}
                       <details className="mt-3 rounded-md border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
                         <summary className="cursor-pointer font-medium text-foreground/75">
                           查看资金转折判定与数据边界
@@ -1819,6 +1753,7 @@ export default function Home() {
   const [selectedCloseDate, setSelectedCloseDate] = useState(LATEST_CLOSE_DATE);
   const closeDatePinned = useRef(false);
   const [activeTab, setActiveTab] = useState('timeline');
+  const [competitionFilter, setCompetitionFilter] = useState('ALL');
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -1877,13 +1812,13 @@ export default function Home() {
         : undefined,
     ],
   ].filter(([, error, state, reason]) =>
-    Boolean(error || state === 'MISSING' || reason),
+    Boolean(error || state === 'MISSING' || state === 'DEGRADED' || reason),
   );
   const sourceNotice = issueModules.length
-    ? `部分模块正在单独重连：${issueModules.map(([name]) => name).join('、')}`
+    ? `部分数据不完整：${issueModules.map(([name]) => name).join('、')}；完整模块仍可独立查看`
     : null;
   const marketNotice = closedSnapshot
-    ? `当前休市，盘中模块明确展示最近交易日 ${fmtTradeDate(closedSnapshot.marketDate ?? closedSnapshot.latestDate)} 的完整快照；不会把它标成今天的实时行情。`
+    ? `当前休市，展示 ${fmtTradeDate(closedSnapshot.marketDate ?? closedSnapshot.latestDate)} 的最近可用快照；各模块的数据缺口单独标注。`
     : null;
   const manualRefresh = async () => {
     setRefreshing(true);
@@ -1905,6 +1840,13 @@ export default function Home() {
   };
 
   const ladderSummary = ladder.data?.counts;
+  const visibleCompetitors = (ladder.data?.competitors ?? []).filter(
+    (row) =>
+      competitionFilter === 'ALL' ||
+      (competitionFilter === 'NEGATIVE'
+        ? row.changePct !== null && row.changePct < 0
+        : row.state === competitionFilter),
+  );
   const speedCoverage = speed.data?.coverage;
   const radarCoverage = radar.data?.coverage;
   const flowCoverage = flow.data?.coverage;
@@ -1959,7 +1901,7 @@ export default function Home() {
                 className={`size-1.5 rounded-full ${sourceNotice ? 'bg-amber-500' : closedSnapshot ? 'bg-sky-500' : 'bg-emerald-500'}`}
               />
               {sourceNotice
-                ? '部分重连'
+                ? '部分数据不全'
                 : closedSnapshot
                   ? '休市快照'
                   : '监控中'}{' '}
@@ -2209,11 +2151,14 @@ export default function Home() {
               snapshot={intradayEmotion.data}
               loading={intradayEmotion.loading}
               error={intradayEmotion.error}
+              history={history}
+              ladder={ladder.data}
             />
             <EmotionCycleBoard
               selectedDate={selectedCloseDate}
               onDateChange={selectCloseDate}
               history={history}
+              ladder={ladder.data}
             />
           </TabsContent>
 
@@ -2423,10 +2368,18 @@ export default function Home() {
           </TabsContent>
 
           <TabsContent value="promotion" className="space-y-4">
+            <LadderOverview
+              ladder={ladder.data}
+              close={history.snapshots.find(
+                (snapshot) =>
+                  snapshot.date.replaceAll('-', '') === ladder.data?.tradeDate,
+              )}
+              onCompetition={() => setActiveTab('competition')}
+            />
             <LadderHeightTrend history={history} />
             <Card>
               <CardHeader>
-                <CardTitle>连板晋级漏斗</CardTitle>
+                <CardTitle>晋级统计明细</CardTitle>
                 <CardDescription>
                   {ladder.data?.previousTradeDate ?? '上一交易日'} →{' '}
                   {ladder.data?.tradeDate ?? '当前交易日'}
@@ -2452,7 +2405,7 @@ export default function Home() {
                         <TableHead className="text-right">昨日存量</TableHead>
                         <TableHead className="text-right">成功晋级</TableHead>
                         <TableHead className="text-right">炸板</TableHead>
-                        <TableHead className="text-right">未触板</TableHead>
+                        <TableHead className="text-right">其他未封</TableHead>
                         <TableHead className="text-right">晋级率</TableHead>
                         <TableHead>当前领先</TableHead>
                       </TableRow>
@@ -2498,12 +2451,12 @@ export default function Home() {
 
           <TabsContent value="competition">
             <Card>
-              <CardHeader>
+              <CardHeader className="max-sm:grid-cols-1!">
                 <CardTitle>同梯队竞争</CardTitle>
                 <CardDescription>
-                  昨日涨停池按股票代码去重展示；目标梯队从高到低，同梯队内涨幅、涨速靠前
+                  昨日涨停池按股票代码去重展示；目标梯队从高到低，同梯队内涨幅、涨速靠前。涨速为行情源的短窗涨幅，不是每秒收益。
                 </CardDescription>
-                <CardAction>
+                <CardAction className="max-sm:col-start-1 max-sm:row-start-3 max-sm:justify-self-start">
                   {ladder.data?.coverage ? (
                     <StateBadge
                       state={
@@ -2512,98 +2465,198 @@ export default function Home() {
                           ? 'READY'
                           : 'DEGRADED'
                       }
-                      label={`去重后 ${ladder.data.coverage.competitors}只 · 行情 ${ladder.data.coverage.quoteReady}/${ladder.data.coverage.competitors}${ladder.data.coverage.duplicatesRemoved ? ` · 已合并${ladder.data.coverage.duplicatesRemoved}` : ''}`}
+                      label={`${ladder.data.coverage.competitors}只 · 涨幅 ${ladder.data.coverage.priceReady ?? ladder.data.coverage.quoteReady}/${ladder.data.coverage.competitors} · 涨速 ${ladder.data.coverage.speedReady ?? ladder.data.coverage.quoteReady}/${ladder.data.coverage.competitors}`}
                     />
                   ) : null}
                 </CardAction>
               </CardHeader>
               <CardContent>
+                <div
+                  className="mb-4 flex flex-wrap gap-2"
+                  aria-label="竞争个股筛选"
+                >
+                  {(
+                    [
+                      ['ALL', '全部'],
+                      ['SEALED', '封板晋级'],
+                      ['FAILED', '炸板未封'],
+                      ['DROPPED', '其他未封'],
+                      ['NEGATIVE', '只看下跌'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <Button
+                      key={value}
+                      size="sm"
+                      variant={
+                        competitionFilter === value ? 'secondary' : 'outline'
+                      }
+                      aria-pressed={competitionFilter === value}
+                      onClick={() => setCompetitionFilter(value)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                  <span className="self-center text-xs text-muted-foreground">
+                    显示 {visibleCompetitors.length} /{' '}
+                    {ladder.data?.competitors.length ?? 0}只
+                  </span>
+                </div>
                 {ladder.data?.competitors?.length ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>目标梯队</TableHead>
-                        <TableHead>个股</TableHead>
-                        <TableHead>行业</TableHead>
-                        <TableHead>状态</TableHead>
-                        <TableHead className="text-right">涨幅</TableHead>
-                        <TableHead className="text-right">涨速</TableHead>
-                        <TableHead>首次触板</TableHead>
-                        <TableHead>最终回封</TableHead>
-                        <TableHead className="text-right">开板</TableHead>
-                        <TableHead className="text-right">成交额</TableHead>
-                        <TableHead className="text-right">封单</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {ladder.data.competitors.map((row) => (
-                        <TableRow key={`${row.code}-${row.toHeight}`}>
-                          <TableCell>
-                            <Badge variant="secondary">{row.toHeight}板</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{row.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {row.code}
-                            </div>
-                          </TableCell>
-                          <TableCell>{row.industry}</TableCell>
-                          <TableCell>
-                            {row.state === 'SEALED' ? (
-                              <Badge variant="outline" className="status-ready">
-                                封板
-                              </Badge>
-                            ) : row.state === 'FAILED' ? (
-                              <Badge
-                                variant="outline"
-                                className="status-degraded"
+                  <>
+                    <div
+                      className="space-y-2 sm:hidden"
+                      aria-label="竞争个股手机卡片"
+                    >
+                      {visibleCompetitors.map((row) => (
+                        <article
+                          key={row.code}
+                          className="rounded-lg border p-3"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold">{row.name}</span>
+                            <Badge variant="outline">
+                              {row.fromHeight}进{row.toHeight} ·{' '}
+                              {row.state === 'SEALED'
+                                ? '已封板'
+                                : row.state === 'FAILED'
+                                  ? '炸板未封'
+                                  : '未封板'}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {row.code} · {row.industry}
+                          </p>
+                          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                            <p>
+                              涨幅{' '}
+                              <span
+                                className={`font-mono font-semibold ${(row.changePct ?? 0) < 0 ? 'market-down' : 'market-up'}`}
                               >
-                                炸板
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className={
-                                  (row.changePct ?? 0) < 0
-                                    ? 'market-down'
-                                    : 'text-muted-foreground'
-                                }
+                                {fmtPct(row.changePct)}
+                              </span>
+                            </p>
+                            <p>
+                              涨速{' '}
+                              <span
+                                className={`font-mono font-semibold ${(row.speedPct ?? 0) < 0 ? 'market-down' : 'market-up'}`}
                               >
-                                {(row.changePct ?? 0) < 0
-                                  ? '下跌掉队'
-                                  : '未触板'}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell
-                            className={`text-right font-medium ${(row.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
-                          >
-                            {fmtPct(row.changePct)}
-                          </TableCell>
-                          <TableCell
-                            className={`text-right font-medium ${(row.speedPct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
-                          >
-                            {fmtPct(row.speedPct)}
-                          </TableCell>
-                          <TableCell className="tabular-nums">
-                            {row.firstTouch ?? '—'}
-                          </TableCell>
-                          <TableCell className="tabular-nums">
-                            {row.lastSeal ?? '—'}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {row.breakCount}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {fmtAmount(row.amount)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {fmtAmount(row.sealFund)}
-                          </TableCell>
-                        </TableRow>
+                                {fmtPct(row.speedPct)}
+                              </span>
+                            </p>
+                          </div>
+                          {row.firstTouch && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              首次触板 {row.firstTouch} · 开板{row.breakCount}次
+                            </p>
+                          )}
+                        </article>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                    <div className="hidden sm:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>目标梯队</TableHead>
+                            <TableHead>个股</TableHead>
+                            <TableHead>行业</TableHead>
+                            <TableHead>状态</TableHead>
+                            <TableHead className="text-right">涨幅</TableHead>
+                            <TableHead className="text-right">涨速</TableHead>
+                            <TableHead>首次触板</TableHead>
+                            <TableHead>最终回封</TableHead>
+                            <TableHead className="text-right">开板</TableHead>
+                            <TableHead className="text-right">成交额</TableHead>
+                            <TableHead className="text-right">封单</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {visibleCompetitors.map((row) => (
+                            <TableRow key={`${row.code}-${row.toHeight}`}>
+                              <TableCell>
+                                <Badge variant="secondary">
+                                  {row.toHeight}板
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{row.name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {row.code}
+                                </div>
+                                {row.quoteState !== 'READY' ? (
+                                  <div className="text-xs text-muted-foreground">
+                                    {row.changePct === null
+                                      ? '涨幅待补'
+                                      : '涨速待补'}
+                                  </div>
+                                ) : null}
+                              </TableCell>
+                              <TableCell>{row.industry}</TableCell>
+                              <TableCell>
+                                {row.state === 'SEALED' ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="status-ready"
+                                  >
+                                    封板
+                                  </Badge>
+                                ) : row.state === 'FAILED' ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="status-degraded"
+                                  >
+                                    炸板
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      (row.changePct ?? 0) < 0
+                                        ? 'market-down'
+                                        : 'text-muted-foreground'
+                                    }
+                                  >
+                                    {(row.changePct ?? 0) < 0
+                                      ? '下跌掉队'
+                                      : '未封板'}
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell
+                                className={`text-right font-medium ${(row.changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
+                              >
+                                {fmtPct(row.changePct)}
+                              </TableCell>
+                              <TableCell
+                                className={`text-right font-medium ${(row.speedPct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
+                              >
+                                {fmtPct(row.speedPct)}
+                              </TableCell>
+                              <TableCell className="tabular-nums">
+                                {row.firstTouch ?? '—'}
+                              </TableCell>
+                              <TableCell className="tabular-nums">
+                                {row.lastSeal ?? '—'}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {row.breakCount}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {fmtAmount(row.amount)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {fmtAmount(row.sealFund)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {!visibleCompetitors.length && (
+                      <EmptyState>
+                        当前筛选下没有个股，可切回“全部”。
+                      </EmptyState>
+                    )}
+                  </>
                 ) : (
                   <EmptyState>
                     {ladder.loading

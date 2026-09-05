@@ -97,6 +97,7 @@ export type IntradayEmotionSnapshot = {
   cycleNode: string;
   concentratedIndustries: Array<{ name: string; count: number }>;
   leaders: string[];
+  indices?: CloseSnapshot['indices'];
   coverage: {
     poolsReady: number;
     poolsRequested: number;

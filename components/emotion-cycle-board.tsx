@@ -38,6 +38,11 @@ import type {
   IntradayEmotionSnapshot,
 } from '@/lib/close-history';
 import { cn } from '@/lib/utils';
+import {
+  EmotionEvidencePanel,
+  toEmotionFacts,
+} from '@/components/market-reading-board';
+import { emotionReading, type ReadingLadder } from '@/lib/market-reading';
 
 function dateLabel(value: string, withWeekday = true) {
   return format(parseISO(value), withWeekday ? 'M月d日 EEE' : 'M月d日', {
@@ -272,10 +277,14 @@ export function IntradayEmotionBoard({
   snapshot,
   loading,
   error,
+  history,
+  ladder,
 }: {
   snapshot: IntradayEmotionSnapshot | null;
   loading: boolean;
   error: string | null;
+  history: CloseHistoryDocument;
+  ladder?: ReadingLadder | null;
 }) {
   const previousRef = useRef<IntradayEmotionSnapshot | null>(null);
   const [previous, setPrevious] = useState<IntradayEmotionSnapshot | null>(
@@ -304,6 +313,13 @@ export function IntradayEmotionBoard({
     );
 
   const isLive = snapshot.sessionState === 'LIVE';
+  const facts = emotionReading(toEmotionFacts(snapshot));
+  const priorClose = history.snapshots
+    .filter(
+      (close) =>
+        close.date.replaceAll('-', '') < snapshot.tradeDate.replaceAll('-', ''),
+    )
+    .at(-1);
   const diff = (key: 'limitUp' | 'failed' | 'limitDown') =>
     previous ? snapshot[key] - previous[key] : null;
   const sealDiff = previous ? snapshot.sealRate - previous.sealRate : null;
@@ -353,6 +369,11 @@ export function IntradayEmotionBoard({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        <EmotionEvidencePanel
+          snapshot={snapshot}
+          previous={priorClose}
+          ladder={ladder}
+        />
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           <div className="rounded-lg border bg-background/70 p-3">
             <p className="text-xs text-muted-foreground">涨停 / 跌停</p>
@@ -366,7 +387,8 @@ export function IntradayEmotionBoard({
           <div className="rounded-lg border bg-background/70 p-3">
             <p className="text-xs text-muted-foreground">炸板 / 封板率</p>
             <p className="mt-1 text-lg font-semibold">
-              {snapshot.failed} / {snapshot.sealRate.toFixed(1)}%
+              {snapshot.failed} /{' '}
+              {facts.sealRate === null ? '—' : `${facts.sealRate.toFixed(1)}%`}
             </p>
             <ChangeHint value={sealDiff} digits={1} />
           </div>
@@ -405,29 +427,25 @@ export function IntradayEmotionBoard({
             <ChangeHint value={medianDiff} digits={2} />
           </div>
           <div className="rounded-lg border bg-background/70 p-3">
-            <p className="text-xs text-muted-foreground">指数 / 短线情绪</p>
+            <p className="text-xs text-muted-foreground">赚钱面 / 封板观察</p>
             <p className="mt-1 text-sm font-semibold">
-              <span className={tone(snapshot.indexMood)}>
-                {snapshot.indexMood}
-              </span>
+              <span className={tone(snapshot.indexMood)}>{facts.broad}</span>
               <span className="mx-1 text-muted-foreground">/</span>
-              <span className={tone(snapshot.shortMood)}>
-                {snapshot.shortMood}
-              </span>
+              <span className={tone(snapshot.shortMood)}>{facts.board}</span>
             </p>
             <p className="text-[10px] text-muted-foreground">
-              规则计算，非主观填写
+              描述当前事实，不代表预测准确率
             </p>
           </div>
           <div className="rounded-lg border bg-background/70 p-3">
-            <p className="text-xs text-muted-foreground">当前周期节点</p>
+            <p className="text-xs text-muted-foreground">数据可信状态</p>
             <p
               className={cn(
                 'mt-1 text-lg font-semibold',
                 tone(snapshot.cycleNode),
               )}
             >
-              {snapshot.cycleNode}
+              {snapshot.status}
             </p>
             <p className="truncate text-[10px] text-sky-600 dark:text-sky-300">
               {snapshot.concentratedIndustries
@@ -452,10 +470,12 @@ export function EmotionCycleBoard({
   selectedDate,
   onDateChange,
   history,
+  ladder,
 }: {
   selectedDate: string;
   onDateChange: (date: string) => void;
   history: CloseHistoryDocument;
+  ladder?: ReadingLadder | null;
 }) {
   const snapshots = history.snapshots;
   const requestedIndex = snapshots.findIndex(
@@ -534,6 +554,11 @@ export function EmotionCycleBoard({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          <EmotionEvidencePanel
+            snapshot={selected}
+            previous={previous}
+            ladder={ladder}
+          />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             <div className="rounded-lg border bg-muted/30 p-3">
               <p className="text-xs text-muted-foreground">收盘快照</p>
@@ -624,38 +649,38 @@ export function EmotionCycleBoard({
                 ))}
               </div>
               <MatrixRow
-                label="指数情绪"
+                label="三大指数"
                 snapshots={snapshots}
                 selectedDate={selected.date}
                 render={(snapshot) => (
                   <span
                     className={cn('font-semibold', tone(snapshot.indexMood))}
                   >
-                    {snapshot.indexMood}
+                    {emotionReading(toEmotionFacts(snapshot)).indexMood}
                   </span>
                 )}
               />
               <MatrixRow
-                label="短线情绪"
+                label="赚钱面"
                 snapshots={snapshots}
                 selectedDate={selected.date}
                 render={(snapshot) => (
                   <span
                     className={cn('font-semibold', tone(snapshot.shortMood))}
                   >
-                    {snapshot.shortMood}
+                    {emotionReading(toEmotionFacts(snapshot)).broad}
                   </span>
                 )}
               />
               <MatrixRow
-                label="规则节点"
+                label="封板观察"
                 snapshots={snapshots}
                 selectedDate={selected.date}
                 render={(snapshot) => (
                   <span
                     className={cn('font-semibold', tone(snapshot.cycleNode))}
                   >
-                    {snapshot.cycleNode}
+                    {emotionReading(toEmotionFacts(snapshot)).board}
                   </span>
                 )}
               />

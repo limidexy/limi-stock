@@ -2,6 +2,8 @@ import type {
   CloseSnapshot,
   IntradayEmotionSnapshot,
 } from '@/lib/close-history';
+import { CLOSE_HISTORY } from '@/lib/close-history';
+import { emotionReading } from '@/lib/market-reading';
 import { getIntradayEmotionSnapshot } from '@/lib/market';
 import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
@@ -16,9 +18,16 @@ function fromCloseSnapshot(
   snapshot: CloseSnapshot,
   reason?: string,
 ): IntradayEmotionSnapshot {
+  const reading = emotionReading({
+    ...snapshot,
+    poolsReady: true,
+    breadthReady: true,
+    stale: Boolean(reason),
+  });
   return {
-    status: reason ? 'DEGRADED' : 'READY',
-    retrievedAt: new Date().toISOString(),
+    status:
+      reason || !reading.usable || !reading.indexReady ? 'DEGRADED' : 'READY',
+    retrievedAt: `${snapshot.date}T15:00:00+08:00`,
     tradeDate: snapshot.date.replaceAll('-', ''),
     requestedDate: snapshot.date.replaceAll('-', ''),
     phase: '休市快照',
@@ -34,9 +43,10 @@ function fromCloseSnapshot(
     highestBoard: snapshot.highestBoard,
     consecutiveCount: snapshot.consecutiveCount,
     breadth: snapshot.breadth,
-    indexMood: snapshot.indexMood,
-    shortMood: snapshot.shortMood,
-    cycleNode: snapshot.cycleNode,
+    indices: snapshot.indices,
+    indexMood: reading.indexMood,
+    shortMood: reading.board,
+    cycleNode: reading.headline,
     concentratedIndustries: snapshot.concentratedIndustries,
     leaders: snapshot.leaders,
     coverage: {
@@ -52,11 +62,23 @@ export async function GET() {
     await loadArchivedSessionSnapshot<IntradayEmotionSnapshot>(
       'intraday-emotion',
     );
-  if (archived?.status === 'READY')
+  if (archived?.status === 'READY') {
+    const history = await loadCloseHistory().catch(
+      () => CLOSE_HISTORY.snapshots,
+    );
+    const exactClose = history.find(
+      (snapshot) => snapshot.date.replaceAll('-', '') === archived.tradeDate,
+    );
     return Response.json(
-      { ...archived, cutoff: '15:00' },
+      exactClose
+        ? {
+            ...fromCloseSnapshot(exactClose),
+            requestedDate: archived.requestedDate,
+          }
+        : archived,
       { headers: { 'cache-control': 'no-store' } },
     );
+  }
 
   try {
     const snapshot = await getIntradayEmotionSnapshot();
@@ -76,7 +98,8 @@ export async function GET() {
           ...persisted,
           status: 'DEGRADED',
           sourceState: 'STALE',
-          retrievedAt: new Date().toISOString(),
+          retrievedAt: persisted.retrievedAt,
+          staleAt: persisted.retrievedAt,
           reason: `盘中情绪行情源短暂波动，展示最近成功快照：${String(error)}`,
         },
         { headers: { 'cache-control': 'no-store' } },
