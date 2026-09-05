@@ -1361,7 +1361,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
         ...exactLimitDrivers.map((driver) => compactStockName(driver.name)),
         ...latestLimitStocks.map((stock) => compactStockName(stock.name)),
       ]),
-    ].slice(0, 4);
+    ];
     const fallbackStocks = (
       alignedDrivers.length
         ? alignedDrivers.map((driver) => ({
