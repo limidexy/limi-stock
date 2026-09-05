@@ -28,6 +28,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select';
+import {
   CloseDatePicker,
   EmotionCycleBoard,
   IntradayEmotionBoard,
@@ -507,6 +511,10 @@ function isAtNominalLimit(
   return direction === 'up'
     ? changePct >= limitPct - tolerance
     : changePct <= -limitPct + tolerance;
+}
+
+function compactStockName(name: string) {
+  return name.replace(/\s+/g, '');
 }
 
 function fmtMoney(value: number | null | undefined) {
@@ -1070,12 +1078,30 @@ function FlowSplitBoard({ data }: { data: FlowData }) {
 }
 
 function LadderHeightTrend({ history }: { history: CloseHistoryDocument }) {
-  const rows = history.snapshots.slice(-15).map((snapshot) => ({
-    date: snapshot.date,
-    day: snapshot.date.slice(5).replace('-', '/'),
-    highestBoard: snapshot.highestBoard,
-    consecutiveCount: snapshot.consecutiveCount,
-  }));
+  const snapshots = history.snapshots;
+  const dates = snapshots.map((snapshot) => snapshot.date);
+  const defaultStart = dates[Math.max(0, dates.length - 10)] ?? '';
+  const defaultEnd = dates.at(-1) ?? '';
+  const [selectedStart, setSelectedStart] = useState<string | null>(null);
+  const [selectedEnd, setSelectedEnd] = useState<string | null>(null);
+  const startDate =
+    selectedStart && dates.includes(selectedStart)
+      ? selectedStart
+      : defaultStart;
+  const endDate =
+    selectedEnd && dates.includes(selectedEnd) ? selectedEnd : defaultEnd;
+  const rows = snapshots
+    .filter(
+      (snapshot) => snapshot.date >= startDate && snapshot.date <= endDate,
+    )
+    .map((snapshot) => ({
+      date: snapshot.date,
+      day: snapshot.date.slice(5).replace('-', '/'),
+      highestBoard: snapshot.highestBoard,
+      consecutiveCount: snapshot.consecutiveCount,
+      leaders: snapshot.leaders,
+      leaderText: snapshot.leaders.join('、') || '暂无高标',
+    }));
   const latest = rows.at(-1);
   const previous = rows.at(-2);
   const heightChange =
@@ -1093,17 +1119,69 @@ function LadderHeightTrend({ history }: { history: CloseHistoryDocument }) {
           连板高度趋势
         </CardTitle>
         <CardDescription>
-          红线看市场最高板，黄线看连板家数；点位均为15:00收盘定格
+          红线看最高板，黄线看连板家数；下方直接列出每天最高板股票，均为15:00收盘定格
         </CardDescription>
         <CardAction>
-          <Badge variant="outline" className="font-mono">
+          <Badge
+            variant="outline"
+            className="max-w-[360px] text-right font-mono whitespace-normal"
+          >
             {latest
-              ? `${latest.highestBoard}板 · 较前日${heightChange > 0 ? '+' : ''}${heightChange}`
+              ? `${latest.highestBoard}板 · ${latest.leaderText} · 较前日${heightChange > 0 ? '+' : ''}${heightChange}`
               : '暂无数据'}
           </Badge>
         </CardAction>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/35 p-2.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            时间区间
+          </span>
+          <NativeSelect
+            size="sm"
+            aria-label="连板趋势开始日期"
+            value={startDate}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSelectedStart(next);
+              if (next > endDate) setSelectedEnd(next);
+            }}
+          >
+            {dates.map((date) => (
+              <NativeSelectOption key={`start-${date}`} value={date}>
+                {date}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          <span className="text-xs text-muted-foreground">至</span>
+          <NativeSelect
+            size="sm"
+            aria-label="连板趋势结束日期"
+            value={endDate}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSelectedEnd(next);
+              if (next < startDate) setSelectedStart(next);
+            }}
+          >
+            {dates.map((date) => (
+              <NativeSelectOption key={`end-${date}`} value={date}>
+                {date}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setSelectedStart(null);
+              setSelectedEnd(null);
+            }}
+          >
+            最近10日
+          </Button>
+          <Badge variant="secondary">{rows.length}个交易日</Badge>
+        </div>
         {rows.length > 1 ? (
           <ChartContainer
             config={config}
@@ -1172,6 +1250,29 @@ function LadderHeightTrend({ history }: { history: CloseHistoryDocument }) {
         ) : (
           <EmptyState>至少需要两个收盘交易日才能绘制趋势</EmptyState>
         )}
+        {rows.length ? (
+          <div>
+            <div className="mb-2 text-xs font-medium">每日最高板股票</div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {rows.map((row) => (
+                <div
+                  key={`leader-${row.date}`}
+                  className="grid grid-cols-[54px_48px_minmax(0,1fr)] items-center gap-2 rounded-lg border bg-background px-3 py-2.5"
+                >
+                  <time className="font-mono text-xs text-muted-foreground">
+                    {row.day}
+                  </time>
+                  <Badge className="justify-center bg-red-500/15 text-red-700 hover:bg-red-500/15 dark:text-red-300">
+                    {row.highestBoard}板
+                  </Badge>
+                  <span className="min-w-0 text-sm leading-5 font-semibold">
+                    {row.leaderText}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -1244,37 +1345,56 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
     const exactLimitDrivers = event.drivers.filter(
       (driver) => driver.limitState === expectedLimitState,
     );
-    const latestLimitDrivers = event.drivers.filter((driver) => {
-      const latest = event.relatedStocks?.find(
-        (stock) => stock.code === driver.code,
-      );
-      return isAtNominalLimit(
-        driver.code,
-        driver.name,
-        latest?.changePct,
+    const latestLimitStocks = (event.relatedStocks ?? []).filter((stock) =>
+      isAtNominalLimit(
+        stock.code,
+        stock.name,
+        stock.changePct,
         rising ? 'up' : 'down',
-      );
-    });
-    const limitDrivers = exactLimitDrivers.length
-      ? exactLimitDrivers
-      : latestLimitDrivers;
+      ),
+    );
     const alignedDrivers = event.drivers.filter(
       (driver) => driver.role === '同窗价格确认',
     );
-    const namedDrivers = (limitDrivers.length ? limitDrivers : alignedDrivers)
-      .slice(0, 2)
-      .map((driver) => driver.name);
-    const stockAction = limitDrivers.length
-      ? `${namedDrivers.join('、')}${exactLimitDrivers.length ? '节点时' : data.sessionState === 'CLOSED' ? '收盘' : '目前'}${rising ? '涨停' : '跌停'}`
-      : namedDrivers.length
-        ? `${namedDrivers.join('、')}${rising ? '领涨带动' : '领跌拖累'}`
-        : event.drivers.length
-          ? `${event.drivers
-              .slice(0, 2)
-              .map((driver) => driver.name)
-              .join('、')}待确认是否同步`
-          : '核心个股暂待确认';
-    return `${event.sectorName}${event.label}，${stockAction}`;
+    const limitNames = [
+      ...new Set([
+        ...exactLimitDrivers.map((driver) => compactStockName(driver.name)),
+        ...latestLimitStocks.map((stock) => compactStockName(stock.name)),
+      ]),
+    ].slice(0, 4);
+    const fallbackStocks = (
+      alignedDrivers.length
+        ? alignedDrivers.map((driver) => ({
+            name: compactStockName(driver.name),
+            changePct:
+              driver.atTimeChangePct ??
+              event.relatedStocks?.find((stock) => stock.code === driver.code)
+                ?.changePct ??
+              driver.windowChangePct,
+          }))
+        : (event.relatedStocks ?? []).map((stock) => ({
+            name: compactStockName(stock.name),
+            changePct: stock.changePct,
+          }))
+    ).slice(0, 2);
+    const action =
+      event.kind === 'STRONG'
+        ? '延续活跃'
+        : event.kind === 'START'
+          ? '异动拉升'
+          : event.kind === 'CASHOUT'
+            ? '高位兑现'
+            : event.kind === 'WEAKEN'
+              ? '持续走弱'
+              : '震荡观察';
+    const stockAction = limitNames.length
+      ? `${limitNames.join('、')}${rising ? '涨停' : '跌停'}`
+      : fallbackStocks.length
+        ? `${fallbackStocks
+            .map((stock) => `${stock.name}${fmtPct(stock.changePct)}`)
+            .join('、')}${rising ? '领涨' : '领跌'}`
+        : '个股数据暂待补齐';
+    return `${event.sectorName}${action}，${stockAction}`;
   };
 
   const indexPhrase = (events: MarketTimelineEvent[]) => {
@@ -1380,7 +1500,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
           </CardTitle>
           <CardDescription>
             最新在上 · 先看“板块动作 → 涨停/领涨股”，再看指数环境与量化解释 ·
-            时间取真实资金转折分钟
+            时间取真实资金转折分钟；涨停优先采用节点分钟，旧归档回退到收盘状态
           </CardDescription>
           <CardAction>
             <StateBadge
