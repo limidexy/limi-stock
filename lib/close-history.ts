@@ -57,8 +57,19 @@ export type CloseHistoryDocument = {
     labels: string;
   };
   snapshots: CloseSnapshot[];
+  archive?: {
+    state: 'READY' | 'DEGRADED';
+    mode: 'DYNAMIC' | 'BUNDLED_FALLBACK';
+    latestDate: string;
+    marketDate?: string;
+    requestedDate?: string;
+    sessionState?: 'LIVE' | 'CLOSED';
+    message: string;
+  };
 };
 
 export const CLOSE_HISTORY = closeHistoryDocument as CloseHistoryDocument;
-export const CLOSE_DATES = CLOSE_HISTORY.snapshots.map((snapshot) => snapshot.date);
+export const CLOSE_DATES = CLOSE_HISTORY.snapshots.map(
+  (snapshot) => snapshot.date,
+);
 export const LATEST_CLOSE_DATE = CLOSE_DATES.at(-1) ?? '';

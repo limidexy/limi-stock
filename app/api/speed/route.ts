@@ -1,4 +1,8 @@
 import { getSpeedSnapshot } from '@/lib/market';
+import {
+  loadLatestModuleSnapshot,
+  saveModuleSnapshot,
+} from '@/lib/persistence';
 
 export const dynamic = 'force-dynamic';
 let lastSnapshot: Awaited<ReturnType<typeof getSpeedSnapshot>> | null = null;
@@ -6,13 +10,43 @@ let lastSnapshot: Awaited<ReturnType<typeof getSpeedSnapshot>> | null = null;
 export async function GET() {
   try {
     const snapshot = await getSpeedSnapshot();
-    lastSnapshot = snapshot;
-    return Response.json(snapshot, { headers: { 'cache-control': 'no-store' } });
+    if (snapshot.rows.length) {
+      lastSnapshot = snapshot;
+      await saveModuleSnapshot('speed', snapshot).catch(() => undefined);
+    }
+    return Response.json(snapshot, {
+      headers: { 'cache-control': 'no-store' },
+    });
   } catch {
-    if (lastSnapshot) return Response.json({
-      ...lastSnapshot, status: 'DEGRADED', sourceState: 'STALE', staleAt: lastSnapshot.retrievedAt,
-      retrievedAt: new Date().toISOString(), reason: '行情源短暂波动，展示最近成功快照并自动重连',
-    }, { headers: { 'cache-control': 'no-store' } });
-    return Response.json({ status: 'MISSING', retrievedAt: new Date().toISOString(), reason: '行情源暂时不可用，正在自动重连', rows: [] }, { status: 503 });
+    const fallback =
+      lastSnapshot ??
+      (await loadLatestModuleSnapshot<
+        Awaited<ReturnType<typeof getSpeedSnapshot>>
+      >('speed').catch(() => null));
+    if (fallback)
+      return Response.json(
+        {
+          ...fallback,
+          status: 'DEGRADED',
+          sourceState: 'STALE',
+          staleAt:
+            'persistedAt' in fallback &&
+            typeof fallback.persistedAt === 'string'
+              ? fallback.persistedAt
+              : fallback.retrievedAt,
+          retrievedAt: new Date().toISOString(),
+          reason: '行情源短暂波动，展示最近成功快照并自动重连',
+        },
+        { headers: { 'cache-control': 'no-store' } },
+      );
+    return Response.json(
+      {
+        status: 'MISSING',
+        retrievedAt: new Date().toISOString(),
+        reason: '行情源暂时不可用，正在自动重连',
+        rows: [],
+      },
+      { status: 503 },
+    );
   }
 }
