@@ -105,8 +105,10 @@ export type MarketTimelineDriver = {
   code: string;
   name: string;
   industry: string;
+  atTimeChangePct: number | null;
   windowChangePct: number | null;
   mainNetInflow: number | null;
+  limitState: 'LIMIT_UP' | 'LIMIT_DOWN' | 'NONE' | 'UNKNOWN';
   role:
     | '同窗价格确认'
     | '同窗方向相反'
@@ -1428,6 +1430,19 @@ function timelineContextKey(candidate: TimelineCandidate) {
   return `${candidate.sector.code}:${candidate.flowDelta >= 0 ? 'up' : 'down'}`;
 }
 
+function timelineLimitState(
+  code: string,
+  name: string,
+  changePct: number | null,
+): MarketTimelineDriver['limitState'] {
+  if (changePct === null) return 'UNKNOWN';
+  const limitPct = nominalLimitPct(code, name);
+  const tolerance = limitPct <= 5 ? 0.25 : limitPct <= 10 ? 0.35 : 0.6;
+  if (changePct >= limitPct - tolerance) return 'LIMIT_UP';
+  if (changePct <= -limitPct + tolerance) return 'LIMIT_DOWN';
+  return 'NONE';
+}
+
 async function fetchTimelineMembers(candidate: TimelineCandidate) {
   const direction: 0 | 1 = candidate.flowDelta >= 0 ? 1 : 0;
   const members = await fetchClist({
@@ -1464,7 +1479,7 @@ async function confirmTimelineDrivers(
           { code: row.code, secid: secid(row.code) },
           tradeDate,
         );
-        const { windowChangePct } = trendWindow(
+        const { changePct: atTimeChangePct, windowChangePct } = trendWindow(
           trend,
           candidate.windowStartTime,
           candidate.time,
@@ -1487,7 +1502,9 @@ async function confirmTimelineDrivers(
           name: row.name,
           industry: row.industry,
           mainNetInflow: row.mainNetInflow,
+          atTimeChangePct,
           windowChangePct,
+          limitState: timelineLimitState(row.code, row.name, atTimeChangePct),
           role,
         };
       } catch {
@@ -1496,7 +1513,9 @@ async function confirmTimelineDrivers(
           name: row.name,
           industry: row.industry,
           mainNetInflow: row.mainNetInflow,
+          atTimeChangePct: null,
           windowChangePct: null,
+          limitState: 'UNKNOWN',
           role: '分钟价格不可用',
         };
       }

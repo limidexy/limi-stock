@@ -255,8 +255,10 @@ type MarketTimelineDriver = {
   code: string;
   name: string;
   industry: string;
+  atTimeChangePct?: number | null;
   windowChangePct: number | null;
   mainNetInflow: number | null;
+  limitState?: 'LIMIT_UP' | 'LIMIT_DOWN' | 'NONE' | 'UNKNOWN';
   role:
     | '同窗价格确认'
     | '同窗方向相反'
@@ -482,6 +484,29 @@ function fmtPct(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined || !Number.isFinite(value))
     return '—';
   return `${value > 0 ? '+' : ''}${value.toFixed(digits)}%`;
+}
+
+function isAtNominalLimit(
+  code: string,
+  name: string,
+  changePct: number | null | undefined,
+  direction: 'up' | 'down',
+) {
+  if (changePct === null || changePct === undefined) return false;
+  const upperName = name.toUpperCase();
+  const limitPct = upperName.includes('ST')
+    ? 5
+    : code.startsWith('8') || code.startsWith('9')
+      ? 30
+      : code.startsWith('300') ||
+          code.startsWith('301') ||
+          code.startsWith('688')
+        ? 20
+        : 10;
+  const tolerance = limitPct <= 5 ? 0.25 : limitPct <= 10 ? 0.35 : 0.6;
+  return direction === 'up'
+    ? changePct >= limitPct - tolerance
+    : changePct <= -limitPct + tolerance;
 }
 
 function fmtMoney(value: number | null | undefined) {
@@ -1213,27 +1238,43 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
     }
   }
 
-  const eventPhrase = (events: MarketTimelineEvent[]) => {
-    const phrases: string[] = [];
-    const add = (
-      kind: MarketTimelineEvent['kind'],
-      singular: string,
-      multiple: string,
-    ) => {
-      const names = events
-        .filter((event) => event.kind === kind)
-        .map((event) => event.sectorName);
-      if (names.length)
-        phrases.push(
-          `${names.join('、')}${names.length > 1 ? multiple : singular}`,
-        );
-    };
-    add('START', '启动', '同步启动');
-    add('STRONG', '延续强势', '同步延续强势');
-    add('CASHOUT', '出现兑现', '同步出现兑现');
-    add('WEAKEN', '转弱', '同步转弱');
-    add('OBSERVE', '进入震荡观察', '同步进入震荡观察');
-    return phrases.join('；');
+  const eventHeadline = (event: MarketTimelineEvent) => {
+    const rising = event.flowDelta >= 0;
+    const expectedLimitState = rising ? 'LIMIT_UP' : 'LIMIT_DOWN';
+    const exactLimitDrivers = event.drivers.filter(
+      (driver) => driver.limitState === expectedLimitState,
+    );
+    const latestLimitDrivers = event.drivers.filter((driver) => {
+      const latest = event.relatedStocks?.find(
+        (stock) => stock.code === driver.code,
+      );
+      return isAtNominalLimit(
+        driver.code,
+        driver.name,
+        latest?.changePct,
+        rising ? 'up' : 'down',
+      );
+    });
+    const limitDrivers = exactLimitDrivers.length
+      ? exactLimitDrivers
+      : latestLimitDrivers;
+    const alignedDrivers = event.drivers.filter(
+      (driver) => driver.role === '同窗价格确认',
+    );
+    const namedDrivers = (limitDrivers.length ? limitDrivers : alignedDrivers)
+      .slice(0, 2)
+      .map((driver) => driver.name);
+    const stockAction = limitDrivers.length
+      ? `${namedDrivers.join('、')}${exactLimitDrivers.length ? '节点时' : data.sessionState === 'CLOSED' ? '收盘' : '目前'}${rising ? '涨停' : '跌停'}`
+      : namedDrivers.length
+        ? `${namedDrivers.join('、')}${rising ? '领涨带动' : '领跌拖累'}`
+        : event.drivers.length
+          ? `${event.drivers
+              .slice(0, 2)
+              .map((driver) => driver.name)
+              .join('、')}待确认是否同步`
+          : '核心个股暂待确认';
+    return `${event.sectorName}${event.label}，${stockAction}`;
   };
 
   const indexPhrase = (events: MarketTimelineEvent[]) => {
@@ -1338,8 +1379,8 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
             今日盘面脉络
           </CardTitle>
           <CardDescription>
-            最新在上 · 每个节点按“指数环境 → 板块动作 → 核心个股 →
-            跟随个股”阅读，时间取真实资金转折分钟
+            最新在上 · 先看“板块动作 → 涨停/领涨股”，再看指数环境与量化解释 ·
+            时间取真实资金转折分钟
           </CardDescription>
           <CardAction>
             <StateBadge
@@ -1412,18 +1453,9 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                       `${event.sectorName}${event.label}，近3分钟${fmtPct(event.sectorWindowChangePct)}，主力${fmtFlowDirection(event.flowDelta)}`,
                   )
                   .join('；');
-                const coreDrivers = [
-                  ...confirmedDrivers,
-                  ...checkedButUnaligned,
-                ].slice(0, 6);
-                const driverNarrative = coreDrivers.length
-                  ? `核心个股：${coreDrivers
-                      .map(
-                        (driver) =>
-                          `${driver.name}${fmtPct(driver.windowChangePct)}`,
-                      )
-                      .join('、')}。`
-                  : '核心个股的该时窗分钟价格暂时不可用。';
+                const headlineNarrative = events
+                  .map((event) => eventHeadline(event))
+                  .join('；');
                 return (
                   <article
                     key={`${time}-${events.map((event) => event.id).join('-')}`}
@@ -1459,11 +1491,12 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                         ))}
                       </div>
                       <p className="mt-3 text-[15px] leading-7 sm:text-base">
-                        <span className="font-medium">
-                          {indexPhrase(events)}
-                        </span>{' '}
-                        {eventPhrase(events)}：{sectorNarrative}。
-                        {driverNarrative}
+                        <span className="font-semibold">
+                          {headlineNarrative}。
+                        </span>
+                      </p>
+                      <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
+                        {sectorNarrative}。{indexPhrase(events)}
                       </p>
 
                       <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -1503,7 +1536,9 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                                 key={`confirmed-${driver.code}`}
                                 className="rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-2 py-1"
                               >
-                                {driver.name}{' '}
+                                <span className="font-semibold">
+                                  {driver.name}
+                                </span>{' '}
                                 <span
                                   className={
                                     (driver.windowChangePct ?? 0) >= 0
@@ -1511,10 +1546,14 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                                       : 'market-down'
                                   }
                                 >
-                                  {fmtPct(driver.windowChangePct)}
+                                  节点{fmtPct(driver.atTimeChangePct)}
                                 </span>{' '}
                                 <span className="text-muted-foreground">
-                                  同步
+                                  {driver.limitState === 'LIMIT_UP'
+                                    ? '涨停'
+                                    : driver.limitState === 'LIMIT_DOWN'
+                                      ? '跌停'
+                                      : `3分钟${fmtPct(driver.windowChangePct)}`}
                                 </span>
                               </span>
                             ))
@@ -1525,7 +1564,9 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                                 key={`checked-${driver.code}`}
                                 className="rounded-md border bg-muted/55 px-2 py-1"
                               >
-                                {driver.name}{' '}
+                                <span className="font-semibold">
+                                  {driver.name}
+                                </span>{' '}
                                 <span
                                   className={
                                     (driver.windowChangePct ?? 0) >= 0
@@ -1533,7 +1574,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
                                       : 'market-down'
                                   }
                                 >
-                                  {fmtPct(driver.windowChangePct)}
+                                  节点{fmtPct(driver.atTimeChangePct)}
                                 </span>{' '}
                                 <span className="text-muted-foreground">
                                   {driver.role === '同窗价格持平'
