@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import {
   CloseDatePicker,
   EmotionCycleBoard,
+  IntradayEmotionBoard,
 } from '@/components/emotion-cycle-board';
 import {
   ChartContainer,
@@ -58,6 +59,7 @@ import {
   CLOSE_HISTORY,
   LATEST_CLOSE_DATE,
   type CloseHistoryDocument,
+  type IntradayEmotionSnapshot,
 } from '@/lib/close-history';
 
 type DataState = 'READY' | 'DEGRADED' | 'MISSING';
@@ -1498,6 +1500,10 @@ export default function Home() {
   const timeline = usePolling<MarketTimelineData>('/api/timeline', 60_000);
   const ladder = usePolling<LadderData>('/api/ladder', 30_000);
   const speed = usePolling<SpeedData>('/api/speed', 1_000);
+  const intradayEmotion = usePolling<IntradayEmotionSnapshot>(
+    '/api/intraday-emotion',
+    30_000,
+  );
   const closeHistory = usePolling<CloseHistoryDocument>(
     '/api/close-history',
     60_000,
@@ -1538,6 +1544,7 @@ export default function Home() {
     timeline.data?.retrievedAt,
     ladder.data?.retrievedAt,
     speed.data?.retrievedAt,
+    intradayEmotion.data?.retrievedAt,
   ]
     .filter(Boolean)
     .sort((a, b) => String(a).localeCompare(String(b)))
@@ -1550,6 +1557,12 @@ export default function Home() {
     ['资金分流', flow.error, flow.data?.status, flow.data?.reason],
     ['连板梯队', ladder.error, ladder.data?.status, ladder.data?.reason],
     ['涨速榜', speed.error, speed.data?.status, speed.data?.reason],
+    [
+      '盘中情绪',
+      intradayEmotion.error,
+      intradayEmotion.data?.status,
+      intradayEmotion.data?.reason,
+    ],
     [
       '情绪周期',
       closeHistory.error,
@@ -1575,6 +1588,7 @@ export default function Home() {
       timeline.refresh(),
       ladder.refresh(),
       speed.refresh(),
+      intradayEmotion.refresh(),
       closeHistory.refresh(),
     ]);
     setRefreshing(false);
@@ -1682,7 +1696,7 @@ export default function Home() {
         )}
 
         <section
-          className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7"
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8"
           aria-label="数据状态"
         >
           <Card size="sm">
@@ -1794,6 +1808,30 @@ export default function Home() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CalendarDays className="size-4 text-amber-500" />
+                盘中情绪
+              </CardTitle>
+              <CardAction>
+                <StateBadge
+                  state={intradayEmotion.data?.status}
+                  label={
+                    intradayEmotion.data?.sessionState === 'LIVE'
+                      ? '实时'
+                      : '定格'
+                  }
+                />
+              </CardAction>
+              <CardDescription>
+                {intradayEmotion.data
+                  ? `${intradayEmotion.data.limitUp}涨停 · ${intradayEmotion.data.failed}炸板`
+                  : '正在连接'}{' '}
+                · 30秒检查
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarDays className="size-4 text-amber-500" />
                 收盘定格
               </CardTitle>
               <CardAction>
@@ -1861,7 +1899,12 @@ export default function Home() {
             )}
           </TabsContent>
 
-          <TabsContent value="emotion">
+          <TabsContent value="emotion" className="space-y-4">
+            <IntradayEmotionBoard
+              snapshot={intradayEmotion.data}
+              loading={intradayEmotion.loading}
+              error={intradayEmotion.error}
+            />
             <EmotionCycleBoard
               selectedDate={selectedCloseDate}
               onDateChange={selectCloseDate}

@@ -1,4 +1,8 @@
-import type { CloseSnapshot, CloseStock } from '@/lib/close-history';
+import type {
+  CloseSnapshot,
+  CloseStock,
+  IntradayEmotionSnapshot,
+} from '@/lib/close-history';
 
 const PUBLIC_CLIENT_TOKEN = '7eea3edcaed734bea9cbfc24409ed989';
 const MARKET_FILTER = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048';
@@ -178,6 +182,7 @@ let flowSnapshotCache: CacheRecord<FlowSnapshot> | null = null;
 let flowSnapshotPending: Promise<FlowSnapshot> | null = null;
 let timelineSnapshotCache: CacheRecord<MarketTimelineSnapshot> | null = null;
 let marketDateContextCache: CacheRecord<MarketDateContext> | null = null;
+let intradayEmotionCache: CacheRecord<IntradayEmotionSnapshot> | null = null;
 const trendCache = new Map<
   string,
   {
@@ -2139,8 +2144,166 @@ async function fetchCloseIndices() {
   }));
 }
 
+async function fetchIntradayIndicesAndBreadth() {
+  const params = new URLSearchParams({
+    secids: '1.000001,0.399001,0.899050',
+    fields: 'f12,f14,f2,f3,f104,f105,f106',
+    ut: PUBLIC_CLIENT_TOKEN,
+    fltt: '2',
+    invt: '2',
+  });
+  const payload = await fetchJson(
+    `https://push2delay.eastmoney.com/api/qt/ulist.np/get?${params}`,
+  );
+  const data = (payload.data ?? {}) as Record<string, unknown>;
+  const rows = Array.isArray(data.diff) ? (data.diff as ClistRow[]) : [];
+  const marketRows = rows.filter((row) =>
+    ['000001', '399001', '899050'].includes(String(row.f12 ?? '')),
+  );
+  const up = marketRows.reduce(
+    (sum, row) => sum + (numberOrNull(row.f104) ?? 0),
+    0,
+  );
+  const down = marketRows.reduce(
+    (sum, row) => sum + (numberOrNull(row.f105) ?? 0),
+    0,
+  );
+  const flat = marketRows.reduce(
+    (sum, row) => sum + (numberOrNull(row.f106) ?? 0),
+    0,
+  );
+  const rowsAvailable = up + down + flat;
+  let medianChangePct: number | null = null;
+  if (rowsAvailable > 0) {
+    const pageSize = 100;
+    const middleRank = Math.max(1, Math.ceil(rowsAvailable / 2));
+    const firstPage = await fetchClist({
+      fs: MARKET_FILTER,
+      fid: 'f3',
+      pageSize,
+      page: 1,
+      fields: 'f12,f3',
+    });
+    // Eastmoney sorts suspended rows (f3="-") between flat and falling rows.
+    // Translate the active-stock median rank to its actual position in that list.
+    const suspended = Math.max(0, firstPage.total - rowsAvailable);
+    const globalRank =
+      middleRank > up + flat ? middleRank + suspended : middleRank;
+    const page = Math.ceil(globalRank / pageSize);
+    const offset = (globalRank - 1) % pageSize;
+    const ranked = await fetchClist({
+      fs: MARKET_FILTER,
+      fid: 'f3',
+      pageSize,
+      page,
+      fields: 'f12,f3',
+    });
+    medianChangePct = numberOrNull(ranked.rows[offset]?.f3);
+  }
+  const names = new Map([
+    ['000001', '上证'],
+    ['399001', '深证'],
+    ['899050', '北证50'],
+  ]);
+  return {
+    breadth: { rowsAvailable, up, down, flat, medianChangePct },
+    indices: marketRows.map((row) => ({
+      code: String(row.f12 ?? ''),
+      name: names.get(String(row.f12 ?? '')) ?? String(row.f14 ?? ''),
+      close: numberOrNull(row.f2),
+      changePct: numberOrNull(row.f3),
+    })),
+    ready:
+      marketRows.length === 3 &&
+      rowsAvailable >= 4_000 &&
+      medianChangePct !== null,
+  };
+}
+
 function dashedDate(value: string) {
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+}
+
+export async function getIntradayEmotionSnapshot(): Promise<IntradayEmotionSnapshot> {
+  if (intradayEmotionCache && intradayEmotionCache.expiresAt > Date.now())
+    return intradayEmotionCache.value;
+  const marketDate = await getMarketDateContext();
+  const [limitPool, failedPool, downPool, market] = await Promise.all([
+    fetchPool('ZTPool', marketDate.tradeDate),
+    fetchPool('ZBPool', marketDate.tradeDate),
+    fetchPool('DTPool', marketDate.tradeDate),
+    fetchIntradayIndicesAndBreadth(),
+  ]);
+  const pools = [limitPool, failedPool, downPool];
+  const poolsReady = pools.filter(
+    (pool) => pool.qdate === marketDate.tradeDate,
+  ).length;
+  if (poolsReady !== pools.length)
+    throw new Error('涨停、炸板与跌停池的交易日期未对齐');
+
+  const limitRows = limitPool.rows.map((row) => closeStock(row));
+  const limitUp = limitRows.length;
+  const failed = failedPool.rows.length;
+  const limitDown = downPool.rows.length;
+  const sealRate = limitUp + failed ? (limitUp / (limitUp + failed)) * 100 : 0;
+  const highestBoard = Math.max(0, ...limitRows.map((row) => row.height));
+  const industryCounts = new Map<string, number>();
+  for (const stock of limitRows)
+    industryCounts.set(
+      stock.industry,
+      (industryCounts.get(stock.industry) ?? 0) + 1,
+    );
+  const concentratedIndustries = [...industryCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-CN'))
+    .slice(0, 5)
+    .map(([name, count]) => ({ name, count }));
+  const breadthForMood = {
+    ...market.breadth,
+    requested: market.breadth.rowsAvailable,
+    medianChangePct: market.breadth.medianChangePct ?? 0,
+  };
+  const indexMood = closeIndexMood(breadthForMood);
+  const moodInput = {
+    limitUp,
+    failed,
+    limitDown,
+    sealRate,
+    highestBoard,
+    breadthMood: indexMood,
+  };
+  const snapshot: IntradayEmotionSnapshot = {
+    status: market.ready ? 'READY' : 'DEGRADED',
+    retrievedAt: new Date().toISOString(),
+    tradeDate: marketDate.tradeDate,
+    requestedDate: marketDate.requestedDate,
+    phase: marketDate.phase,
+    sessionState: marketDate.sessionState,
+    sourceState: marketDate.sourceState,
+    cutoff: marketDate.sessionState === 'LIVE' ? shanghaiClock() : '15:00',
+    source: '东方财富涨停、炸板、跌停池与沪深北市场宽度',
+    reason: market.ready ? undefined : '全市场中位数或涨跌家数覆盖不完整',
+    limitUp,
+    failed,
+    limitDown,
+    sealRate,
+    highestBoard,
+    consecutiveCount: limitRows.filter((row) => row.height >= 2).length,
+    breadth: market.breadth,
+    indexMood,
+    shortMood: closeShortMood(moodInput),
+    cycleNode: closeCycleNode(moodInput),
+    concentratedIndustries,
+    leaders: limitRows
+      .filter((row) => row.height === highestBoard)
+      .map((row) => row.name),
+    coverage: {
+      poolsReady,
+      poolsRequested: pools.length,
+      breadthReady: market.ready,
+    },
+  };
+  intradayEmotionCache = { expiresAt: Date.now() + 25_000, value: snapshot };
+  return snapshot;
 }
 
 export async function buildLatestCloseSnapshot(

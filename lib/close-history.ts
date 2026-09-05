@@ -68,6 +68,42 @@ export type CloseHistoryDocument = {
   };
 };
 
+export type IntradayEmotionSnapshot = {
+  status: 'READY' | 'DEGRADED' | 'MISSING';
+  retrievedAt: string;
+  tradeDate: string;
+  requestedDate?: string;
+  phase: string;
+  sessionState: 'LIVE' | 'CLOSED';
+  sourceState: 'LIVE' | 'ARCHIVED' | 'STALE';
+  cutoff: string;
+  source: string;
+  reason?: string;
+  limitUp: number;
+  failed: number;
+  limitDown: number;
+  sealRate: number;
+  highestBoard: number;
+  consecutiveCount: number;
+  breadth: {
+    rowsAvailable: number;
+    up: number;
+    down: number;
+    flat: number;
+    medianChangePct: number | null;
+  };
+  indexMood: string;
+  shortMood: string;
+  cycleNode: string;
+  concentratedIndustries: Array<{ name: string; count: number }>;
+  leaders: string[];
+  coverage: {
+    poolsReady: number;
+    poolsRequested: number;
+    breadthReady: boolean;
+  };
+};
+
 export const CLOSE_HISTORY = closeHistoryDocument as CloseHistoryDocument;
 export const CLOSE_DATES = CLOSE_HISTORY.snapshots.map(
   (snapshot) => snapshot.date,

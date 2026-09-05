@@ -1,14 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Clock3,
   Flame,
   Info,
+  Radio,
   Snowflake,
   Target,
   ThermometerSun,
@@ -33,6 +35,7 @@ import type {
   CloseHistoryDocument,
   CloseSnapshot,
   CloseStock,
+  IntradayEmotionSnapshot,
 } from '@/lib/close-history';
 import { cn } from '@/lib/utils';
 
@@ -50,6 +53,13 @@ function fmtPct(value: number | null | undefined, digits = 2) {
 
 function fmtTurnover(value: number) {
   return value > 0 ? `${(value / 1_000_000_000_000).toFixed(2)}万亿` : '—';
+}
+
+function fmtTradeDate(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return digits.length === 8
+    ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
+    : value;
 }
 
 function tone(value: string) {
@@ -227,6 +237,217 @@ function StockList({
   );
 }
 
+function ChangeHint({
+  value,
+  digits = 0,
+  inverse = false,
+}: {
+  value: number | null;
+  digits?: number;
+  inverse?: boolean;
+}) {
+  if (value === null)
+    return (
+      <span className="text-[10px] text-muted-foreground">等待下次刷新</span>
+    );
+  if (Math.abs(value) < 10 ** -digits / 2)
+    return (
+      <span className="text-[10px] text-muted-foreground">较上次持平</span>
+    );
+  const favorable = inverse ? value < 0 : value > 0;
+  return (
+    <span
+      className={cn(
+        'text-[10px] font-medium',
+        favorable ? 'market-up' : 'market-down',
+      )}
+    >
+      较上次 {value > 0 ? '+' : ''}
+      {value.toFixed(digits)}
+    </span>
+  );
+}
+
+export function IntradayEmotionBoard({
+  snapshot,
+  loading,
+  error,
+}: {
+  snapshot: IntradayEmotionSnapshot | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const previousRef = useRef<IntradayEmotionSnapshot | null>(null);
+  const [previous, setPrevious] = useState<IntradayEmotionSnapshot | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!snapshot) return;
+    const before = previousRef.current;
+    if (
+      before &&
+      before.tradeDate === snapshot.tradeDate &&
+      before.cutoff !== snapshot.cutoff
+    )
+      setPrevious(before);
+    previousRef.current = snapshot;
+  }, [snapshot]);
+
+  if (!snapshot)
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          {loading ? '正在读取盘中情绪…' : error || '盘中情绪暂无数据'}
+        </CardContent>
+      </Card>
+    );
+
+  const isLive = snapshot.sessionState === 'LIVE';
+  const diff = (key: 'limitUp' | 'failed' | 'limitDown') =>
+    previous ? snapshot[key] - previous[key] : null;
+  const sealDiff = previous ? snapshot.sealRate - previous.sealRate : null;
+  const medianDiff =
+    previous &&
+    snapshot.breadth.medianChangePct !== null &&
+    previous.breadth.medianChangePct !== null
+      ? snapshot.breadth.medianChangePct - previous.breadth.medianChangePct
+      : null;
+
+  return (
+    <Card className="border-rose-500/25 bg-gradient-to-br from-rose-500/[0.045] via-card to-amber-500/[0.035]">
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Radio
+                className={cn(
+                  'size-5 text-rose-500',
+                  isLive && 'animate-pulse',
+                )}
+              />
+              盘中动态情绪
+            </CardTitle>
+            <CardDescription className="mt-1">
+              交易时间30秒检查一次；收盘后定格在最近交易日15:00，不会冒充实时数据。
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className={
+                snapshot.status === 'READY'
+                  ? 'status-ready'
+                  : snapshot.status === 'DEGRADED'
+                    ? 'status-degraded'
+                    : undefined
+              }
+            >
+              {isLive ? '盘中实时' : '休市定格'}
+            </Badge>
+            <Badge variant="secondary" className="gap-1 font-mono">
+              <Clock3 className="size-3" />
+              {fmtTradeDate(snapshot.tradeDate)} {snapshot.cutoff}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          <div className="rounded-lg border bg-background/70 p-3">
+            <p className="text-xs text-muted-foreground">涨停 / 跌停</p>
+            <p className="mt-1 text-lg font-semibold">
+              <span className="market-up">{snapshot.limitUp}</span>
+              <span className="mx-1 text-muted-foreground">/</span>
+              <span className="market-down">{snapshot.limitDown}</span>
+            </p>
+            <ChangeHint value={diff('limitUp')} />
+          </div>
+          <div className="rounded-lg border bg-background/70 p-3">
+            <p className="text-xs text-muted-foreground">炸板 / 封板率</p>
+            <p className="mt-1 text-lg font-semibold">
+              {snapshot.failed} / {snapshot.sealRate.toFixed(1)}%
+            </p>
+            <ChangeHint value={sealDiff} digits={1} />
+          </div>
+          <div className="rounded-lg border bg-background/70 p-3">
+            <p className="text-xs text-muted-foreground">最高板 / 连板家数</p>
+            <p className="mt-1 text-lg font-semibold">
+              {snapshot.highestBoard}板 / {snapshot.consecutiveCount}家
+            </p>
+            <p className="truncate text-[10px] text-amber-600 dark:text-amber-300">
+              {snapshot.leaders.join(' · ') || '暂无高标'}
+            </p>
+          </div>
+          <div className="rounded-lg border bg-background/70 p-3">
+            <p className="text-xs text-muted-foreground">上涨 / 下跌家数</p>
+            <p className="mt-1 text-lg font-semibold">
+              <span className="market-up">{snapshot.breadth.up}</span>
+              <span className="mx-1 text-muted-foreground">/</span>
+              <span className="market-down">{snapshot.breadth.down}</span>
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              覆盖 {snapshot.breadth.rowsAvailable}只
+            </p>
+          </div>
+          <div className="rounded-lg border bg-background/70 p-3">
+            <p className="text-xs text-muted-foreground">全A中位数</p>
+            <p
+              className={cn(
+                'mt-1 text-lg font-semibold',
+                (snapshot.breadth.medianChangePct ?? 0) >= 0
+                  ? 'market-up'
+                  : 'market-down',
+              )}
+            >
+              {fmtPct(snapshot.breadth.medianChangePct)}
+            </p>
+            <ChangeHint value={medianDiff} digits={2} />
+          </div>
+          <div className="rounded-lg border bg-background/70 p-3">
+            <p className="text-xs text-muted-foreground">指数 / 短线情绪</p>
+            <p className="mt-1 text-sm font-semibold">
+              <span className={tone(snapshot.indexMood)}>
+                {snapshot.indexMood}
+              </span>
+              <span className="mx-1 text-muted-foreground">/</span>
+              <span className={tone(snapshot.shortMood)}>
+                {snapshot.shortMood}
+              </span>
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              规则计算，非主观填写
+            </p>
+          </div>
+          <div className="rounded-lg border bg-background/70 p-3">
+            <p className="text-xs text-muted-foreground">当前周期节点</p>
+            <p
+              className={cn(
+                'mt-1 text-lg font-semibold',
+                tone(snapshot.cycleNode),
+              )}
+            >
+              {snapshot.cycleNode}
+            </p>
+            <p className="truncate text-[10px] text-sky-600 dark:text-sky-300">
+              {snapshot.concentratedIndustries
+                .slice(0, 2)
+                .map((item) => `${item.name}${item.count}`)
+                .join(' · ') || '涨停集中度暂不可用'}
+            </p>
+          </div>
+        </div>
+        {(snapshot.reason || error) && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-xs text-muted-foreground">
+            <Info className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+            {snapshot.reason || error}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function EmotionCycleBoard({
   selectedDate,
   onDateChange,
@@ -237,11 +458,25 @@ export function EmotionCycleBoard({
   history: CloseHistoryDocument;
 }) {
   const snapshots = history.snapshots;
-  const selectedIndex = Math.max(
-    0,
-    snapshots.findIndex((snapshot) => snapshot.date === selectedDate),
+  const requestedIndex = snapshots.findIndex(
+    (snapshot) => snapshot.date === selectedDate,
   );
+  const selectedIndex =
+    requestedIndex >= 0 ? requestedIndex : Math.max(0, snapshots.length - 1);
   const selected = snapshots[selectedIndex] ?? snapshots.at(-1);
+  const matrixScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const scroller = matrixScrollRef.current;
+    if (!scroller || !snapshots.length) return;
+    const selectedCenter = 112 + selectedIndex * 164 + 82;
+    const target = Math.max(0, selectedCenter - scroller.clientWidth / 2);
+    const frame = window.requestAnimationFrame(() => {
+      scroller.scrollTo({ left: target, behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedIndex, snapshots.length]);
+
   if (!selected) return null;
   const maxHeight = Math.max(
     ...snapshots.map((snapshot) => snapshot.highestBoard),
@@ -356,7 +591,7 @@ export function EmotionCycleBoard({
             className="rounded-xl border border-slate-700 bg-slate-950 text-slate-100"
             aria-label="近期收盘情绪周期矩阵"
           >
-            <div className="overflow-x-auto">
+            <div ref={matrixScrollRef} className="overflow-x-auto">
               <div
                 className="grid min-w-max"
                 style={{
