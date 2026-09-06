@@ -14,6 +14,11 @@ export type CloseStock = {
 
 export type CloseSnapshot = {
   date: string;
+  previousDate?: string;
+  closeQuotes?: Record<
+    string,
+    { changePct: number; quoteTime: string; source: string }
+  >;
   cutoff: '15:00';
   status: 'READY';
   source: string;

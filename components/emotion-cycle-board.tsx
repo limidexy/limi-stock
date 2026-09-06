@@ -725,12 +725,19 @@ export function EmotionCycleBoard({
                       >
                         {emotion.label}
                       </span>
-                      <span className="block text-[10px] text-slate-400">
+                      <span className="block text-xs text-slate-400">
                         {emotion.status} ·{' '}
                         {emotion.quoteComplete
                           ? '含完整强股反馈'
-                          : '部分证据，点击查看'}
+                          : emotion.cohort.ready
+                            ? `价格${emotion.cohort.all.priceReady}/${emotion.cohort.all.count}`
+                            : '缺相邻交易日样本'}
                       </span>
+                      {emotion.status !== 'READY' && (
+                        <span className="block text-xs text-slate-400">
+                          {emotion.missing[0]}
+                        </span>
+                      )}
                     </button>
                   );
                 }}

@@ -180,3 +180,17 @@ export async function loadLatestModuleSnapshot<T>(
     persistedAt: row.captured_at,
   };
 }
+
+export async function loadExactModuleSnapshot<T>(
+  module: string,
+  date: string,
+): Promise<T | null> {
+  await ensureSchema();
+  const row = await getDatabase()
+    .prepare(
+      'SELECT payload_json FROM market_module_snapshots WHERE module = ? AND trade_date = ?',
+    )
+    .bind(module, normalizeDate(date))
+    .first<PersistedRow>();
+  return row ? (JSON.parse(row.payload_json) as T) : null;
+}

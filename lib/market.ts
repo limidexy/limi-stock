@@ -487,7 +487,39 @@ export async function fetchStockMetadata(code: string): Promise<StockMetadata> {
   return value;
 }
 
-async function fetchStockChangesAndSpeeds(codes: string[], tradeDate: string) {
+// Tracking reuses the same exact-date provider contracts and bounded concurrency.
+export async function fetchTrackingEvidence(
+  codes: string[],
+  tradeDate: string,
+) {
+  const selected = [...new Set(codes)].slice(0, 160);
+  const started = Date.now();
+  const quotes = await fetchStockChangesAndSpeeds(
+    selected,
+    tradeDate,
+    started + 12_000,
+  ).catch(() => new Map<string, StockQuote>());
+  const trends: Record<string, IntradayTrend> = {};
+  await mapLimit(selected, 6, async (code) => {
+    if (Date.now() - started > 25_000) return;
+    try {
+      const trend = await fetchIntradayTrend(
+        { code, secid: secid(code) },
+        tradeDate,
+      );
+      if (!trend.stale) trends[code] = trend;
+    } catch {
+      /* Missing path is reported per stock, never synthesized. */
+    }
+  });
+  return { quotes, trends, requested: codes.length, selected: selected.length };
+}
+
+async function fetchStockChangesAndSpeeds(
+  codes: string[],
+  tradeDate: string,
+  deadline = Infinity,
+) {
   const uniqueCodes = [...new Set(codes.filter(Boolean))];
   const batches = Array.from(
     { length: Math.ceil(uniqueCodes.length / 40) },
@@ -496,6 +528,7 @@ async function fetchStockChangesAndSpeeds(codes: string[], tradeDate: string) {
   const batchMaps = await mapLimit(batches, 2, async (batch) => {
     const quotes = new Map<string, StockQuote>();
     for (const host of ['push2delay.eastmoney.com', 'push2.eastmoney.com']) {
+      if (Date.now() > deadline) break;
       const missing = batch.filter((code) => !quoteComplete(quotes.get(code)));
       if (!missing.length) break;
       const params = new URLSearchParams({
@@ -522,6 +555,7 @@ async function fetchStockChangesAndSpeeds(codes: string[], tradeDate: string) {
       batch.filter((code) => !quoteComplete(quotes.get(code))),
       4,
       async (code) => {
+        if (Date.now() > deadline) return;
         try {
           const payload = await fetchJsonOnce(
             `https://push2delay.eastmoney.com/api/qt/ulist.np/get?secids=${secid(code)}&fltt=2&invt=2&fields=f12,f3,f6,f22,f124`,
@@ -2442,8 +2476,14 @@ function dashedDate(value: string) {
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
 }
 
-export async function getIntradayEmotionSnapshot(): Promise<IntradayEmotionSnapshot> {
-  if (intradayEmotionCache && intradayEmotionCache.expiresAt > Date.now())
+export async function getIntradayEmotionSnapshot(
+  force = false,
+): Promise<IntradayEmotionSnapshot> {
+  if (
+    !force &&
+    intradayEmotionCache &&
+    intradayEmotionCache.expiresAt > Date.now()
+  )
     return intradayEmotionCache.value;
   const marketDate = await getMarketDateContext();
   const [limitPool, failedPool, downPool, market] = await Promise.all([
@@ -2580,7 +2620,7 @@ export async function buildLatestCloseSnapshot(
       fetchPool('ZTPool', marketDate.tradeDate),
       fetchPool('ZBPool', marketDate.tradeDate),
       fetchPool('DTPool', marketDate.tradeDate),
-      fetchAllClist({ fs: MARKET_FILTER, fid: 'f3', fields: 'f12,f3,f6' }),
+      fetchAllClist({ fs: MARKET_FILTER, fid: 'f3', fields: 'f12,f3,f6,f124' }),
       fetchCloseIndices(),
     ]);
   if (
@@ -2657,6 +2697,24 @@ export async function buildLatestCloseSnapshot(
     cutoff: '15:00',
     status: 'READY',
     source: '东方财富收盘池、全市场行情与指数快照 · 自动归档',
+    closeQuotes: Object.fromEntries(
+      marketRows
+        .filter(
+          (row) =>
+            quoteDate(row.f124) === marketDate.tradeDate &&
+            new Date(Number(row.f124) * 1000 + 8 * 3600000)
+              .toISOString()
+              .slice(11, 16) === '15:00',
+        )
+        .map((row) => [
+          String(row.f12),
+          {
+            changePct: Number(row.f3),
+            quoteTime: `${dashedDate(marketDate.tradeDate)}T15:00:00+08:00`,
+            source: '东方财富15:00分钟内收盘报价，归一到收盘截止时点',
+          },
+        ]),
+    ),
     limitUp,
     failed,
     limitDown,

@@ -109,6 +109,11 @@ export function ladderReading(
 
 export type EmotionFacts = {
   date: string;
+  previousDate?: string;
+  closeQuotes?: Record<
+    string,
+    { changePct: number; quoteTime: string; source: string }
+  >;
   cutoff: string;
   status: string;
   stale?: boolean;
@@ -264,6 +269,11 @@ export function adjacentCloses(
 ) {
   if (!previous || current.cutoff !== '15:00' || previous.cutoff !== '15:00')
     return false;
+  if (current.previousDate)
+    return (
+      compactDate(current.previousDate) === compactDate(previous.date) &&
+      compactDate(previous.date) < compactDate(current.date)
+    );
   const date = compactDate(previous.date);
   const next = new Date(
     `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}T00:00:00Z`,
@@ -349,6 +359,17 @@ export function historicalEmotionLadder(
         sealed.get(stock.code) ??
         failed.get(stock.code) ??
         down.get(stock.code);
+      const exact = current.closeQuotes?.[stock.code];
+      const digits = compactDate(current.date);
+      const closeAt = Date.parse(
+        `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}T15:00:00+08:00`,
+      );
+      const verifiedPrice =
+        exact &&
+        finite(exact.changePct) &&
+        Date.parse(exact.quoteTime) === closeAt
+          ? exact.changePct
+          : null;
       return {
         code: stock.code,
         name: stock.name,
@@ -360,7 +381,7 @@ export function historicalEmotionLadder(
           : failed.has(stock.code)
             ? 'FAILED'
             : 'DROPPED',
-        changePct: observed?.changePct ?? null,
+        changePct: verifiedPrice ?? observed?.changePct ?? null,
         speedPct: null,
       };
     }),
@@ -671,6 +692,6 @@ export function shortEmotionReading(
     transition,
     missing,
     caution:
-      '局部高标封住≠全面转强；断板≠亏损；未取得弱侧盘中路径，不能确认反核、流动性释放或首次转折。',
+      '局部高标封住≠全面转强；断板≠亏损。本面板归纳情绪结构，逐日反馈与分钟过程见独立“情绪跟踪”；路径缺口不推断反核或带动因果。',
   };
 }

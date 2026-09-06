@@ -2,6 +2,7 @@ import seedDocument from '@/lib/close-history.generated.json';
 import type { CloseHistoryDocument } from '@/lib/close-history';
 import { buildLatestCloseSnapshot } from '@/lib/market';
 import { loadCloseHistory, saveCloseSnapshot } from '@/lib/persistence';
+import { enrichEmotionCloses } from '@/lib/emotion-tracking-source';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export async function GET() {
     ...seed,
     version: Math.max(2, seed.version),
     generatedAt: new Date().toISOString(),
-    snapshots,
+    snapshots: enrichEmotionCloses(snapshots),
     archive: {
       state: persistenceState,
       mode: persistenceMode,

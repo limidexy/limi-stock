@@ -1,0 +1,218 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {
+  buildEmotionTracking,
+  exactQuote,
+  priorSession,
+  reboundObservation,
+  leadLagObservation,
+  trackingCandidates,
+} from '../lib/emotion-tracking.ts';
+import { shortEmotionReading } from '../lib/market-reading.ts';
+
+const evidence = JSON.parse(
+  fs.readFileSync(
+    new URL('../lib/emotion-tracking.generated.json', import.meta.url),
+  ),
+).dates;
+const history = JSON.parse(
+  fs.readFileSync(
+    new URL('../lib/close-history.generated.json', import.meta.url),
+  ),
+).snapshots;
+const facts = (d) => ({
+  ...d,
+  poolsReady: true,
+  breadthReady: true,
+  closeQuotes: evidence[d.date]?.quotes,
+  previousDate: evidence[d.date]?.previousDate,
+});
+test('complete exact-date CLOSE packages repair historical quote coverage without changing cohort identities', () => {
+  for (const [date, count] of [
+    ['2026-08-31', 82],
+    ['2026-09-01', 88],
+    ['2026-09-02', 83],
+    ['2026-09-03', 52],
+    ['2026-09-04', 44],
+  ]) {
+    const i = history.findIndex((d) => d.date === date),
+      result = shortEmotionReading(facts(history[i]), facts(history[i - 1]));
+    assert.equal(result.cohort.all.count, count);
+    assert.equal(result.cohort.all.priceReady, count);
+    assert.equal(result.status, 'READY');
+  }
+  const i = history.findIndex((d) => d.date === '2026-08-28');
+  assert.equal(
+    shortEmotionReading(facts(history[i]), facts(history[i - 1])).status,
+    'DEGRADED',
+  );
+  assert.equal(evidence['2026-08-28'], undefined);
+});
+test('old highest-board survives its break; no future winners join prior identities', () => {
+  const result = buildEmotionTracking(history, evidence, '2026-09-04');
+  const old = result.oldLeaders.rows.find((x) => x.code === '002084');
+  assert.equal(old.brokenDate, '2026-09-02');
+  assert.equal(old.peakHeight, 7);
+  assert.equal(old.path.length, 4);
+  assert.ok(old.path.find((x) => x.date === '2026-09-03').changePct < 0);
+  assert.equal(result.failedRepair.rows.length, 33);
+  assert.equal(result.failedRepair.available, 33);
+  assert.equal(new Set(result.failedRepair.rows.map((x) => x.code)).size, 33);
+  assert.equal(
+    result.rebounds.rows.find((x) => x.code === '002084').status,
+    'MISSING',
+  );
+  assert.equal(result.status, 'DEGRADED');
+  assert.equal(
+    trackingCandidates(history, '2026-09-02').leaders.some(
+      (x) => x.code === '605577',
+    ),
+    false,
+  );
+});
+test('missing prior session never becomes yesterday by selecting the last known archive', () => {
+  assert.equal(priorSession('2026-09-08', '2026-09-04'), false);
+  const r = buildEmotionTracking(history, evidence, '2026-09-08');
+  assert.equal(r.failedRepair.rows.length, 0);
+});
+test('close quotes require exact date and closing cutoff; live quotes accept actual seconds but reject future/stale', () => {
+  const day = {
+    date: '2026-09-04',
+    source: 'fixture',
+    quotes: {
+      x: {
+        changePct: 1,
+        quoteTime: '2026-09-04T14:59:00+08:00',
+        source: 'fixture',
+      },
+    },
+    trends: {},
+  };
+  assert.equal(exactQuote(day, day.date, 'x'), null);
+  day.sessionState = 'LIVE';
+  day.asOf = '2026-09-04T14:59:45+08:00';
+  day.quotes.x.quoteTime = '2026-09-04T14:59:30+08:00';
+  assert.ok(exactQuote(day, day.date, 'x', '14:59'));
+  assert.equal(
+    exactQuote({ ...day, sessionState: 'CLOSED', asOf: undefined }, day.date, 'x'),
+    null,
+  );
+  day.quotes.x.quoteTime = '2026-09-04T14:59:46+08:00';
+  assert.equal(exactQuote(day, day.date, 'x', '14:59'), null);
+  day.quotes.x.quoteTime = '2026-09-03T14:59:30+08:00';
+  assert.equal(exactQuote(day, day.date, 'x', '14:59'), null);
+});
+// Pure synthetic minute fixtures never exported to the application.
+const trend = (points) => ({
+  code: '600001',
+  name: '测试',
+  preClose: 100,
+  points: points.map(([time, price]) => ({ time, price })),
+});
+test('rebound confirmation requires consecutive recovery, respects cutoff and keeps later failure separate', () => {
+  const t = trend([
+    ['09:31', 94],
+    ['09:32', 94],
+    ['09:33', 98.1],
+    ['09:34', 98],
+    ['09:35', 98],
+    ['09:36', 94.5],
+  ]);
+  assert.equal(reboundObservation(t, '09:34').event, null);
+  assert.equal(reboundObservation(t, '09:35').event.time, '09:35');
+  assert.equal(reboundObservation(t, '09:36').label, '拉回后再回落');
+  const gap = trend([
+    ['09:31', 94],
+    ['09:32', 94],
+    ['10:00', 99],
+    ['10:01', 99],
+    ['10:02', 99],
+  ]);
+  assert.equal(reboundObservation(gap, '10:02').event, null);
+  assert.match(reboundObservation(gap, '10:02').label, /路径缺失/);
+});
+test('missing close endpoint, duplicate minutes and stale paths cannot claim complete evidence', () => {
+  const t = trend([
+    ['09:31', 99],
+    ['09:32', 99],
+    ['09:33', 99],
+    ['09:34', 99],
+    ['14:59', 99],
+  ]);
+  assert.equal(reboundObservation(t, '15:00').status, 'DEGRADED');
+  assert.equal(
+    reboundObservation({ ...t, stale: true }, '15:00').status,
+    'MISSING',
+  );
+  assert.equal(
+    reboundObservation({ ...t, points: [...t.points, t.points[0]] }, '15:00')
+      .status,
+    'MISSING',
+  );
+});
+test('missing core opening path does not establish core/follower order', () => {
+  const core = { code: '600001', name: '核心', height: 3, industry: '测试' };
+  const follower = {
+    code: '600002',
+    name: '成员',
+    height: 1,
+    industry: '测试',
+  };
+  const a = trend([
+    ['09:36', 100],
+    ['09:37', 100],
+    ['09:38', 100],
+    ['09:39', 102],
+    ['09:40', 102],
+  ]);
+  const b = trend(
+    Array.from({ length: 10 }, (_, i) => [`09:${31 + i}`, i === 9 ? 102 : 100]),
+  );
+  const r = leadLagObservation(
+    core,
+    [core, follower],
+    { trends: { 600001: a, 600002: b } },
+    '09:40',
+  );
+  assert.equal(r.following, 0);
+  assert.equal(r.rows[0].lag, null);
+  assert.match(r.label, /不能确认先后/);
+});
+test('valid lead-lag keeps early, simultaneous and subsequent responses separate', () => {
+  const make = (onset) =>
+    trend(
+      Array.from({ length: 15 }, (_, i) => [
+        `09:${31 + i}`,
+        i >= onset ? 102 : 100,
+      ]),
+    );
+  const core = { code: '600001', name: '核心', height: 3, industry: '测试' };
+  const members = [
+    core,
+    ...['600002', '600003', '600004'].map((code) => ({
+      code,
+      name: code,
+      height: 1,
+      industry: '测试',
+    })),
+  ];
+  const r = leadLagObservation(
+    core,
+    members,
+    {
+      trends: {
+        600001: make(6),
+        600002: make(4),
+        600003: make(6),
+        600004: make(8),
+      },
+    },
+    '09:45',
+  );
+  assert.deepEqual(
+    r.rows.map((x) => x.role),
+    ['早于核心', '同分钟', '随后响应'],
+  );
+  assert.equal(r.following, 1);
+});

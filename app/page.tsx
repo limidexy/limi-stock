@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { timelineHeadline } from '@/lib/timeline-evidence';
 import { LadderOverview } from '@/components/market-reading-board';
+import { EmotionTrackingBoard } from '@/components/emotion-tracking-board';
 import {
   windowedRadarEvents,
   type RadarEvent,
@@ -1999,6 +2000,10 @@ export default function Home() {
               <CalendarDays />
               情绪周期
             </TabsTrigger>
+            <TabsTrigger value="emotion-tracking">
+              <Activity />
+              情绪跟踪
+            </TabsTrigger>
             <TabsTrigger value="radar">
               <Activity />
               板块异动
@@ -2048,6 +2053,17 @@ export default function Home() {
               onDateChange={selectCloseDate}
               history={history}
               ladder={ladder.data}
+            />
+          </TabsContent>
+
+          <TabsContent value="emotion-tracking">
+            <EmotionTrackingBoard
+              history={history}
+              selectedDate={selectedCloseDate}
+              onDateChange={(date) => {
+                closeDatePinned.current = true;
+                setSelectedCloseDate(date);
+              }}
             />
           </TabsContent>
 
