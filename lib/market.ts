@@ -7,6 +7,7 @@ import { archivedQuote, archivedTrend } from '@/lib/archive-evidence';
 import { CLOSE_HISTORY } from '@/lib/close-history';
 import { loadCloseHistory } from '@/lib/persistence';
 import { emotionReading } from '@/lib/market-reading';
+import { buildRadarSnapshot } from '@/lib/radar-evidence';
 import {
   mergeQuoteRows,
   quoteComplete,
@@ -368,6 +369,7 @@ async function fetchClist(options: {
         `https://${host}/api/qt/clist/get?${params}`,
       );
       const data = (payload.data ?? {}) as Record<string, unknown>;
+      if (!Array.isArray(data.diff)) throw new Error('行情列表字段缺失');
       const rows = Array.isArray(data.diff) ? (data.diff as ClistRow[]) : [];
       const value = {
         total: Number(data.total ?? rows.length),
@@ -677,182 +679,38 @@ export async function fetchRecentLimitHistory(
   }
 }
 
+const cachedRadar = new Map<
+  string,
+  {
+    expiresAt: number;
+    pending: Promise<import('./radar-evidence').RadarSnapshot>;
+  }
+>();
+
 export async function getRadarSnapshot() {
-  const startedAt = Date.now();
   const marketDate = await getMarketDateContext();
-  const queryResults = await Promise.allSettled([
-    fetchClist({ fs: 'm:90+t:3', fid: 'f22', order: 1, pageSize: 12 }),
-    fetchClist({ fs: 'm:90+t:3', fid: 'f22', order: 0, pageSize: 12 }),
-    fetchClist({ fs: 'm:90+t:3', fid: 'f3', order: 1, pageSize: 12 }),
-    fetchClist({ fs: 'm:90+t:3', fid: 'f3', order: 0, pageSize: 12 }),
-  ]);
-  const successful = queryResults
-    .filter(
-      (
-        result,
-      ): result is PromiseFulfilledResult<
-        Awaited<ReturnType<typeof fetchClist>>
-      > => result.status === 'fulfilled',
-    )
-    .map((result) => result.value);
-  if (!successful.length) throw new Error('概念板块排名端点暂时不可用');
-  const boardTotal = Math.max(...successful.map((result) => result.total));
-  const boardMap = new Map(
-    successful
-      .flatMap((result) => result.rows)
-      .map((row) => [String(row.f12 ?? ''), row]),
-  );
-  const boards = [...boardMap.values()]
-    .map((row) => ({
-      code: String(row.f12 ?? ''),
-      name: String(row.f14 ?? ''),
-      changePct: numberOrNull(row.f3),
-      speedPct: numberOrNull(row.f22),
-      mainNetInflow: numberOrNull(row.f62),
-      amount: numberOrNull(row.f6),
-    }))
-    .filter((row) => row.code && row.name && row.changePct !== null);
-  const uniqueTop = <T extends { code: string }>(
-    primary: T[],
-    fallback: T[],
-  ) => {
-    const seen = new Set<string>();
-    return [...primary, ...fallback]
-      .filter((item) => {
-        if (seen.has(item.code)) return false;
-        seen.add(item.code);
-        return true;
-      })
-      .slice(0, 3);
-  };
-  const speedUp = boards
-    .filter((row) => (row.speedPct ?? 0) > 0)
-    .sort((a, b) => (b.speedPct ?? 0) - (a.speedPct ?? 0));
-  const speedDown = boards
-    .filter((row) => (row.speedPct ?? 0) < 0)
-    .sort((a, b) => (a.speedPct ?? 0) - (b.speedPct ?? 0));
-  const dayUp = boards
-    .filter((row) => (row.changePct ?? 0) > 0)
-    .sort((a, b) => (b.changePct ?? 0) - (a.changePct ?? 0));
-  const dayDown = boards
-    .filter((row) => (row.changePct ?? 0) < 0)
-    .sort((a, b) => (a.changePct ?? 0) - (b.changePct ?? 0));
-  const up = uniqueTop(speedUp, dayUp);
-  const down = uniqueTop(speedDown, dayDown);
-  const selected = [
-    ...up.map((board) => ({ ...board, selectedDirection: 'up' as const })),
-    ...down.map((board) => ({ ...board, selectedDirection: 'down' as const })),
-  ];
-
-  const events = await mapLimit(selected, 3, async (board) => {
-    const direction = board.selectedDirection;
-    try {
-      const members = await fetchClist({
-        fs: `b:${board.code}`,
-        fid: 'f62',
-        pageSize: 300,
-      });
-      const normalized = members.rows.map((row) => ({
-        code: String(row.f12 ?? ''),
-        name: String(row.f14 ?? ''),
-        changePct: numberOrNull(row.f3),
-        speedPct: numberOrNull(row.f22),
-        mainNetInflow: numberOrNull(row.f62),
-        amount: numberOrNull(row.f6),
-        industry: String(row.f100 ?? ''),
-      }));
-      const priceDirectional = normalized.filter((row) => {
-        const speed = row.speedPct ?? 0;
-        return direction === 'up' ? speed > 0 : speed < 0;
-      });
-      const flowDirectional = priceDirectional.filter((row) => {
-        const flow = row.mainNetInflow ?? 0;
-        return direction === 'up' ? flow > 0 : flow < 0;
-      });
-      const flowCodes = new Set(flowDirectional.map((row) => row.code));
-      const candidates = [
-        ...flowDirectional.sort(
-          (a, b) =>
-            Math.abs(b.mainNetInflow ?? 0) - Math.abs(a.mainNetInflow ?? 0),
-        ),
-        ...priceDirectional
-          .filter((row) => !flowCodes.has(row.code))
-          .sort(
-            (a, b) => Math.abs(b.speedPct ?? 0) - Math.abs(a.speedPct ?? 0),
-          ),
-      ];
-      const denominator = flowDirectional.reduce(
-        (sum, row) => sum + Math.abs(row.mainNetInflow ?? 0),
-        0,
-      );
-      const drivers = candidates.slice(0, 4).map((row) => ({
-        ...row,
-        driverRole: flowCodes.has(row.code) ? '价格与资金同向' : '价格速度拖累',
-        contributionPct:
-          flowCodes.has(row.code) && denominator > 0
-            ? (Math.abs(row.mainNetInflow ?? 0) / denominator) * 100
-            : null,
-      }));
-      const directionalCount = priceDirectional.length;
-      return {
-        ...board,
-        selectedDirection: undefined,
-        direction,
-        memberCount: members.total,
-        directionalCount,
-        drivers,
-        members: normalized,
-        driverState: drivers.length
-          ? ('DEGRADED' as DataState)
-          : ('MISSING' as DataState),
-        driverBasis:
-          '先按当前个股涨速识别拉动/拖累，资金同向者优先；连续打开3分钟后升级为同窗口增量',
-      };
-    } catch {
-      return {
-        ...board,
-        selectedDirection: undefined,
-        direction,
-        memberCount: null,
-        directionalCount: null,
-        drivers: [],
-        members: [],
-        driverState: 'MISSING' as DataState,
-        driverBasis: '成分股端点短暂波动，正在自动重连',
-      };
-    }
-  });
-
-  return {
-    status:
-      successful.length === 4 &&
-      successful.every((result) => !result.stale) &&
-      events.length === 6 &&
-      events.every((event) => event.drivers.length > 0)
-        ? ('READY' as DataState)
-        : ('DEGRADED' as DataState),
-    retrievedAt: new Date().toISOString(),
-    tradeDate: marketDate.tradeDate,
-    requestedDate: marketDate.requestedDate,
-    phase: marketDate.phase,
-    sessionState: marketDate.sessionState,
-    source: '东方财富公开概念板块与成分行情',
-    sourceState: successful.some((result) => result.stale)
-      ? 'STALE'
-      : marketDate.sourceState,
-    reason: successful.some((result) => result.stale)
-      ? '部分排名端点短暂波动，已使用同交易日最近快照'
-      : undefined,
-    coverage: {
-      reported: boardTotal,
-      available: boardTotal,
-      rankedCandidates: boards.length,
-      queryReady: successful.length,
-      queryRequested: 4,
-    },
-    events,
-    latencyMs: Date.now() - startedAt,
-  };
+  const key = `${marketDate.tradeDate}:${marketDate.sessionState}:${marketDate.phase}`;
+  const cached = cachedRadar.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.pending;
+  const pending = buildRadarSnapshot(marketDate, fetchClist);
+  const entry = { expiresAt: Date.now() + 30_000, pending };
+  cachedRadar.clear();
+  cachedRadar.set(key, entry);
+  try {
+    const result = await pending;
+    entry.expiresAt =
+      Date.now() +
+      (result.status === 'READY'
+        ? marketDate.sessionState === 'LIVE'
+          ? 10_000
+          : 300_000
+        : 45_000);
+    return result;
+  } catch (error) {
+    // Failed requests have a short backoff as well, to avoid a polling retry storm.
+    entry.expiresAt = Date.now() + 30_000;
+    throw error;
+  }
 }
 
 function shanghaiMarketPhase(value = new Date()): string {

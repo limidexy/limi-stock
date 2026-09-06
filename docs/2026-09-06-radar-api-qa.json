@@ -1,0 +1,342 @@
+{
+  "checkedAt": "2026-09-06T01:32:24.446Z",
+  "baseUrl": "http://localhost:3000",
+  "verification": "CONTRACT_PASS",
+  "marketJudgmentAccuracy": "NOT_VALIDATED",
+  "tradeDate": "20260904",
+  "sourceState": "ARCHIVED",
+  "dataState": "READY",
+  "payloadSHA256": "5aa04b75c5385294e889509fb3240244c1b1008bab1be3903e9e3cca6d3cc6b4",
+  "coverage": {
+    "reported": 504,
+    "available": 79,
+    "rankedCandidates": 80,
+    "excludedGroups": 1,
+    "queryReady": 2,
+    "queryRequested": 2,
+    "missingQueries": []
+  },
+  "events": [
+    {
+      "code": "BK0882",
+      "name": "猪肉概念",
+      "direction": "up",
+      "selectionBasis": "DAY_CHANGE",
+      "changePct": 5.42,
+      "speedPct": -0.04,
+      "quoteTime": "2026-09-04T07:39:32.000Z",
+      "membersAvailable": 39,
+      "membersReported": 39,
+      "drivers": [
+        {
+          "code": "002714",
+          "name": "牧原股份",
+          "changePct": 4.49,
+          "speedPct": 0.05,
+          "mainNetInflow": 366176368,
+          "quoteTime": "2026-09-04T07:34:39.000Z"
+        },
+        {
+          "code": "000876",
+          "name": "新 希 望",
+          "changePct": 10,
+          "speedPct": 0,
+          "mainNetInflow": 266792457,
+          "quoteTime": "2026-09-04T07:34:00.000Z"
+        },
+        {
+          "code": "002124",
+          "name": "天邦食品",
+          "changePct": 10,
+          "speedPct": 0,
+          "mainNetInflow": 202676032,
+          "quoteTime": "2026-09-04T07:34:09.000Z"
+        },
+        {
+          "code": "000735",
+          "name": "罗 牛 山",
+          "changePct": 10.05,
+          "speedPct": 0,
+          "mainNetInflow": 143311297,
+          "quoteTime": "2026-09-04T07:34:21.000Z"
+        }
+      ]
+    },
+    {
+      "code": "BK0887",
+      "name": "鸡肉概念",
+      "direction": "up",
+      "selectionBasis": "DAY_CHANGE",
+      "changePct": 4.89,
+      "speedPct": 0,
+      "quoteTime": "2026-09-04T07:39:32.000Z",
+      "membersAvailable": 20,
+      "membersReported": 20,
+      "drivers": [
+        {
+          "code": "000876",
+          "name": "新 希 望",
+          "changePct": 10,
+          "speedPct": 0,
+          "mainNetInflow": 266792457,
+          "quoteTime": "2026-09-04T07:34:00.000Z"
+        },
+        {
+          "code": "002567",
+          "name": "唐人神",
+          "changePct": 8,
+          "speedPct": -0.25,
+          "mainNetInflow": 74720623,
+          "quoteTime": "2026-09-04T07:34:45.000Z"
+        },
+        {
+          "code": "002840",
+          "name": "华统股份",
+          "changePct": 4.64,
+          "speedPct": 0.65,
+          "mainNetInflow": 27210807,
+          "quoteTime": "2026-09-04T07:34:54.000Z"
+        },
+        {
+          "code": "603477",
+          "name": "巨星农牧",
+          "changePct": 6.72,
+          "speedPct": 0.06,
+          "mainNetInflow": 16014531,
+          "quoteTime": "2026-09-04T08:11:32.000Z"
+        }
+      ]
+    },
+    {
+      "code": "BK0967",
+      "name": "水产概念",
+      "direction": "up",
+      "selectionBasis": "DAY_CHANGE",
+      "changePct": 3.1,
+      "speedPct": -0.04,
+      "quoteTime": "2026-09-04T07:39:32.000Z",
+      "membersAvailable": 17,
+      "membersReported": 17,
+      "drivers": [
+        {
+          "code": "002385",
+          "name": "大北农",
+          "changePct": 5.81,
+          "speedPct": 0.29,
+          "mainNetInflow": 111360232,
+          "quoteTime": "2026-09-04T07:34:12.000Z"
+        },
+        {
+          "code": "000798",
+          "name": "中水渔业",
+          "changePct": 9.98,
+          "speedPct": 0,
+          "mainNetInflow": 91578788,
+          "quoteTime": "2026-09-04T07:34:33.000Z"
+        },
+        {
+          "code": "600438",
+          "name": "通威股份",
+          "changePct": 0.98,
+          "speedPct": -0.09,
+          "mainNetInflow": 22149049,
+          "quoteTime": "2026-09-04T08:11:42.000Z"
+        },
+        {
+          "code": "603668",
+          "name": "天马科技",
+          "changePct": 6.14,
+          "speedPct": -0.08,
+          "mainNetInflow": 7233560,
+          "quoteTime": "2026-09-04T08:11:58.000Z"
+        }
+      ]
+    },
+    {
+      "code": "BK1152",
+      "name": "高带宽内存",
+      "direction": "down",
+      "selectionBasis": "DAY_CHANGE",
+      "changePct": -3.59,
+      "speedPct": -0.12,
+      "quoteTime": "2026-09-04T07:39:32.000Z",
+      "membersAvailable": 28,
+      "membersReported": 28,
+      "drivers": [
+        {
+          "code": "300475",
+          "name": "香农芯创",
+          "changePct": -6.13,
+          "speedPct": 0.02,
+          "mainNetInflow": -543209104,
+          "quoteTime": "2026-09-04T07:34:12.000Z"
+        },
+        {
+          "code": "688361",
+          "name": "中科飞测",
+          "changePct": -6.57,
+          "speedPct": -0.19,
+          "mainNetInflow": -384319344,
+          "quoteTime": "2026-09-04T08:11:46.000Z"
+        },
+        {
+          "code": "002409",
+          "name": "雅克科技",
+          "changePct": -3.78,
+          "speedPct": -0.03,
+          "mainNetInflow": -243561210,
+          "quoteTime": "2026-09-04T07:34:54.000Z"
+        },
+        {
+          "code": "688300",
+          "name": "联瑞新材",
+          "changePct": -2.57,
+          "speedPct": -0.05,
+          "mainNetInflow": -241793695,
+          "quoteTime": "2026-09-04T08:11:36.000Z"
+        }
+      ]
+    },
+    {
+      "code": "BK0890",
+      "name": "MLCC",
+      "direction": "down",
+      "selectionBasis": "DAY_CHANGE",
+      "changePct": -3.32,
+      "speedPct": 0.02,
+      "quoteTime": "2026-09-04T07:39:32.000Z",
+      "membersAvailable": 39,
+      "membersReported": 39,
+      "drivers": [
+        {
+          "code": "300285",
+          "name": "国瓷材料",
+          "changePct": -5.09,
+          "speedPct": 0,
+          "mainNetInflow": -727859184,
+          "quoteTime": "2026-09-04T07:34:27.000Z"
+        },
+        {
+          "code": "000636",
+          "name": "风华高科",
+          "changePct": -4.37,
+          "speedPct": 0.02,
+          "mainNetInflow": -511850240,
+          "quoteTime": "2026-09-04T07:34:15.000Z"
+        },
+        {
+          "code": "600549",
+          "name": "厦门钨业",
+          "changePct": -3.63,
+          "speedPct": 0.02,
+          "mainNetInflow": -281492133,
+          "quoteTime": "2026-09-04T08:11:51.000Z"
+        },
+        {
+          "code": "605376",
+          "name": "博迁新材",
+          "changePct": -4.69,
+          "speedPct": -0.2,
+          "mainNetInflow": -173346658,
+          "quoteTime": "2026-09-04T08:11:45.000Z"
+        }
+      ]
+    },
+    {
+      "code": "BK1168",
+      "name": "铜缆高速连接",
+      "direction": "down",
+      "selectionBasis": "DAY_CHANGE",
+      "changePct": -3.11,
+      "speedPct": 0.02,
+      "quoteTime": "2026-09-04T07:39:32.000Z",
+      "membersAvailable": 40,
+      "membersReported": 40,
+      "drivers": [
+        {
+          "code": "002475",
+          "name": "立讯精密",
+          "changePct": -3.33,
+          "speedPct": 0.02,
+          "mainNetInflow": -983697728,
+          "quoteTime": "2026-09-04T07:34:57.000Z"
+        },
+        {
+          "code": "600522",
+          "name": "中天科技",
+          "changePct": -3.68,
+          "speedPct": 0,
+          "mainNetInflow": -799184832,
+          "quoteTime": "2026-09-04T08:11:45.000Z"
+        },
+        {
+          "code": "000988",
+          "name": "华工科技",
+          "changePct": -3.41,
+          "speedPct": 0,
+          "mainNetInflow": -656324848,
+          "quoteTime": "2026-09-04T07:34:00.000Z"
+        },
+        {
+          "code": "300548",
+          "name": "长芯博创",
+          "changePct": -4.21,
+          "speedPct": 0.05,
+          "mainNetInflow": -193395536,
+          "quoteTime": "2026-09-04T07:34:21.000Z"
+        }
+      ]
+    }
+  ],
+  "crossThemeStocks": [
+    {
+      "code": "000876",
+      "sectors": [
+        "猪肉概念",
+        "鸡肉概念"
+      ]
+    }
+  ],
+  "relatedModules": [
+    {
+      "module": "ladder",
+      "http": 200,
+      "tradeDate": "20260904",
+      "state": "READY",
+      "sourceState": "ARCHIVED",
+      "retrievedAt": "2026-09-05T08:42:24.691Z"
+    },
+    {
+      "module": "timeline",
+      "http": 200,
+      "tradeDate": "20260904",
+      "state": "READY",
+      "sourceState": "ARCHIVED",
+      "retrievedAt": "2026-09-05T08:42:23.459Z"
+    },
+    {
+      "module": "intraday-emotion",
+      "http": 200,
+      "tradeDate": "20260904",
+      "state": "READY",
+      "sourceState": "ARCHIVED",
+      "retrievedAt": "2026-09-04T15:00:00+08:00"
+    },
+    {
+      "module": "speed",
+      "http": 200,
+      "tradeDate": "20260904",
+      "state": "READY",
+      "sourceState": "ARCHIVED",
+      "retrievedAt": "2026-09-05T08:42:27.984Z"
+    },
+    {
+      "module": "flow",
+      "http": 200,
+      "tradeDate": "20260904",
+      "state": "READY",
+      "sourceState": "ARCHIVED",
+      "retrievedAt": "2026-09-05T08:42:13.444Z"
+    }
+  ]
+}
