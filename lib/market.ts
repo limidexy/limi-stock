@@ -2062,9 +2062,25 @@ export async function repairArchivedLadder(
   const competitors = snapshot.competitors
     .map((row) => {
       const quote = quotes.get(row.code);
+      // Emotion's 15:00 return must have an exact close-price timestamp. Keep
+      // price provenance separate from the legacy last-speed quote provenance.
+      const historical =
+        snapshot.sessionState === 'CLOSED'
+          ? archivedQuote(marketSymbol(row.code), snapshot.tradeDate)
+          : null;
+      const exactClose =
+        historical &&
+        archivedTrend(marketSymbol(row.code), snapshot.tradeDate)?.points.at(-1)
+          ?.time === '15:00'
+          ? historical
+          : null;
       const updated = {
         ...row,
-        changePct: quote?.changePct ?? row.changePct,
+        changePct: exactClose?.changePct ?? quote?.changePct ?? row.changePct,
+        priceQuoteTime:
+          exactClose?.quoteTime ?? quote?.quoteTime ?? row.quoteTime,
+        priceQuoteSource:
+          exactClose?.quoteSource ?? quote?.quoteSource ?? row.quoteSource,
         speedPct: quote?.speedPct ?? row.speedPct,
         amount: quote?.amount ?? row.amount,
         quoteTime: quote?.quoteTime ?? row.quoteTime,
@@ -2499,6 +2515,14 @@ export async function getIntradayEmotionSnapshot(): Promise<IntradayEmotionSnaps
     leaders: limitRows
       .filter((row) => row.height === highestBoard)
       .map((row) => row.name),
+    ladders: [...new Set(limitRows.map((row) => row.height))]
+      .sort((a, b) => b - a)
+      .map((height) => ({
+        height,
+        stocks: limitRows.filter((row) => row.height === height),
+      })),
+    failedStocks: failedPool.rows.map((row) => closeStock(row)),
+    limitDownStocks: downPool.rows.map((row) => closeStock(row)),
     coverage: {
       poolsReady,
       poolsRequested: pools.length,

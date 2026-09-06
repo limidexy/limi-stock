@@ -42,7 +42,12 @@ import {
   EmotionEvidencePanel,
   toEmotionFacts,
 } from '@/components/market-reading-board';
-import { emotionReading, type ReadingLadder } from '@/lib/market-reading';
+import {
+  emotionReading,
+  shortEmotionReading,
+  type ReadingLadder,
+} from '@/lib/market-reading';
+import { emotionToneClass } from '@/components/short-emotion-panel';
 
 function dateLabel(value: string, withWeekday = true) {
   return format(parseISO(value), withWeekday ? 'M月d日 EEE' : 'M月d日', {
@@ -313,6 +318,23 @@ export function IntradayEmotionBoard({
     );
 
   const isLive = snapshot.sessionState === 'LIVE';
+  if (
+    !isLive &&
+    snapshot.sourceState === 'ARCHIVED' &&
+    history.snapshots.some(
+      (close) =>
+        close.date.replaceAll('-', '') ===
+        snapshot.tradeDate.replaceAll('-', ''),
+    )
+  ) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border px-4 py-3 text-xs text-muted-foreground">
+        <Clock3 className="size-4" />
+        休市 · 最近行情 {fmtTradeDate(snapshot.tradeDate)} {snapshot.cutoff}
+        ；下方按所选日期展示完整情绪面，避免重复铺开同一组个股。
+      </div>
+    );
+  }
   const facts = emotionReading(toEmotionFacts(snapshot));
   const priorClose = history.snapshots
     .filter(
@@ -511,6 +533,16 @@ export function EmotionCycleBoard({
     selected.breadth.rowsAvailable > 0
       ? (selected.breadth.up / selected.breadth.rowsAvailable) * 100
       : 0;
+  const emotions = new Map(
+    snapshots.map((snapshot, index) => [
+      snapshot.date,
+      shortEmotionReading(
+        toEmotionFacts(snapshot),
+        snapshots[index - 1] ? toEmotionFacts(snapshots[index - 1]) : null,
+        ladder,
+      ),
+    ]),
+  );
 
   return (
     <div className="space-y-4">
@@ -673,6 +705,47 @@ export function EmotionCycleBoard({
                 )}
               />
               <MatrixRow
+                label="短线情绪"
+                snapshots={snapshots}
+                selectedDate={selected.date}
+                render={(snapshot) => {
+                  const emotion = emotions.get(snapshot.date)!;
+                  return (
+                    <button
+                      type="button"
+                      className="w-full space-y-1 text-left"
+                      onClick={() => onDateChange(snapshot.date)}
+                      aria-label={`查看${snapshot.date}短线情绪依据`}
+                    >
+                      <span
+                        className={cn(
+                          'block font-semibold',
+                          emotionToneClass(emotion.tone),
+                        )}
+                      >
+                        {emotion.label}
+                      </span>
+                      <span className="block text-[10px] text-slate-400">
+                        {emotion.status} ·{' '}
+                        {emotion.quoteComplete
+                          ? '含完整强股反馈'
+                          : '部分证据，点击查看'}
+                      </span>
+                    </button>
+                  );
+                }}
+              />
+              <MatrixRow
+                label="情绪变化线索"
+                snapshots={snapshots}
+                selectedDate={selected.date}
+                render={(snapshot) => (
+                  <span className="text-[11px] leading-5 text-slate-300">
+                    {emotions.get(snapshot.date)!.transition}
+                  </span>
+                )}
+              />
+              <MatrixRow
                 label="封板观察"
                 snapshots={snapshots}
                 selectedDate={selected.date}
@@ -829,7 +902,7 @@ export function EmotionCycleBoard({
             </Badge>
             <span>
               {history.archive?.message}。{history.methodology.facts}{' '}
-              {history.methodology.labels}
+              情绪面、历史矩阵及摘要统一按当日事实与完整度动态计算；结构观察不等于盘中路径确认，未使用归档中的旧版固定情绪标签。
             </span>
           </div>
         </CardContent>
@@ -902,22 +975,30 @@ export function EmotionCycleBoard({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">指数情绪</span>
-                <span className={cn('font-semibold', tone(selected.indexMood))}>
-                  {selected.indexMood}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-muted-foreground">指数表现</span>
+                <span className="font-semibold">
+                  {emotionReading(toEmotionFacts(selected)).indexMood}
                 </span>
               </div>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-muted-foreground">短线情绪</span>
-                <span className={cn('font-semibold', tone(selected.shortMood))}>
-                  {selected.shortMood}
+                <span
+                  className={cn(
+                    'font-semibold',
+                    emotionToneClass(emotions.get(selected.date)!.tone),
+                  )}
+                >
+                  {emotions.get(selected.date)!.label}
                 </span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">规则周期节点</span>
-                <span className={cn('font-semibold', tone(selected.cycleNode))}>
-                  {selected.cycleNode}
+              <div className="space-y-1">
+                <span className="text-muted-foreground">情绪变化线索</span>
+                <p className="text-xs font-semibold leading-5">
+                  {emotions.get(selected.date)!.transition}
+                </p>
+                <span className="text-xs text-muted-foreground">
+                  {emotions.get(selected.date)!.status} · 规则观察，不是周期预测
                 </span>
               </div>
               <div className="border-t pt-3">

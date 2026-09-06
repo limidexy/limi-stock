@@ -5,6 +5,9 @@ import {
   ladderReading,
   emotionReading,
   closeComparison,
+  shortEmotionReading,
+  historicalEmotionLadder,
+  adjacentCloses,
 } from '../lib/market-reading.ts';
 import {
   parseTrendPoints,
@@ -17,6 +20,225 @@ import {
   quoteComplete,
   sameTradeDate,
 } from '../lib/quote-evidence.ts';
+
+const emotionHistory = JSON.parse(
+  fs.readFileSync(
+    new URL('../lib/close-history.generated.json', import.meta.url),
+  ),
+).snapshots;
+const archivedFacts = (date) => ({
+  ...structuredClone(emotionHistory.find((row) => row.date === date)),
+  poolsReady: true,
+  breadthReady: true,
+});
+const sep4 = () => archivedFacts('2026-09-04');
+const sep3 = () => archivedFacts('2026-09-03');
+
+test('historical emotion matches exact-date pools, never invents missing ordinary-stock returns', () => {
+  const result = shortEmotionReading(sep4(), sep3());
+  assert.equal(result.cohort.consecutive.advanced, 1);
+  assert.equal(result.cohort.consecutive.count, 9);
+  assert.equal(result.cohort.all.priceReady, 16);
+  assert.equal(result.cohort.all.count, 44);
+  assert.equal(result.median, null);
+  assert.equal(result.status, 'DEGRADED');
+  assert.match(result.transition, /不是全面修复/);
+});
+
+function exactCloseLadder() {
+  const ladder = historicalEmotionLadder(sep4(), sep3());
+  const archive = JSON.parse(
+    fs.readFileSync(
+      new URL('../lib/archive-evidence.generated.json', import.meta.url),
+    ),
+  );
+  ladder.retrievedAt = '2026-09-04T15:01:00+08:00';
+  ladder.competitors = ladder.competitors.map((stock) => {
+    const row = Object.values(archive.records).find(
+      (row) => row.code === stock.code,
+    );
+    assert.equal(row.points.at(-1)[0], '15:00');
+    return {
+      ...stock,
+      changePct: row.changePct,
+      priceQuoteTime: '2026-09-04T15:00:00+08:00',
+    };
+  });
+  return ladder;
+}
+
+test('all real close prices make the current-day sentiment ready without claiming strategy accuracy', () => {
+  const result = shortEmotionReading(sep4(), sep3(), exactCloseLadder());
+  assert.equal(result.status, 'READY');
+  assert.equal(result.label, '高标分化 · 接力偏弱');
+  assert.equal(result.cohort.all.priceReady, 44);
+  assert.equal(result.negative.length, 6);
+  assert.equal(result.positive.length, 3);
+  assert.ok(result.median < 0);
+});
+
+test('supplied prior date, identity, state and capture time must match the exact verified cohort', () => {
+  for (const mutate of [
+    (row) => (row.previousTradeDate = '20260812'),
+    (row) => (row.competitors[0].fromHeight = 8),
+    (row) => (row.competitors[0].code = '999999'),
+    (row) => (row.competitors[0].state = 'SEALED'),
+    (row) => (row.retrievedAt = '2026-09-04T14:00:00+08:00'),
+  ]) {
+    const ladder = exactCloseLadder();
+    mutate(ladder);
+    const result = shortEmotionReading(sep4(), sep3(), ladder);
+    assert.notEqual(result.status, 'READY');
+    assert.notEqual(result.cohortSource, '同日完整昨日涨停跟踪');
+  }
+});
+
+test('individual stale, absent or future price times cannot enter a complete return distribution', () => {
+  for (const quoteTime of [
+    undefined,
+    '2026-09-03T15:00:00+08:00',
+    '2026-09-04T14:00:00+08:00',
+    '2026-09-04T15:10:00+08:00',
+  ]) {
+    const ladder = exactCloseLadder();
+    ladder.competitors[0].priceQuoteTime = quoteTime;
+    const result = shortEmotionReading(sep4(), sep3(), ladder);
+    assert.equal(result.status, 'DEGRADED');
+    assert.equal(result.median, null);
+    assert.equal(result.cohort.all.priceReady, 43);
+  }
+});
+
+test('empty pools do not create an emotional divergence or a false zero-percent promotion', () => {
+  const result = shortEmotionReading({
+    ...sep4(),
+    limitUp: 0,
+    failed: 0,
+    limitDown: 0,
+    highestBoard: 0,
+    consecutiveCount: 0,
+    ladders: [],
+  });
+  assert.equal(result.tone, 'unknown');
+  assert.match(result.label, /暂无触板样本/);
+  assert.equal(result.cohort.consecutive.rate, null);
+});
+
+test('the same sealing percentage does not override high-board contraction and failure pressure', () => {
+  const result = shortEmotionReading(
+    archivedFacts('2026-09-02'),
+    archivedFacts('2026-09-01'),
+  );
+  assert.equal(result.cohort.consecutive.advanced, 6);
+  assert.equal(result.cohort.consecutive.count, 18);
+  assert.equal(result.tone, 'negative');
+  assert.match(result.transition, /退潮压力/);
+});
+
+test('an independent 20cm five-board cannot mask the main-board relay break', () => {
+  const result = shortEmotionReading(
+    archivedFacts('2026-08-14'),
+    archivedFacts('2026-08-13'),
+  );
+  assert.match(result.label, /主板高位断层/);
+  assert.equal(result.families[0].highest, 3);
+  assert.equal(result.families[1].highest, 5);
+  assert.equal(result.families[1].leaders[0].name, '蓝盾光电');
+});
+
+test('independent sentiment does not change just because indices or market breadth change', () => {
+  const base = sep4();
+  const changed = {
+    ...base,
+    indices: [],
+    breadthReady: false,
+    breadth: {
+      up: 0,
+      down: 0,
+      flat: 0,
+      rowsAvailable: 0,
+      medianChangePct: null,
+    },
+  };
+  assert.equal(
+    shortEmotionReading(base, sep3()).label,
+    shortEmotionReading(changed, sep3()).label,
+  );
+});
+
+test('historical gaps and future/repeated dates do not create a cycle transition or promotion denominator', () => {
+  const now = archivedFacts('2026-08-21');
+  assert.equal(historicalEmotionLadder(now, archivedFacts('2026-08-14')), null);
+  assert.equal(historicalEmotionLadder(sep3(), sep4()), null);
+  assert.equal(historicalEmotionLadder(sep4(), sep4()), null);
+  assert.equal(
+    adjacentCloses(archivedFacts('2026-08-31'), archivedFacts('2026-08-28')),
+    true,
+  );
+  assert.equal(
+    shortEmotionReading(now, archivedFacts('2026-08-14')).compare,
+    null,
+  );
+});
+
+test('missing, stale, inconsistent structure and a changed consecutive height fail closed', () => {
+  for (const extra of [
+    { stale: true },
+    { status: 'MISSING' },
+    { poolsReady: false },
+    { ladders: [] },
+    { highestBoard: 99 },
+  ]) {
+    assert.notEqual(
+      shortEmotionReading({ ...sep4(), ...extra }, sep3()).status,
+      'READY',
+    );
+    assert.equal(
+      shortEmotionReading({ ...sep4(), ...extra }, sep3()).tone,
+      'unknown',
+    );
+  }
+  const inconsistent = sep4();
+  inconsistent.ladders[0].stocks[0].height = 4;
+  inconsistent.highestBoard = 4;
+  assert.equal(historicalEmotionLadder(inconsistent, sep3()), null);
+});
+
+test('a nonsealed but rising prior leader is not classified as a losing stock', () => {
+  const ladder = historicalEmotionLadder(sep4(), sep3());
+  const quote = ladder.competitors.find((stock) => stock.name === '国芳集团');
+  ladder.retrievedAt = '2026-09-04T15:01:00+08:00';
+  quote.priceQuoteTime = '2026-09-04T15:00:00+08:00';
+  quote.changePct = 3.6;
+  const result = shortEmotionReading(sep4(), sep3(), ladder);
+  assert.ok(result.positive.some((stock) => stock.name === '国芳集团'));
+  assert.ok(!result.negative.some((stock) => stock.name === '国芳集团'));
+  assert.equal(result.median, null);
+});
+
+test('another date or future intraday ladder is never imported into the selected close', () => {
+  const ladder = historicalEmotionLadder(sep4(), sep3());
+  const old = shortEmotionReading(
+    archivedFacts('2026-09-02'),
+    archivedFacts('2026-09-01'),
+    ladder,
+  );
+  assert.notEqual(old.cohortSource, '同日完整昨日涨停跟踪');
+  assert.equal(old.cohort.consecutive.count, 18);
+  const live = {
+    ...sep4(),
+    cutoff: '10:00',
+    retrievedAt: '2026-09-04T10:00:00+08:00',
+  };
+  const future = {
+    ...ladder,
+    sessionState: 'LIVE',
+    retrievedAt: '2026-09-04T10:00:30+08:00',
+  };
+  assert.equal(shortEmotionReading(live, null, future).cohort.ready, false);
+  future.retrievedAt = '2026-09-04T09:58:00+08:00';
+  assert.equal(shortEmotionReading(live, null, future).cohort.ready, false);
+});
 
 test('minute event uses close, rejects another date and future points', () => {
   const points = parseTrendPoints(

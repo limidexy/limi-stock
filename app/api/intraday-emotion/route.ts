@@ -49,6 +49,9 @@ function fromCloseSnapshot(
     cycleNode: reading.headline,
     concentratedIndustries: snapshot.concentratedIndustries,
     leaders: snapshot.leaders,
+    ladders: snapshot.ladders,
+    failedStocks: snapshot.failedStocks,
+    limitDownStocks: snapshot.limitDownStocks,
     coverage: {
       poolsReady: 3,
       poolsRequested: 3,

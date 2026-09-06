@@ -20,11 +20,13 @@ import {
   closeComparison,
   compactDate,
   emotionReading,
+  shortEmotionReading,
   ladderReading,
   type EmotionFacts,
   type ReadingLadder,
 } from '@/lib/market-reading';
 import { cn } from '@/lib/utils';
+import { ShortEmotionPanel } from '@/components/short-emotion-panel';
 
 const pct = (value: number | null | undefined, signed = true) =>
   value == null
@@ -70,17 +72,26 @@ export function EmotionEvidencePanel({
     facts,
     previous ? toEmotionFacts(previous) : null,
   );
-  const cohort = ladderReading(ladder, facts.date);
+  const cohort = shortEmotionReading(
+    facts,
+    previous ? toEmotionFacts(previous) : null,
+    ladder,
+  ).cohort;
   const showCohort = cohort.ready && !facts.stale;
   return (
     <section
       aria-label="盘面判断依据"
       className="space-y-3 rounded-xl border bg-background/70 p-4"
     >
+      <ShortEmotionPanel
+        facts={facts}
+        previous={previous ? toEmotionFacts(previous) : null}
+        ladder={ladder}
+      />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-xs text-muted-foreground">
-            盘面速读 · {dateText(facts.date)} {facts.cutoff}
+            指数与市场广度 · {dateText(facts.date)} {facts.cutoff}
           </p>
           <h3 className="mt-1 text-lg font-semibold">{reading.headline}</h3>
         </div>
@@ -167,18 +178,6 @@ export function EmotionEvidencePanel({
           <span>封板率 {sign(compare.sealRate, 1)}个百分点</span>
           <span>高度 {sign(compare.height)}板</span>
         </div>
-      )}
-      {showCohort && cohort.negative.length > 0 && (
-        <p className="text-xs leading-5">
-          <span className="font-semibold market-down">昨日连板负反馈：</span>
-          {cohort.negative
-            .map((row) => `${row.name}${pct(row.changePct)}`)
-            .join('、')}
-          。
-          <span className="text-muted-foreground">
-            按昨日板位→涨幅排序，不因有高标晋级而忽略跌幅。
-          </span>
-        </p>
       )}
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer">判断口径与边界</summary>
