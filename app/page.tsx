@@ -1826,7 +1826,7 @@ export default function Home() {
         )}
 
         <section
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8"
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 [&_[data-slot=card-description]]:col-span-full"
           aria-label="数据状态"
         >
           <Card size="sm">
