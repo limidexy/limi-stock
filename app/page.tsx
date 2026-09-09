@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { timelineHeadline } from '@/lib/timeline-evidence';
 import { LadderOverview } from '@/components/market-reading-board';
 import { EmotionTrackingBoard } from '@/components/emotion-tracking-board';
+import { DynamicMainlineBoard } from '@/components/dynamic-mainline-board';
+import type { DynamicMainlineDocument } from '@/lib/dynamic-mainline-source';
 import {
   windowedRadarEvents,
   type RadarEvent,
@@ -17,6 +19,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   Clock3,
+  GitBranch,
   Layers3,
   RefreshCw,
   ShieldAlert,
@@ -1611,6 +1614,10 @@ export default function Home() {
   const radar = usePolling<RadarData>('/api/radar', 15_000);
   const flow = usePolling<FlowData>('/api/flow', 60_000);
   const timeline = usePolling<MarketTimelineData>('/api/timeline', 60_000);
+  const dynamicMainline = usePolling<DynamicMainlineDocument>(
+    '/api/dynamic-mainline',
+    300_000,
+  );
   const ladder = usePolling<LadderData>('/api/ladder', 30_000);
   const speed = usePolling<SpeedData>('/api/speed', 1_000);
   const intradayEmotion = usePolling<IntradayEmotionSnapshot>(
@@ -1710,6 +1717,7 @@ export default function Home() {
       radar.refresh(),
       flow.refresh(),
       timeline.refresh(),
+      dynamicMainline.refresh(),
       ladder.refresh(),
       speed.refresh(),
       intradayEmotion.refresh(),
@@ -1844,6 +1852,29 @@ export default function Home() {
                   ? `${timelineCoverage.timeNodes ?? timelineCoverage.events}个资金转折 · ${timelineCoverage.events}个板块节点`
                   : '正在重建时间轴'}{' '}
                 · 60秒刷新
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <GitBranch className="size-4 text-violet-500" />
+                动态关系
+              </CardTitle>
+              <CardAction>
+                <StateBadge
+                  state={dynamicMainline.data?.status}
+                  label={
+                    dynamicMainline.data
+                      ? `${dynamicMainline.data.probabilityResearch.dynamicDates}/${dynamicMainline.data.probabilityResearch.dynamicDateTarget}日`
+                      : undefined
+                  }
+                />
+              </CardAction>
+              <CardDescription>
+                {dynamicMainline.data
+                  ? `${dynamicMainline.data.coverage.visibleNodes}个主线节点·概率尚未校准`
+                  : '正在读取动态回放'}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1996,6 +2027,10 @@ export default function Home() {
               <Clock3 />
               盘面脉络
             </TabsTrigger>
+            <TabsTrigger value="dynamic-mainline">
+              <GitBranch />
+              动态脉络
+            </TabsTrigger>
             <TabsTrigger value="emotion">
               <CalendarDays />
               情绪周期
@@ -2036,6 +2071,18 @@ export default function Home() {
                   : timeline.data?.reason ||
                     timeline.error ||
                     '当前还没有达到阈值的盘面节点'}
+              </EmptyState>
+            )}
+          </TabsContent>
+
+          <TabsContent value="dynamic-mainline">
+            {dynamicMainline.data?.dates?.length ? (
+              <DynamicMainlineBoard data={dynamicMainline.data} />
+            ) : (
+              <EmptyState>
+                {dynamicMainline.loading
+                  ? '正在加载动态启动、扩散、兑现与反核节点…'
+                  : dynamicMainline.error || '动态主线研究数据尚未生成'}
               </EmptyState>
             )}
           </TabsContent>
