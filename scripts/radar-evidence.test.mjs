@@ -180,6 +180,59 @@ test('ranking failures stay identified, partial coverage is not READY', async ()
   assert.match(result.reason, /synthetic timeout/);
 });
 
+test('one non-quoting constituent is excluded without degrading an otherwise complete board', async () => {
+  const result = await buildRadarSnapshot(
+    closed,
+    async (query) => ({
+      total: 37,
+      rows: Array.from({ length: 37 }, (_, index) =>
+        query.fs.startsWith('m:')
+          ? raw({
+              f12: `BK${String(index).padStart(3, '0')}`,
+              f14: `测试题材${index}`,
+              f3: index === 36 ? '-' : index + 1,
+            })
+          : raw({
+              f12: `60${String(index).padStart(4, '0')}`,
+              f14: `测试股${index}`,
+              f3: index === 36 ? '-' : index + 1,
+            }),
+      ),
+    }),
+    now,
+  );
+  assert.equal(result.status, 'READY');
+  assert.equal(result.coverage.rowsReturned, 74);
+  assert.equal(result.coverage.rowsUsable, 72);
+  assert.equal(result.coverage.rowsExcluded, 2);
+  assert.doesNotMatch(result.reason ?? '', /排序字段缺失/);
+});
+
+test('a ranking sample with less than 80 percent usable fields remains degraded', async () => {
+  const result = await buildRadarSnapshot(
+    closed,
+    async (query) => ({
+      total: 10,
+      rows: Array.from({ length: 10 }, (_, index) =>
+        query.fs.startsWith('m:')
+          ? raw({
+              f12: `BK${String(index).padStart(3, '0')}`,
+              f14: `测试题材${index}`,
+              f3: index < 7 ? index + 1 : '-',
+            })
+          : raw({
+              f12: `60${String(index).padStart(4, '0')}`,
+              f14: `测试股${index}`,
+              f3: index < 7 ? index + 1 : '-',
+            }),
+      ),
+    }),
+    now,
+  );
+  assert.equal(result.status, 'DEGRADED');
+  assert.match(result.reason, /有效排序字段覆盖不足/);
+});
+
 test('empty HTTP-success payloads cannot be READY', async () => {
   const result = await buildRadarSnapshot(
     closed,

@@ -47,6 +47,9 @@ export type RadarSnapshot = {
     queryReady: number;
     queryRequested: number;
     excludedGroups: number;
+    rowsReturned?: number;
+    rowsUsable?: number;
+    rowsExcluded?: number;
     missingQueries: string[];
   };
   events: RadarEvent[];
@@ -103,11 +106,23 @@ export function mergeRadarQuotes<T extends RadarBoard>(rows: T[]) {
   const latest = new Map<string, T>();
   for (const row of rows) {
     const prior = latest.get(row.code);
-    if (
-      !prior ||
-      Date.parse(row.quoteTime ?? '') >= Date.parse(prior.quoteTime ?? '')
-    )
+    if (!prior) {
       latest.set(row.code, row);
+      continue;
+    }
+    const rowTime = Date.parse(row.quoteTime ?? '');
+    const priorTime = Date.parse(prior.quoteTime ?? '');
+    const newer = !Number.isFinite(priorTime) || rowTime >= priorTime;
+    const base = newer ? row : prior;
+    const fallback = newer ? prior : row;
+    latest.set(row.code, {
+      ...fallback,
+      ...base,
+      changePct: base.changePct ?? fallback.changePct,
+      speedPct: base.speedPct ?? fallback.speedPct,
+      mainNetInflow: base.mainNetInflow ?? fallback.mainNetInflow,
+      amount: base.amount ?? fallback.amount,
+    });
   }
   return [...latest.values()];
 }
@@ -426,28 +441,51 @@ export async function buildRadarSnapshot(
         live &&
         rows.some((row) => sampleNow - Date.parse(row.quoteTime!) > 90_000);
       const stale = Boolean(payload.stale || outdated);
-      const reasons = [
-        rows.length < payload.rows.length
-          ? '部分报价日期缺失、跨日或晚于读取时刻，已排除'
-          : '',
-        valid.length < rows.length ? '部分排序字段缺失' : '',
+      // Ranking endpoints occasionally include a suspended or otherwise
+      // non-quoting constituent. Exclude it from that ranking instead of
+      // treating a missing numeric field as zero or degrading the whole board.
+      // A query is complete only when the remaining exact-day sample still
+      // covers at least 80% of the returned rows.
+      const coverage = payload.rows.length
+        ? valid.length / payload.rows.length
+        : 0;
+      const blockers = [
         stale ? '包含非当前实时报价' : '',
         !valid.length ? '没有目标交易日的有效报价' : '',
+        valid.length > 0 && coverage < 0.8
+          ? `有效排序字段覆盖不足（${valid.length}/${payload.rows.length}）`
+          : '',
+      ].filter(Boolean);
+      const warnings = [
+        rows.length < payload.rows.length
+          ? `已排除${payload.rows.length - rows.length}条日期缺失、跨日或晚于读取时刻的报价`
+          : '',
+        valid.length < rows.length
+          ? `已排除${rows.length - valid.length}条排序字段缺失的报价，未按0处理`
+          : '',
       ].filter(Boolean);
       return {
-        rows,
+        rows: valid,
         total: payload.total,
-        ready: reasons.length === 0,
+        returned: payload.rows.length,
+        usable: valid.length,
+        excluded: payload.rows.length - valid.length,
+        ready: blockers.length === 0,
         stale,
-        reasons: reasons.map((reason) => `${label}：${reason}`),
+        reasons: blockers.map((reason) => `${label}：${reason}`),
+        warnings: warnings.map((reason) => `${label}：${reason}`),
       };
     } catch (error) {
       return {
         rows: [] as RadarMember[],
         total: 0,
+        returned: 0,
+        usable: 0,
+        excluded: 0,
         ready: false,
         stale: false,
         reasons: [`${label}：${String(error)}`],
+        warnings: [] as string[],
       };
     }
   };
@@ -493,14 +531,6 @@ export async function buildRadarSnapshot(
         const missingReasons = queries.flatMap((query) => query.reasons);
         if (board.changePct === null || board.mainNetInflow === null)
           missingReasons.push('板块价格或主力资金字段缺失');
-        const field =
-          board.selectionBasis === 'SPEED' ? 'speedPct' : 'changePct';
-        if (
-          members.some(
-            (member) => member[field] === null || member.mainNetInflow === null,
-          )
-        )
-          missingReasons.push('部分成分股价格或资金字段缺失，未按0处理');
         if (!drivers.length)
           missingReasons.push(
             members.length ? '有效样本中暂无同方向个股' : '成分行情不可用',
@@ -518,7 +548,7 @@ export async function buildRadarSnapshot(
             : missingReasons.length
               ? 'DEGRADED'
               : 'READY') as RadarState,
-          driverBasis: `${board.selectionBasis === 'DAY_CHANGE' ? '按目标交易日日涨跌幅' : '按当前报价涨速'}筛选同向个股，资金同向优先。合并价格榜与资金榜样本，非全成分因果归因；资金占比仅针对同向样本。`,
+          driverBasis: `${board.selectionBasis === 'DAY_CHANGE' ? '按目标交易日日涨跌幅' : '按当前报价涨速'}筛选同向个股，资金同向优先。缺少排序字段的停牌或无报价成分已排除且未按0处理；合并价格榜与资金榜样本，非全成分因果归因；资金占比仅针对同向样本。`,
           missingReasons,
         };
       }),
@@ -555,6 +585,9 @@ export async function buildRadarSnapshot(
       rankedCandidates: boards.length,
       excludedGroups: boards.filter((board) => !isThemeBoard(board.name))
         .length,
+      rowsReturned: rankings.reduce((sum, query) => sum + query.returned, 0),
+      rowsUsable: rankings.reduce((sum, query) => sum + query.usable, 0),
+      rowsExcluded: rankings.reduce((sum, query) => sum + query.excluded, 0),
       queryReady: rankings.filter((query) => query.ready).length,
       queryRequested: rankings.length,
       missingQueries,

@@ -26,6 +26,14 @@ export async function GET() {
         headers: { 'cache-control': 'no-store' },
       });
     }
+    if (
+      snapshot.tradeDate &&
+      snapshot.sessionState === 'CLOSED' &&
+      snapshot.sourceState === 'ARCHIVED'
+    )
+      return Response.json(snapshot, {
+        headers: { 'cache-control': 'no-store' },
+      });
     const persisted = await loadLatestModuleSnapshot<typeof snapshot>(
       'ladder',
     ).catch(() => null);

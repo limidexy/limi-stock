@@ -9,6 +9,10 @@ import { loadCloseHistory } from '@/lib/persistence';
 import { emotionReading } from '@/lib/market-reading';
 import { buildRadarSnapshot } from '@/lib/radar-evidence';
 import {
+  buildArchivedLadderSnapshot,
+  consecutiveLimitHeight,
+} from '@/lib/ladder-evidence';
+import {
   mergeQuoteRows,
   quoteComplete,
   quoteDate,
@@ -1874,7 +1878,198 @@ function poolNumber(row: PoolRow, key: string): number | null {
   return numberOrNull(row[key]);
 }
 
+async function fetchDailyClosesThrough(code: string, tradeDate: string) {
+  const symbol = marketSymbol(code);
+  const payload = await fetchJson(
+    `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},day,,,35,qfq`,
+  );
+  const security = ((payload.data ?? {}) as Record<string, unknown>)[symbol] as
+    | Record<string, unknown>
+    | undefined;
+  const raw =
+    security &&
+    (Array.isArray(security.qfqday)
+      ? security.qfqday
+      : Array.isArray(security.day)
+        ? security.day
+        : []);
+  const closes = ((raw as unknown[][] | undefined) ?? [])
+    .map((row) => ({
+      date:
+        typeof row[0] === 'string' || typeof row[0] === 'number'
+          ? String(row[0])
+          : '',
+      close: Number(row[2]),
+    }))
+    .filter(
+      (row) =>
+        row.date &&
+        row.date.replaceAll('-', '') <= tradeDate &&
+        Number.isFinite(row.close) &&
+        row.close > 0,
+    );
+  if (!closes.length) throw new Error(`${code}日线收盘缺失`);
+  return closes;
+}
+
+async function previousLimitBoardFromCurrentSession(current: CloseSnapshot) {
+  const tradeDate = current.date.replaceAll('-', '');
+  const [allResult, consecutiveResult] = await Promise.all([
+    fetchClist({
+      fs: 'b:BK1050',
+      fid: 'f3',
+      pageSize: 1000,
+      fields: 'f12,f14,f3,f100,f124',
+    }),
+    fetchClist({
+      fs: 'b:BK1051',
+      fid: 'f3',
+      pageSize: 1000,
+      fields: 'f12,f14,f3,f100,f124',
+    }),
+  ]);
+  const exactRows = allResult.rows.filter(
+    (row) => quoteDate(row.f124) === tradeDate && row.f12 && row.f14,
+  );
+  const exactConsecutive = new Set(
+    consecutiveResult.rows
+      .filter((row) => quoteDate(row.f124) === tradeDate)
+      .map((row) => String(row.f12 ?? '')),
+  );
+  if (!exactRows.length)
+    throw new Error('当日“昨日涨停”身份池为空或报价日期不符');
+  const dateEvidence = await fetchDailyClosesThrough(
+    String(exactRows[0].f12),
+    tradeDate,
+  );
+  const previousTradeDate = dateEvidence
+    .map((row) => row.date.replaceAll('-', ''))
+    .filter((date) => date < tradeDate)
+    .at(-1);
+  if (!previousTradeDate) throw new Error('无法从逐股日线确认上一交易日日期');
+  const heightByCode = new Map<string, number>();
+  const unresolved: string[] = [];
+  await mapLimit(exactRows, 4, async (row) => {
+    const code = String(row.f12 ?? '');
+    if (!exactConsecutive.has(code)) {
+      heightByCode.set(code, 1);
+      return;
+    }
+    try {
+      const closes = await fetchDailyClosesThrough(code, previousTradeDate);
+      const height = consecutiveLimitHeight(
+        closes,
+        previousTradeDate,
+        code,
+        String(row.f14 ?? ''),
+      );
+      if (height && height >= 2) heightByCode.set(code, height);
+      else unresolved.push(code);
+    } catch {
+      unresolved.push(code);
+    }
+  });
+  const stocks = exactRows.map((row) => ({
+    code: String(row.f12 ?? ''),
+    name: String(row.f14 ?? ''),
+    changePct: numberOrNull(row.f3),
+    industry: String(row.f100 ?? '未知'),
+    height: heightByCode.get(String(row.f12 ?? '')) ?? 2,
+    firstTouch: null,
+    lastSeal: null,
+    breakCount: 0,
+    sealFund: null,
+  }));
+  const ladders = [...new Set(stocks.map((stock) => stock.height))]
+    .sort((a, b) => b - a)
+    .map((height) => ({
+      height,
+      stocks: stocks.filter((stock) => stock.height === height),
+    }));
+  return {
+    snapshot: {
+      ...current,
+      date: dashedDate(previousTradeDate),
+      limitUp: stocks.length,
+      failed: 0,
+      highestBoard: Math.max(0, ...stocks.map((stock) => stock.height)),
+      consecutiveCount: stocks.filter((stock) => stock.height >= 2).length,
+      ladders,
+      failedStocks: [],
+      limitDownStocks: [],
+      closeQuotes: undefined,
+    } satisfies CloseSnapshot,
+    state: (unresolved.length ? 'DEGRADED' : 'READY') as DataState,
+    reason: unresolved.length
+      ? `${unresolved.length}只昨日连板股的连续高度未获逐股日线确认，暂按最低2板展示`
+      : undefined,
+    source: `东方财富${tradeDate}“昨日涨停/昨日连板”身份池 + 腾讯日线连续高度核对`,
+  };
+}
+
 export async function getLadderSnapshot() {
+  // After the close, prefer the immutable daily archive over the more volatile
+  // topic-pool endpoint. Live sessions continue to use the live pools below.
+  if (shanghaiClock() >= '15:05') {
+    const requestedDate = shanghaiDate();
+    const closeHistory = await loadCloseHistory().catch(
+      () => CLOSE_HISTORY.snapshots,
+    );
+    const eligible = closeHistory.filter(
+      (snapshot) =>
+        snapshot.status === 'READY' &&
+        snapshot.cutoff === '15:00' &&
+        snapshot.date.replaceAll('-', '') <= requestedDate,
+    );
+    const current = eligible.at(-1);
+    if (current) {
+      let previous = eligible.at(-2);
+      let priorDateState: DataState = 'READY';
+      let priorDateSource: string | undefined;
+      let priorReason: string | undefined;
+      const gapDays = previous
+        ? (Date.parse(current.date) - Date.parse(previous.date)) / 86_400_000
+        : Infinity;
+      if (!previous || gapDays > 4) {
+        try {
+          const derived = await previousLimitBoardFromCurrentSession(current);
+          previous = derived.snapshot;
+          priorDateState = derived.state;
+          priorDateSource = derived.source;
+          priorReason = derived.reason;
+        } catch (error) {
+          return {
+            status: 'MISSING' as DataState,
+            tradeDate: current.date.replaceAll('-', ''),
+            requestedDate,
+            phase: '休市快照',
+            sessionState: 'CLOSED' as const,
+            sourceState: 'ARCHIVED' as const,
+            previousTradeDate: null,
+            retrievedAt: new Date().toISOString(),
+            source: '目标交易日收盘归档 + 当日昨日涨停身份池',
+            reason: `上一交易日候选池无法精确重建：${String(error)}；未使用更早快照替代`,
+            promotion: [],
+            competitors: [],
+          };
+        }
+      }
+      const codes = previous.ladders
+        .flatMap((level) => level.stocks)
+        .map((stock) => stock.code);
+      const quotes = await fetchStockChangesAndSpeeds(
+        codes,
+        current.date.replaceAll('-', ''),
+      ).catch(() => new Map<string, StockQuote>());
+      return buildArchivedLadderSnapshot(
+        current,
+        previous,
+        quotes,
+        requestedDate,
+        { priorDateState, priorDateSource, priorReason },
+      );
+    }
+  }
   const marketDate = await getMarketDateContext();
   const tradeDate = marketDate.tradeDate;
   const [todayLimit, todayFailed, previous] = await Promise.all([
@@ -2158,7 +2353,7 @@ export async function repairArchivedLadder(
       priceReady: competitors.filter((row) => row.changePct !== null).length,
       speedReady: competitors.filter((row) => row.speedPct !== null).length,
     },
-  };
+  } as Awaited<ReturnType<typeof getLadderSnapshot>>;
   archivedLadderRepair = { expiresAt: Date.now() + 45_000, value };
   return value;
 }
@@ -2699,19 +2894,13 @@ export async function buildLatestCloseSnapshot(
     source: '东方财富收盘池、全市场行情与指数快照 · 自动归档',
     closeQuotes: Object.fromEntries(
       marketRows
-        .filter(
-          (row) =>
-            quoteDate(row.f124) === marketDate.tradeDate &&
-            new Date(Number(row.f124) * 1000 + 8 * 3600000)
-              .toISOString()
-              .slice(11, 16) === '15:00',
-        )
+        .filter((row) => quoteDate(row.f124) === marketDate.tradeDate)
         .map((row) => [
           String(row.f12),
           {
             changePct: Number(row.f3),
             quoteTime: `${dashedDate(marketDate.tradeDate)}T15:00:00+08:00`,
-            source: '东方财富15:00分钟内收盘报价，归一到收盘截止时点',
+            source: '东方财富目标交易日盘后最终涨跌幅，归一到15:00收盘截止时点',
           },
         ]),
     ),
