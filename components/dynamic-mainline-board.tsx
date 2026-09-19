@@ -226,9 +226,14 @@ function ProbabilityProgress({
       `${data.dynamicDates}/${data.dynamicDateTarget}日`,
     ],
     [
-      '独立标签样本',
-      data.gates.atLeast300LabeledCandidates && data.gates.separateLabels,
-      `${data.labeledCandidates}只候选`,
+      '多维标签合同',
+      data.gates.separateLabels,
+      `${data.labelGroups.length}组${data.labels.length}项`,
+    ],
+    [
+      '结果覆盖',
+      data.gates.atLeast300LabeledCandidates,
+      `${data.labeledCandidates}/${data.dynamicCandidates}只`,
     ],
     [
       '滚动留出验证',
@@ -249,7 +254,7 @@ function ProbabilityProgress({
           修复概率·样本积累中
         </CardTitle>
         <CardDescription>
-          收红、严格反包、重新涨停分开学习；当前只展示研究进度，不给个股虚假概率
+          收盘、封板、日内路径、带动关系和次日持续性分别学习；当前只展示研究进度，不给个股虚假概率
         </CardDescription>
         <CardAction>
           <Badge variant="outline" className="status-degraded">
@@ -293,17 +298,45 @@ function ProbabilityProgress({
           </div>
           <div className="rounded-lg bg-muted/40 p-3">
             <p className="text-xs text-muted-foreground">独立结果标签</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {data.labels.map((label) => (
-                <Badge key={label.key} variant="secondary">
-                  {label.label}
-                </Badge>
-              ))}
-            </div>
+            <p className="mt-1 text-2xl font-semibold">
+              {data.labelGroups.length}类 · {data.labels.length}项
+            </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              标签只用于事后验证，不回填盘中特征
+              同日与次日分开，标签只用于事后验证
             </p>
           </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {data.labelGroups.map((group) => (
+            <div key={group.key} className="rounded-lg border p-3">
+              <p className="font-medium">{group.label}</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {group.description}
+              </p>
+              <div className="mt-3 space-y-2">
+                {group.labels.map((label) => (
+                  <div
+                    key={label.key}
+                    className="rounded-md bg-muted/45 px-2.5 py-2"
+                    title={label.description}
+                  >
+                    <div className="flex items-start justify-between gap-2 text-sm">
+                      <span>{label.label}</span>
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                        {label.positiveCount}/{label.readyCount}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      可验证样本命中
+                      {label.positiveRatePct === null
+                        ? '—'
+                        : `${label.positiveRatePct.toFixed(1)}%`}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {gates.map(([label, passed, detail]) => (
@@ -323,7 +356,9 @@ function ProbabilityProgress({
             </div>
           ))}
         </div>
-        <p className="text-xs leading-5 text-muted-foreground">{data.note}</p>
+        <p className="text-xs leading-5 text-muted-foreground">
+          {data.note} 标签继续与盘中特征物理分离，不参与当时的事件排序。
+        </p>
       </CardContent>
     </Card>
   );

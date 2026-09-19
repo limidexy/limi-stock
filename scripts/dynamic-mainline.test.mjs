@@ -27,13 +27,25 @@ test('dynamic accumulation exposes real coverage without inventing probability',
   assert.equal(document.probabilityResearch.dynamicDates, 12);
   assert.equal(document.probabilityResearch.dynamicDateTarget, 60);
   assert.equal(document.probabilityResearch.dynamicCandidates, 1113);
-  assert.equal(document.probabilityResearch.labeledCandidates, 1113);
+  assert.equal(document.probabilityResearch.labeledCandidates, 1077);
   assert.equal(document.probabilityResearch.gates.atLeast60DynamicDates, false);
   assert.equal(
     document.probabilityResearch.gates.atLeast300LabeledCandidates,
     true,
   );
   assert.equal(document.probabilityResearch.gates.separateLabels, true);
+  assert.equal(document.probabilityResearch.labelGroups.length, 5);
+  assert.equal(document.probabilityResearch.labels.length, 19);
+  assert.equal(
+    document.probabilityResearch.labels.every(
+      (label) =>
+        Number.isInteger(label.readyCount) &&
+        Number.isInteger(label.positiveCount) &&
+        label.positiveCount <= label.readyCount,
+    ),
+    true,
+  );
+  assert.equal(document.probabilityResearch.gates.labelCoverageComplete, false);
   assert.equal(
     document.probabilityResearch.gates.rollingHoldoutCompleted,
     false,

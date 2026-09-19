@@ -15,14 +15,14 @@ const mainlinePath = resolve(
   valueAfter('--mainline') ??
     resolve(
       recapRoot,
-      'outputs/20260909/verification_v248_dynamic_mainline_r3/dynamic_mainline_nodes_v248.json',
+      'outputs/20260909/verification_v248_dynamic_mainline_r5_all/dynamic_mainline_nodes_v248.json',
     ),
 );
 const dynamicPath = resolve(
   valueAfter('--dynamic') ??
     resolve(
       recapRoot,
-      'outputs/20260909/verification_v248_dynamic_relation_events_r2/dynamic_relation_events_v248.json',
+      'outputs/20260909/verification_v248_dynamic_relation_events_r3_all/dynamic_relation_events_v248.json',
     ),
 );
 const checkpointManifestPath = resolve(
@@ -39,7 +39,13 @@ const checkpointEvaluationPath = resolve(
       'outputs/20260909/verification_v247_repair_relations_theme_r2/evaluation_v247_r2.json',
     ),
 );
-const probabilityManifestArg = valueAfter('--probability-manifest');
+const probabilityManifestPath = resolve(
+  valueAfter('--probability-manifest') ??
+    resolve(
+      recapRoot,
+      'outputs/20260920/verification_v250_multidimensional_outcomes_r1/manifest_v250.json',
+    ),
+);
 const outputPath = resolve(
   valueAfter('--output') ??
     resolve(siteRoot, 'lib/dynamic-mainline.generated.json'),
@@ -95,20 +101,24 @@ function uniqueStocks(rows) {
   ];
 }
 
-const [mainlineText, dynamicText, checkpointText, evaluationText] =
-  await Promise.all([
-    readFile(mainlinePath, 'utf8'),
-    readFile(dynamicPath, 'utf8'),
-    readFile(checkpointManifestPath, 'utf8'),
-    readFile(checkpointEvaluationPath, 'utf8'),
-  ]);
+const [
+  mainlineText,
+  dynamicText,
+  checkpointText,
+  evaluationText,
+  probabilityText,
+] = await Promise.all([
+  readFile(mainlinePath, 'utf8'),
+  readFile(dynamicPath, 'utf8'),
+  readFile(checkpointManifestPath, 'utf8'),
+  readFile(checkpointEvaluationPath, 'utf8'),
+  readFile(probabilityManifestPath, 'utf8'),
+]);
 const mainline = JSON.parse(mainlineText);
 const dynamic = JSON.parse(dynamicText);
 const checkpoint = JSON.parse(checkpointText);
 const evaluation = JSON.parse(evaluationText);
-const probability = probabilityManifestArg
-  ? await readJson(resolve(probabilityManifestArg))
-  : null;
+const probability = JSON.parse(probabilityText);
 
 const dynamicByDate = new Map(
   (dynamic.days ?? []).map((day) => [Number(day.target_date), day]),
@@ -188,6 +198,27 @@ const candidateEvents =
   );
 const checkpointCoverage = checkpoint.coverage ?? {};
 const probabilityGates = probability?.gates ?? {};
+const labelCoverage = probability?.coverage?.label_coverage ?? {};
+const labelGroups = (probability?.label_groups ?? []).map((group) => ({
+  key: String(group.key ?? ''),
+  label: String(group.label ?? ''),
+  description: String(group.description ?? ''),
+  labels: (group.labels ?? []).map((label) => ({
+    key: String(label.key ?? ''),
+    label: String(label.label ?? ''),
+    description: String(label.description ?? ''),
+    readyCount: Number(labelCoverage[label.key]?.ready ?? 0),
+    positiveCount: Number(labelCoverage[label.key]?.positive ?? 0),
+    positiveRatePct: finite(labelCoverage[label.key]?.positive_rate_pct),
+  })),
+}));
+const labels = labelGroups.flatMap((group) =>
+  group.labels.map((label) => ({
+    ...label,
+    groupKey: group.key,
+    groupLabel: group.label,
+  })),
+);
 const document = {
   version: 'v2.49-dashboard-dynamic-mainline-preview',
   status: dates.length ? 'READY' : 'MISSING',
@@ -224,17 +255,20 @@ const document = {
     dynamicCandidates: Number(dynamicCandidates),
     dynamicCandidateEvents: Number(candidateEvents),
     labeledCandidates: Number(probability?.coverage?.label_ready_rows ?? 0),
-    labels: [
-      { key: 'positive_close', label: '收红' },
-      { key: 'strict_reversal', label: '严格反包' },
-      { key: 'resealed_limit_up', label: '重新涨停' },
-    ],
+    labels,
+    labelGroups,
     gates: {
       atLeast60DynamicDates:
         probabilityGates.at_least_60_dynamic_dates === true,
       atLeast300LabeledCandidates:
         probabilityGates.at_least_300_labeled_candidates === true,
-      separateLabels: probabilityGates.all_rows_have_separate_labels === true,
+      separateLabels:
+        probability?.label_contract?.labels_stored_separately_from_features ===
+          true &&
+        probability?.label_contract?.same_or_future_outcome_used_as_feature ===
+          false,
+      labelCoverageComplete:
+        probabilityGates.all_rows_have_separate_labels === true,
       rollingHoldoutCompleted:
         probabilityGates.rolling_holdout_completed === true,
       probabilityCalibrated: probabilityGates.probability_calibrated === true,
@@ -245,7 +279,7 @@ const document = {
     scoringEnabled: false,
     selectionEnabled: false,
     productionIntegrated: false,
-    note: '看板只展示样本覆盖和动态盘面节点；在滚动留出和概率校准通过前，不生成个股修复概率。',
+    note: '样本命中率只是结果基准，不是预测概率；各标签按各自可验证样本独立训练，在滚动留出和概率校准通过前不生成个股修复概率。',
   },
   dates,
   lineage: {
@@ -253,9 +287,7 @@ const document = {
     dynamicEventsSha256: hash(dynamicText),
     checkpointManifestSha256: hash(checkpointText),
     checkpointEvaluationSha256: hash(evaluationText),
-    probabilityManifestSha256: probabilityManifestArg
-      ? hash(await readFile(resolve(probabilityManifestArg), 'utf8'))
-      : null,
+    probabilityManifestSha256: hash(probabilityText),
   },
 };
 

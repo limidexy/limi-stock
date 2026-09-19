@@ -77,11 +77,34 @@ export type DynamicMainlineDocument = {
     dynamicCandidates: number;
     dynamicCandidateEvents: number;
     labeledCandidates: number;
-    labels: Array<{ key: string; label: string }>;
+    labels: Array<{
+      key: string;
+      label: string;
+      description: string;
+      groupKey: string;
+      groupLabel: string;
+      readyCount: number;
+      positiveCount: number;
+      positiveRatePct: number | null;
+    }>;
+    labelGroups: Array<{
+      key: string;
+      label: string;
+      description: string;
+      labels: Array<{
+        key: string;
+        label: string;
+        description: string;
+        readyCount: number;
+        positiveCount: number;
+        positiveRatePct: number | null;
+      }>;
+    }>;
     gates: {
       atLeast60DynamicDates: boolean;
       atLeast300LabeledCandidates: boolean;
       separateLabels: boolean;
+      labelCoverageComplete: boolean;
       rollingHoldoutCompleted: boolean;
       probabilityCalibrated: boolean;
     };
