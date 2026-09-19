@@ -13,7 +13,7 @@ export function enrichEmotionCloses(
       ? {
           ...snapshot,
           closeQuotes: { ...day.quotes, ...snapshot.closeQuotes },
-          previousDate: day.previousDate,
+          previousDate: snapshot.previousDate ?? day.previousDate,
         }
       : snapshot;
   });

@@ -1,4 +1,4 @@
-import { getSpeedSnapshot } from '@/lib/market';
+import { fetchStockMetadata, getSpeedSnapshot } from '@/lib/market';
 import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
   loadLatestModuleSnapshot,
@@ -13,10 +13,43 @@ export async function GET() {
     await loadArchivedSessionSnapshot<
       Awaited<ReturnType<typeof getSpeedSnapshot>>
     >('speed');
-  if (archived)
-    return Response.json(archived, {
+  if (archived) {
+    const rows = await Promise.all(
+      archived.rows.map(async (row) => {
+        if (row.metadataState === 'READY' && row.concepts.length) return row;
+        const metadata = await fetchStockMetadata(row.code).catch(() => null);
+        return metadata?.concepts.length
+          ? {
+              ...row,
+              concepts: metadata.concepts,
+              metadataState: 'READY' as const,
+            }
+          : row;
+      }),
+    );
+    const conceptReady = rows.filter(
+      (row) => row.metadataState === 'READY',
+    ).length;
+    const recentLimitReady = rows.filter(
+      (row) => row.recentLimitState !== 'MISSING',
+    ).length;
+    const repaired = {
+      ...archived,
+      rows,
+      status:
+        conceptReady === rows.length && recentLimitReady === rows.length
+          ? ('READY' as const)
+          : archived.status,
+      coverage: {
+        requested: rows.length,
+        conceptReady,
+        recentLimitReady,
+      },
+    };
+    return Response.json(repaired, {
       headers: { 'cache-control': 'no-store' },
     });
+  }
   try {
     const snapshot = await getSpeedSnapshot();
     if (snapshot.rows.length) {

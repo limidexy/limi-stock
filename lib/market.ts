@@ -470,6 +470,33 @@ function splitConcepts(value: unknown): string[] {
     .slice(0, 5);
 }
 
+async function fetchF10Concepts(code: string): Promise<string[]> {
+  const prefix = code.startsWith('6')
+    ? 'SH'
+    : code.startsWith('8') || code.startsWith('9')
+      ? 'BJ'
+      : 'SZ';
+  const payload = await fetchJson(
+    `https://emweb.securities.eastmoney.com/PC_HSF10/CoreConception/PageAjax?code=${prefix}${code}`,
+  );
+  const rows = Array.isArray(payload.ssbk)
+    ? (payload.ssbk as Array<Record<string, unknown>>)
+    : [];
+  return [
+    ...new Set(
+      rows
+        .map((row) => String(row.BOARD_NAME ?? '').trim())
+        .filter(Boolean)
+        .filter(
+          (name) =>
+            !name.endsWith('板块') &&
+            !/[ⅡⅢ]$/.test(name) &&
+            !['融资融券', '沪股通', '深股通', '转融券标的'].includes(name),
+        ),
+    ),
+  ].slice(0, 5);
+}
+
 export async function fetchStockMetadata(code: string): Promise<StockMetadata> {
   const cached = metadataCache.get(code);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
@@ -478,11 +505,14 @@ export async function fetchStockMetadata(code: string): Promise<StockMetadata> {
     `https://push2delay.eastmoney.com/api/qt/stock/get?secid=${secid(code)}&fields=${fields}`,
   );
   const data = (payload.data ?? {}) as Record<string, unknown>;
+  const primaryConcepts = splitConcepts(data.f129);
   const value: StockMetadata = {
     code: String(data.f57 ?? code),
     name: String(data.f58 ?? ''),
     industry: data.f127 && data.f127 !== '-' ? String(data.f127) : null,
-    concepts: splitConcepts(data.f129),
+    concepts: primaryConcepts.length
+      ? primaryConcepts
+      : await fetchF10Concepts(code).catch(() => []),
   };
   metadataCache.set(code, {
     expiresAt: Date.now() + 6 * 60 * 60 * 1000,
@@ -2810,13 +2840,14 @@ export async function buildLatestCloseSnapshot(
     };
   }
 
-  const [limitPool, failedPool, downPool, breadthRows, indices] =
+  const [limitPool, failedPool, downPool, breadthRows, indices, previous] =
     await Promise.all([
       fetchPool('ZTPool', marketDate.tradeDate),
       fetchPool('ZBPool', marketDate.tradeDate),
       fetchPool('DTPool', marketDate.tradeDate),
       fetchAllClist({ fs: MARKET_FILTER, fid: 'f3', fields: 'f12,f3,f6,f124' }),
       fetchCloseIndices(),
+      previousTradingPool(marketDate.tradeDate),
     ]);
   if (
     [limitPool, failedPool, downPool].some(
@@ -2889,6 +2920,7 @@ export async function buildLatestCloseSnapshot(
   };
   const snapshot: CloseSnapshot = {
     date: dashedDate(marketDate.tradeDate),
+    previousDate: dashedDate(previous.tradeDate),
     cutoff: '15:00',
     status: 'READY',
     source: '东方财富收盘池、全市场行情与指数快照 · 自动归档',

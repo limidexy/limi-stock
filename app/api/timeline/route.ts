@@ -38,6 +38,22 @@ export async function GET() {
       Awaited<ReturnType<typeof getMarketTimelineSnapshot>>
     >('timeline');
   if (archived) {
+    const archiveComplete =
+      archived.events.length > 0 &&
+      archived.events.every(
+        (event) =>
+          event.driverState === 'READY' &&
+          event.indices.length === 2 &&
+          event.indices.every(
+            (index) =>
+              index.changePct !== null && index.windowChangePct !== null,
+          ),
+      );
+    if (archiveComplete)
+      return Response.json(
+        { ...archived, status: 'READY', reason: undefined },
+        { headers: { 'cache-control': 'no-store' } },
+      );
     const repaired = await withTimeout(
       repairArchivedTimeline(archived),
       55_000,

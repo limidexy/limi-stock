@@ -87,11 +87,8 @@ export async function saveCloseSnapshot(snapshot: CloseSnapshot) {
 async function seedCloseSnapshots() {
   await ensureSchema();
   const database = getDatabase();
-  const countRow = await database
-    .prepare('SELECT COUNT(*) AS total FROM close_snapshots')
-    .first<{ total: number }>();
-  if (Number(countRow?.total ?? 0) > 0) return;
   const seed = seedDocument as CloseHistoryDocument;
+  if (!seed.snapshots.length) return;
   const now = new Date().toISOString();
   await database.batch(
     seed.snapshots.map((snapshot) =>

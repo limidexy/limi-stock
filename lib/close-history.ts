@@ -61,6 +61,7 @@ export type CloseHistoryDocument = {
     facts: string;
     labels: string;
   };
+  knownMissingDates?: string[];
   snapshots: CloseSnapshot[];
   archive?: {
     state: 'READY' | 'DEGRADED';
@@ -69,6 +70,8 @@ export type CloseHistoryDocument = {
     marketDate?: string;
     requestedDate?: string;
     sessionState?: 'LIVE' | 'CLOSED';
+    missingDates?: string[];
+    availableDates?: number;
     message: string;
   };
 };

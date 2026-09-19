@@ -354,10 +354,14 @@ export function buildEmotionTracking(
   const candidates = trackingCandidates(ordered, date, lookback);
   const currentEvidence = evidence[date];
   const prev = candidates.previous;
-  const adjacent = Boolean(
-    prev && priorSession(date, prev.date, currentEvidence) && complete(prev),
-  );
   const hasCurrent = complete(current);
+  const adjacent = Boolean(
+    hasCurrent &&
+    currentEvidence &&
+    prev &&
+    priorSession(date, prev.date, currentEvidence) &&
+    complete(prev),
+  );
   const dates = [...candidates.prior.map((x) => x.date), date];
   const missingSessions = dates
     .slice(1)

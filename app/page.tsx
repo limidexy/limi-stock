@@ -20,7 +20,6 @@ import {
   CalendarDays,
   Clock3,
   GitBranch,
-  Layers3,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -319,6 +318,7 @@ function usePolling<T>(url: string, intervalMs: number): PollState<T> {
   const inFlight = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (document.visibilityState === 'hidden') return;
     if (inFlight.current) return;
     inFlight.current = true;
     try {
@@ -437,6 +437,218 @@ function EmptyState({ children }: { children: React.ReactNode }) {
     <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
       {children}
     </div>
+  );
+}
+
+function MarketCommandCenter({
+  timeline,
+  radarEvents,
+  flow,
+  emotion,
+  ladder,
+  marketNotice,
+  onNavigate,
+}: {
+  timeline: MarketTimelineData | null;
+  radarEvents: RadarEvent[];
+  flow: FlowData | null;
+  emotion: IntradayEmotionSnapshot | null;
+  ladder: LadderData | null;
+  marketNotice: string | null;
+  onNavigate: (tab: string) => void;
+}) {
+  const positiveEvents =
+    timeline?.events.filter(
+      (event) => event.kind === 'START' || event.kind === 'STRONG',
+    ) ?? [];
+  const negativeEvents =
+    timeline?.events.filter(
+      (event) => event.kind === 'CASHOUT' || event.kind === 'WEAKEN',
+    ) ?? [];
+  const latestPositive = [...positiveEvents].sort((a, b) =>
+    b.time.localeCompare(a.time),
+  )[0];
+  const latestNegative = [...negativeEvents].sort((a, b) =>
+    b.time.localeCompare(a.time),
+  )[0];
+  const positive = [...positiveEvents].sort(
+    (a, b) => Math.abs(b.flowDelta) - Math.abs(a.flowDelta),
+  )[0];
+  const negative = [...negativeEvents].sort(
+    (a, b) => Math.abs(b.flowDelta) - Math.abs(a.flowDelta),
+  )[0];
+  const rising = radarEvents.find((event) => event.direction === 'up');
+  const falling = radarEvents.find((event) => event.direction === 'down');
+  const inflow = flow?.split.cumulativeInflow[0] ?? flow?.split.inflow[0];
+  const outflow = flow?.split.cumulativeOutflow[0] ?? flow?.split.outflow[0];
+  const leaderNames = emotion?.leaders?.length
+    ? emotion.leaders.join('、')
+    : ladder?.sealedStocks
+        ?.filter((stock) => stock.height === emotion?.highestBoard)
+        .map((stock) => stock.name)
+        .join('、');
+  const breadthRatio = emotion?.breadth.rowsAvailable
+    ? (emotion.breadth.up / emotion.breadth.rowsAvailable) * 100
+    : null;
+  const emotionState = emotion
+    ? [...new Set([emotion.indexMood, ...emotion.cycleNode.split(' · ')])].join(
+        ' · ',
+      )
+    : '情绪数据连接中';
+  const strongest = positive
+    ? timelineHeadline(positive)
+    : rising
+      ? `${rising.name}明显拉升，${
+          rising.drivers
+            .slice(0, 3)
+            .map((stock) => stock.name)
+            .join('、') || '驱动股待确认'
+        }`
+      : '当前未检测到达到阈值的主线启动';
+  const weakest = negative
+    ? timelineHeadline(negative)
+    : falling
+      ? `${falling.name}明显下跌，${
+          falling.drivers
+            .slice(0, 3)
+            .map((stock) => stock.name)
+            .join('、') || '领跌股待确认'
+        }`
+      : '当前未检测到达到阈值的集中走弱';
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-950 to-slate-900 text-slate-100 shadow-sm dark:border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 sm:px-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <Activity className="size-5 text-sky-400" />
+            <h2 className="font-semibold">盘面决策台</h2>
+            <Badge
+              className="border-slate-700 bg-slate-900 text-slate-300"
+              variant="outline"
+            >
+              {timeline?.sessionState === 'LIVE' ? '盘中' : '最近定格'}
+            </Badge>
+          </div>
+          <p className="mt-1 text-xs text-slate-400">
+            {marketNotice ??
+              `行情日期 ${fmtTradeDate(timeline?.tradeDate ?? emotion?.tradeDate)}`}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            ['timeline', '启动兑现'],
+            ['emotion', '情绪周期'],
+            ['promotion', '连板天梯'],
+            ['speed', '涨速共振'],
+          ].map(([tab, label]) => (
+            <Button
+              key={tab}
+              variant="outline"
+              size="sm"
+              className="border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
+              onClick={() => onNavigate(tab)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-px bg-slate-800 sm:grid-cols-2 xl:grid-cols-5">
+        <button
+          className="min-h-32 bg-slate-950 p-4 text-left transition hover:bg-slate-900 sm:col-span-2"
+          onClick={() => onNavigate('emotion')}
+        >
+          <span className="text-xs text-slate-400">情绪结论</span>
+          <strong className="mt-2 block text-xl text-amber-300">
+            {emotionState}
+          </strong>
+          <span className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-300">
+            <span>
+              涨停 <b className="text-red-400">{emotion?.limitUp ?? '—'}</b>
+            </span>
+            <span>
+              炸板 <b className="text-amber-300">{emotion?.failed ?? '—'}</b>
+            </span>
+            <span>
+              跌停{' '}
+              <b className="text-emerald-400">{emotion?.limitDown ?? '—'}</b>
+            </span>
+            <span>
+              封板率 <b>{emotion ? `${emotion.sealRate.toFixed(1)}%` : '—'}</b>
+            </span>
+            <span>
+              上涨面{' '}
+              <b>
+                {breadthRatio === null ? '—' : `${breadthRatio.toFixed(1)}%`}
+              </b>
+            </span>
+            <span>
+              中位数 <b>{fmtPct(emotion?.breadth.medianChangePct)}</b>
+            </span>
+          </span>
+        </button>
+
+        <button
+          className="min-h-32 bg-slate-950 p-4 text-left transition hover:bg-slate-900"
+          onClick={() => onNavigate('timeline')}
+        >
+          <span className="text-xs text-slate-400">主线 / 最强启动</span>
+          <strong className="mt-2 block text-sm leading-6 text-red-300">
+            {strongest}
+          </strong>
+          <span className="mt-2 block text-xs text-slate-400">
+            {positive
+              ? `${positive.time} · ${fmtFlowDirection(positive.flowDelta)}${
+                  latestPositive && latestPositive.id !== positive.id
+                    ? ` · 最新回流 ${latestPositive.time} ${latestPositive.sectorName}`
+                    : ''
+                }`
+              : inflow
+                ? `${inflow.name} ${fmtFlowDirection(inflow.latestMainNetInflow)}`
+                : '等待资金转折'}
+          </span>
+        </button>
+
+        <button
+          className="min-h-32 bg-slate-950 p-4 text-left transition hover:bg-slate-900"
+          onClick={() => onNavigate('timeline')}
+        >
+          <span className="text-xs text-slate-400">弱侧 / 最强下杀</span>
+          <strong className="mt-2 block text-sm leading-6 text-emerald-300">
+            {weakest}
+          </strong>
+          <span className="mt-2 block text-xs text-slate-400">
+            {negative
+              ? `${negative.time} · ${fmtFlowDirection(negative.flowDelta)}${
+                  latestNegative && latestNegative.id !== negative.id
+                    ? ` · 最新走弱 ${latestNegative.time} ${latestNegative.sectorName}`
+                    : ''
+                }`
+              : outflow
+                ? `${outflow.name} ${fmtFlowDirection(outflow.latestMainNetInflow)}`
+                : '等待弱侧确认'}
+          </span>
+        </button>
+
+        <button
+          className="min-h-32 bg-slate-950 p-4 text-left transition hover:bg-slate-900"
+          onClick={() => onNavigate('promotion')}
+        >
+          <span className="text-xs text-slate-400">高度 / 核心</span>
+          <strong className="mt-2 block text-xl text-sky-300">
+            {emotion?.highestBoard ? `${emotion.highestBoard}板` : '—'}
+          </strong>
+          <span className="mt-2 block text-sm leading-6 text-slate-200">
+            {leaderNames || '最高板股票待确认'}
+          </span>
+          <span className="mt-1 block text-xs text-slate-400">
+            连板 {emotion?.consecutiveCount ?? '—'} 家
+          </span>
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -1611,6 +1823,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
 }
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState('timeline');
   const radar = usePolling<RadarData>('/api/radar', 15_000);
   const flow = usePolling<FlowData>('/api/flow', 60_000);
   const timeline = usePolling<MarketTimelineData>('/api/timeline', 60_000);
@@ -1619,7 +1832,10 @@ export default function Home() {
     300_000,
   );
   const ladder = usePolling<LadderData>('/api/ladder', 30_000);
-  const speed = usePolling<SpeedData>('/api/speed', 1_000);
+  const speed = usePolling<SpeedData>(
+    '/api/speed',
+    activeTab === 'speed' ? 1_000 : 15_000,
+  );
   const intradayEmotion = usePolling<IntradayEmotionSnapshot>(
     '/api/intraday-emotion',
     30_000,
@@ -1643,7 +1859,6 @@ export default function Home() {
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [selectedCloseDate, setSelectedCloseDate] = useState(LATEST_CLOSE_DATE);
   const closeDatePinned = useRef(false);
-  const [activeTab, setActiveTab] = useState('timeline');
   const [competitionFilter, setCompetitionFilter] = useState('ALL');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -1682,32 +1897,79 @@ export default function Home() {
     .at(-1);
   const closedSnapshot =
     history.archive?.sessionState === 'CLOSED' ? history.archive : undefined;
-  const issueModules = [
-    ['盘面脉络', timeline.error, timeline.data?.status, timeline.data?.reason],
-    ['板块异动', radar.error, radar.data?.status, radar.data?.reason],
-    ['资金分流', flow.error, flow.data?.status, flow.data?.reason],
-    ['连板梯队', ladder.error, ladder.data?.status, ladder.data?.reason],
-    ['涨速榜', speed.error, speed.data?.status, speed.data?.reason],
-    [
-      '盘中情绪',
-      intradayEmotion.error,
-      intradayEmotion.data?.status,
-      intradayEmotion.data?.reason,
-    ],
-    [
-      '情绪周期',
-      closeHistory.error,
-      closeHistory.data?.archive?.state,
-      closeHistory.data?.archive?.state === 'DEGRADED'
-        ? closeHistory.data.archive.message
-        : undefined,
-    ],
-  ].filter(([, error, state, reason]) =>
-    Boolean(error || state === 'MISSING' || state === 'DEGRADED' || reason),
+  const moduleHealth = [
+    {
+      name: '盘面脉络',
+      error: timeline.error,
+      state: timeline.data?.status,
+      date: timeline.data?.tradeDate,
+      detail: timeline.data?.reason,
+    },
+    {
+      name: '板块异动',
+      error: radar.error,
+      state: radar.data?.status,
+      date: radar.data?.tradeDate,
+      detail: radar.data?.reason,
+    },
+    {
+      name: '资金分流',
+      error: flow.error,
+      state: flow.data?.status,
+      date: flow.data?.tradeDate,
+      detail: flow.data?.reason,
+    },
+    {
+      name: '连板梯队',
+      error: ladder.error,
+      state: ladder.data?.status,
+      date: ladder.data?.tradeDate,
+      detail: ladder.data?.reason,
+    },
+    {
+      name: '涨速榜',
+      error: speed.error,
+      state: speed.data?.status,
+      date: speed.data?.tradeDate,
+      detail: speed.data?.reason,
+    },
+    {
+      name: '盘中情绪',
+      error: intradayEmotion.error,
+      state: intradayEmotion.data?.status,
+      date: intradayEmotion.data?.tradeDate,
+      detail: intradayEmotion.data?.reason,
+    },
+    {
+      name: '情绪周期',
+      error: closeHistory.error,
+      state: closeHistory.data?.archive?.state,
+      date: history.snapshots.at(-1)?.date,
+      detail:
+        closeHistory.data?.archive?.state === 'DEGRADED'
+          ? closeHistory.data.archive.message
+          : undefined,
+    },
+  ];
+  const alignedDate = moduleHealth
+    .map((item) => fmtTradeDate(item.date))
+    .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .sort()
+    .at(-1);
+  const issueModules = moduleHealth.filter(
+    (item) =>
+      item.error || item.state === 'MISSING' || item.state === 'DEGRADED',
   );
+  const staleModules = alignedDate
+    ? moduleHealth.filter(
+        (item) => item.date && fmtTradeDate(item.date) !== alignedDate,
+      )
+    : [];
   const sourceNotice = issueModules.length
-    ? `部分数据不完整：${issueModules.map(([name]) => name).join('、')}；完整模块仍可独立查看`
-    : null;
+    ? `${issueModules.length}个模块降级：${issueModules.map((item) => item.name).join('、')}`
+    : staleModules.length
+      ? `${staleModules.length}个模块日期未对齐：${staleModules.map((item) => item.name).join('、')}`
+      : null;
   const marketNotice = closedSnapshot
     ? `当前休市，展示 ${fmtTradeDate(closedSnapshot.marketDate ?? closedSnapshot.latestDate)} 的最近可用快照；各模块的数据缺口单独标注。`
     : null;
@@ -1731,7 +1993,6 @@ export default function Home() {
     setActiveTab('emotion');
   };
 
-  const ladderSummary = ladder.data?.counts;
   const visibleCompetitors = (ladder.data?.competitors ?? []).filter(
     (row) =>
       competitionFilter === 'ALL' ||
@@ -1739,10 +2000,6 @@ export default function Home() {
         ? row.changePct !== null && row.changePct < 0
         : row.state === competitionFilter),
   );
-  const speedCoverage = speed.data?.coverage;
-  const radarCoverage = radar.data?.coverage;
-  const flowCoverage = flow.data?.coverage;
-  const timelineCoverage = timeline.data?.coverage;
   const genericConcepts = new Set([
     '融资融券',
     '深股通',
@@ -1819,203 +2076,79 @@ export default function Home() {
       </header>
 
       <div className="mx-auto max-w-[1500px] space-y-4 px-4 py-4 sm:px-6 sm:py-6">
-        {(marketNotice || sourceNotice) && (
-          <output
-            className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${sourceNotice ? 'border-amber-500/40 bg-amber-500/10' : 'border-sky-500/35 bg-sky-500/[0.08]'}`}
-          >
-            {sourceNotice ? (
-              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
-            ) : (
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-sky-600" />
-            )}
-            <span>
-              {[marketNotice, sourceNotice].filter(Boolean).join(' ')}
-            </span>
-          </output>
-        )}
+        <MarketCommandCenter
+          timeline={timeline.data}
+          radarEvents={radarEvents}
+          flow={flow.data}
+          emotion={intradayEmotion.data}
+          ladder={ladder.data}
+          marketNotice={marketNotice}
+          onNavigate={setActiveTab}
+        />
 
-        <section
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 [&_[data-slot=card-description]]:col-span-full"
-          aria-label="数据状态"
-        >
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock3 className="size-4 text-cyan-500" />
-                盘面脉络
-              </CardTitle>
-              <CardAction>
-                <StateBadge state={timeline.data?.status} />
-              </CardAction>
-              <CardDescription>
-                {timelineCoverage
-                  ? `${timelineCoverage.timeNodes ?? timelineCoverage.events}个资金转折 · ${timelineCoverage.events}个板块节点`
-                  : '正在重建时间轴'}{' '}
-                · 60秒刷新
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <GitBranch className="size-4 text-violet-500" />
-                动态关系
-              </CardTitle>
-              <CardAction>
-                <StateBadge
-                  state={dynamicMainline.data?.status}
-                  label={
-                    dynamicMainline.data
-                      ? `${dynamicMainline.data.probabilityResearch.dynamicDates}/${dynamicMainline.data.probabilityResearch.dynamicDateTarget}日`
-                      : undefined
-                  }
-                />
-              </CardAction>
-              <CardDescription>
-                {dynamicMainline.data
-                  ? `${dynamicMainline.data.coverage.visibleNodes}个主线节点·概率尚未校准`
-                  : '正在读取动态回放'}
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+        <details className="rounded-lg border bg-card px-4 py-3 text-sm">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 font-medium">
+            <span className="flex items-center gap-2">
+              {sourceNotice ? (
+                <ShieldAlert className="size-4 text-amber-500" />
+              ) : (
                 <ShieldCheck className="size-4 text-emerald-500" />
-                概念板块
-              </CardTitle>
-              <CardAction>
-                <StateBadge state={radar.data?.status} />
-              </CardAction>
-              <CardDescription>
-                {radarCoverage
-                  ? `已取${radarCoverage.available}个题材候选 · 来源报告${radarCoverage.reported}个分组 · 查询${radarCoverage.queryReady ?? '—'}/${radarCoverage.queryRequested ?? '—'}`
-                  : '正在连接'}{' '}
-                · 15秒刷新
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="size-4 text-violet-500" />
-                资金曲线
-              </CardTitle>
-              <CardAction>
-                <StateBadge state={flow.data?.status} />
-              </CardAction>
-              <CardDescription>
-                {flowCoverage
-                  ? `${flowCoverage.available}/${flowCoverage.requested}板块`
-                  : '正在连接'}{' '}
-                · 分钟序列
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Layers3 className="size-4 text-sky-500" />
-                驱动成分
-              </CardTitle>
-              <CardAction>
-                <StateBadge
-                  state={selectedEvent?.driverState}
-                  label={
-                    selectedEvent?.windowReady
-                      ? '实测短窗'
-                      : radar.data?.sessionState === 'CLOSED'
-                        ? '日内样本'
-                        : '报价样本'
-                  }
-                />
-              </CardAction>
-              <CardDescription>
-                {selectedEvent
-                  ? `同向${selectedEvent.directionalCount ?? '—'}只 · 已取${selectedEvent.members.length}/${selectedEvent.memberCount ?? '—'}只`
-                  : '等待板块异动'}{' '}
-                · 同向样本，不代表因果
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Swords className="size-4 text-amber-500" />
-                连板梯队
-              </CardTitle>
-              <CardAction>
-                <StateBadge state={ladder.data?.status} />
-              </CardAction>
-              <CardDescription>
-                {ladderSummary
-                  ? `昨日${ladderSummary.previousLimitUp} · 今封${ladderSummary.todaySealed} · 炸${ladderSummary.todayFailed}`
-                  : '正在连接'}{' '}
-                · 30秒刷新
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Zap className="size-4 text-rose-500" />
-                涨速样本
-              </CardTitle>
-              <CardAction>
-                <StateBadge state={speed.data?.status} />
-              </CardAction>
-              <CardDescription>
-                {speedCoverage
-                  ? `概念${speedCoverage.conceptReady}/${speedCoverage.requested} · 涨停史${speedCoverage.recentLimitReady}/${speedCoverage.requested}`
-                  : '正在连接'}{' '}
-                · 每秒刷新
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CalendarDays className="size-4 text-amber-500" />
-                盘中情绪
-              </CardTitle>
-              <CardAction>
-                <StateBadge
-                  state={intradayEmotion.data?.status}
-                  label={
-                    intradayEmotion.data?.sessionState === 'LIVE'
-                      ? '实时'
-                      : '定格'
-                  }
-                />
-              </CardAction>
-              <CardDescription>
-                {intradayEmotion.data
-                  ? `${intradayEmotion.data.limitUp}涨停 · ${intradayEmotion.data.failed}炸板`
-                  : '正在连接'}{' '}
-                · 30秒检查
-              </CardDescription>
-            </CardHeader>
-          </Card>
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CalendarDays className="size-4 text-amber-500" />
-                收盘定格
-              </CardTitle>
-              <CardAction>
-                <StateBadge
-                  state={history.archive?.state ?? 'READY'}
-                  label={
-                    history.archive?.mode === 'DYNAMIC' ? '自动归档' : '15:00'
-                  }
-                />
-              </CardAction>
-              <CardDescription>
-                {history.snapshots.at(-1)?.date || '暂无快照'} · 收盘后自动追加
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </section>
+              )}
+              数据健康
+              <span
+                className={sourceNotice ? 'text-amber-600' : 'text-emerald-600'}
+              >
+                {sourceNotice ??
+                  `${moduleHealth.length}/${moduleHealth.length}模块已对齐`}
+              </span>
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">
+              行情日 {alignedDate ?? '连接中'} · 点击查看来源边界
+            </span>
+          </summary>
+          <div className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
+            {moduleHealth.map((item) => {
+              const state = item.error ? 'MISSING' : item.state;
+              const stale = Boolean(
+                alignedDate &&
+                item.date &&
+                fmtTradeDate(item.date) !== alignedDate,
+              );
+              return (
+                <div key={item.name} className="rounded-md border px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{item.name}</span>
+                    <StateBadge
+                      state={stale && state === 'READY' ? 'DEGRADED' : state}
+                      label={stale ? '日期未对齐' : undefined}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {fmtTradeDate(item.date)}
+                    {item.error || item.detail
+                      ? ` · ${item.error || item.detail}`
+                      : ''}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+          {history.archive?.missingDates?.length ? (
+            <p className="mt-3 border-t pt-3 text-xs text-amber-600">
+              收盘证据缺口：
+              {history.archive.missingDates
+                .map((date) => fmtTradeDate(date))
+                .join('、')}
+              。这些日期不会用相邻交易日或实时行情替代。
+            </p>
+          ) : null}
+          <p className="mt-3 text-xs text-muted-foreground">
+            动态关系为历史回放研究：
+            {dynamicMainline.data?.probabilityResearch.dynamicDates ?? '—'}/
+            {dynamicMainline.data?.probabilityResearch.dynamicDateTarget ?? 60}
+            个交易日，概率未校准，暂不参与选股。
+          </p>
+        </details>
 
         <Tabs
           value={activeTab}

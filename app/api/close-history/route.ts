@@ -46,11 +46,15 @@ export async function GET() {
     }
   }
 
+  const enrichedSnapshots = enrichEmotionCloses(snapshots);
+  const archivedDates = new Set(
+    enrichedSnapshots.map((snapshot) => snapshot.date),
+  );
   const document: CloseHistoryDocument = {
     ...seed,
     version: Math.max(2, seed.version),
     generatedAt: new Date().toISOString(),
-    snapshots: enrichEmotionCloses(snapshots),
+    snapshots: enrichedSnapshots,
     archive: {
       state: persistenceState,
       mode: persistenceMode,
@@ -58,6 +62,17 @@ export async function GET() {
       marketDate,
       requestedDate,
       sessionState,
+      missingDates: [
+        ...new Set(
+          [
+            ...(seed.knownMissingDates ?? []),
+            ...enrichedSnapshots
+              .map((snapshot) => snapshot.previousDate)
+              .filter((date): date is string => Boolean(date)),
+          ].filter((date) => !archivedDates.has(date)),
+        ),
+      ].sort(),
+      availableDates: snapshots.length,
       message: [archiveMessage, persistenceReason].filter(Boolean).join('；'),
     },
   };
