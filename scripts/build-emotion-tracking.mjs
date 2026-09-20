@@ -109,11 +109,13 @@ for (const date of fs
       .map((x) => x.code),
   );
   const breadthCodes = new Set([...breadth.values()].map((row) => row.code));
-  for (const code of knownByDate)
-    if (wanted.has(code) && !breadthCodes.has(code))
-      noTrade[code] = confirmedSuspension(date, code)
-        ? '停牌'
-        : '当日全市场收盘包无成交记录';
+  for (const code of knownByDate) {
+    if (!wanted.has(code)) continue;
+    if (confirmedSuspension(date, code)) {
+      noTrade[code] = '停牌';
+    } else if (!breadthCodes.has(code))
+      noTrade[code] = '当日全市场收盘包无成交记录';
+  }
   const metadata = new Map(
     structure.selectedSecurityMetadata.map((x) => [x.symbol, x]),
   );
@@ -257,11 +259,13 @@ if (fs.existsSync(archivesRoot))
           ])
           .map((x) => x.code),
       );
-      for (const code of knownByDate)
-        if (wanted.has(code) && !present.has(code))
-          noTrade[code] = confirmedSuspension(date, code)
-            ? '停牌'
-            : '当日已校验收盘归档无成交记录';
+      for (const code of knownByDate) {
+        if (!wanted.has(code)) continue;
+        if (confirmedSuspension(date, code)) {
+          noTrade[code] = '停牌';
+        } else if (!present.has(code))
+          noTrade[code] = '当日已校验收盘归档无成交记录';
+      }
       const metadata = new Map(
         (structure.selectedSecurityMetadata ?? []).map((x) => [x.symbol, x]),
       );

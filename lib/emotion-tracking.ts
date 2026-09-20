@@ -370,10 +370,10 @@ export function buildEmotionTracking(
   const quote = (d: string, code: string) =>
     exactQuote(evidence[d], d, code, d === date ? cutoff : '15:00');
   const quoteState = (d: string, code: string) =>
-    quote(d, code)
-      ? ('READY' as const)
-      : evidence[d]?.noTrade?.[code]
-        ? ('NO_TRADE' as const)
+    evidence[d]?.noTrade?.[code]
+      ? ('NO_TRADE' as const)
+      : quote(d, code)
+        ? ('READY' as const)
         : ('MISSING' as const);
   const allOld = candidates.leaders.map((stock) => {
     const days = ordered.filter((x) => x.date >= stock.peakDate);
@@ -397,12 +397,18 @@ export function buildEmotionTracking(
     return {
       ...stock,
       brokenDate: broken,
-      changePct: quote(date, stock.code)?.changePct ?? null,
+      changePct:
+        quoteState(date, stock.code) === 'READY'
+          ? (quote(date, stock.code)?.changePct ?? null)
+          : null,
       quoteState: quoteState(date, stock.code),
       quoteNote: evidence[date]?.noTrade?.[stock.code] ?? null,
       path: days.map((day) => ({
         date: day.date,
-        changePct: quote(day.date, stock.code)?.changePct ?? null,
+        changePct:
+          quoteState(day.date, stock.code) === 'READY'
+            ? (quote(day.date, stock.code)?.changePct ?? null)
+            : null,
         quoteState: quoteState(day.date, stock.code),
         quoteNote: evidence[day.date]?.noTrade?.[stock.code] ?? null,
         height:
@@ -421,7 +427,8 @@ export function buildEmotionTracking(
   const failed = adjacent
     ? candidates.failed
         .map((stock) => {
-          const q = quote(date, stock.code);
+          const state = quoteState(date, stock.code);
+          const q = state === 'READY' ? quote(date, stock.code) : null;
           const sealed =
             hasCurrent && stocksOf(current).some((x) => x.code === stock.code);
           return {
@@ -429,11 +436,7 @@ export function buildEmotionTracking(
             yesterdayChangePct: stock.changePct,
             changePct: q?.changePct ?? null,
             quoteTime: q?.quoteTime ?? null,
-            quoteState: q
-              ? ('READY' as const)
-              : currentEvidence?.noTrade?.[stock.code]
-                ? ('NO_TRADE' as const)
-                : ('MISSING' as const),
+            quoteState: state,
             label: !q
               ? currentEvidence?.noTrade?.[stock.code] ?? '当日报价缺失'
               : !hasCurrent
