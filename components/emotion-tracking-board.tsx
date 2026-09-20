@@ -22,6 +22,10 @@ type Payload = EmotionTracking & {
 };
 const pct = (n: number | null | undefined) =>
   n == null ? '缺报价' : `${n > 0 ? '+' : ''}${n.toFixed(2)}%`;
+const pathQuote = (
+  n: number | null | undefined,
+  state?: 'READY' | 'NO_TRADE' | 'MISSING',
+) => (state === 'NO_TRADE' ? '无成交' : pct(n));
 const tone = (n: number | null | undefined) =>
   n == null
     ? 'text-muted-foreground'
@@ -237,7 +241,7 @@ export function EmotionTrackingBoard({
                       <span
                         className={`font-mono font-semibold ${tone(stock.changePct)}`}
                       >
-                        {pct(stock.changePct)}
+                        {pathQuote(stock.changePct, stock.quoteState)}
                       </span>
                     </div>
                     <p className="my-2 text-sm text-muted-foreground">
@@ -257,7 +261,7 @@ export function EmotionTrackingBoard({
                           <p
                             className={`my-1 font-mono font-semibold ${tone(day.changePct)}`}
                           >
-                            {pct(day.changePct)}
+                            {pathQuote(day.changePct, day.quoteState)}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {day.height
@@ -295,7 +299,7 @@ export function EmotionTrackingBoard({
                         <span
                           className={`font-mono font-semibold ${tone(stock.changePct)}`}
                         >
-                          {pct(stock.changePct)}
+                          {pathQuote(stock.changePct, stock.quoteState)}
                         </span>
                       </div>
                       <p className="my-1 text-xs text-muted-foreground">

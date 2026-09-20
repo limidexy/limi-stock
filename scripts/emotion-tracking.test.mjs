@@ -45,9 +45,29 @@ test('complete exact-date CLOSE packages repair historical quote coverage withou
   const i = history.findIndex((d) => d.date === '2026-08-28');
   assert.equal(
     shortEmotionReading(facts(history[i]), facts(history[i - 1])).status,
-    'DEGRADED',
+    'READY',
   );
-  assert.equal(evidence['2026-08-28'], undefined);
+  assert.equal(
+    evidence['2026-08-28'].source.includes('已校验周归档CLOSE报价'),
+    true,
+  );
+});
+test('old-leader quote paths use exact-date close evidence and distinguish no-trade rows from missing quotes', () => {
+  const repaired = buildEmotionTracking(history, evidence, '2026-09-08');
+  assert.equal(repaired.oldLeaders.available, repaired.oldLeaders.requested);
+  assert.equal(
+    repaired.oldLeaders.rows
+      .flatMap((stock) => stock.path)
+      .some((day) => day.quoteState === 'MISSING'),
+    false,
+  );
+  const latest = buildEmotionTracking(history, evidence, '2026-09-18');
+  assert.equal(latest.oldLeaders.available, latest.oldLeaders.requested);
+  const noTrade = latest.oldLeaders.rows
+    .flatMap((stock) => stock.path.map((day) => ({ stock, day })))
+    .find(({ stock, day }) => stock.code === '605577' && day.date === '2026-09-11');
+  assert.equal(noTrade?.day.quoteState, 'NO_TRADE');
+  assert.match(noTrade?.day.quoteNote ?? '', /无成交记录/);
 });
 test('old highest-board survives its break; no future winners join prior identities', () => {
   const result = buildEmotionTracking(history, evidence, '2026-09-04');

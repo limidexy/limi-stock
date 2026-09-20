@@ -15,6 +15,7 @@ export type TrackingDay = {
   asOf?: string;
   sessionState?: 'LIVE' | 'CLOSED';
   concepts?: Record<string, string[]>;
+  noTrade?: Record<string, string>;
 };
 export type TrackingHistory = Record<string, TrackingDay>;
 export const stocksOf = (day?: CloseSnapshot) =>
@@ -368,6 +369,12 @@ export function buildEmotionTracking(
     .filter((d, i) => !priorSession(d, dates[i], evidence[d]));
   const quote = (d: string, code: string) =>
     exactQuote(evidence[d], d, code, d === date ? cutoff : '15:00');
+  const quoteState = (d: string, code: string) =>
+    quote(d, code)
+      ? ('READY' as const)
+      : evidence[d]?.noTrade?.[code]
+        ? ('NO_TRADE' as const)
+        : ('MISSING' as const);
   const allOld = candidates.leaders.map((stock) => {
     const days = ordered.filter((x) => x.date >= stock.peakDate);
     let broken: string | null = null;
@@ -391,9 +398,12 @@ export function buildEmotionTracking(
       ...stock,
       brokenDate: broken,
       changePct: quote(date, stock.code)?.changePct ?? null,
+      quoteState: quoteState(date, stock.code),
       path: days.map((day) => ({
         date: day.date,
         changePct: quote(day.date, stock.code)?.changePct ?? null,
+        quoteState: quoteState(day.date, stock.code),
+        quoteNote: evidence[day.date]?.noTrade?.[stock.code] ?? null,
         height:
           stocksOf(day).find((x) => x.code === stock.code)?.height ?? null,
         quoteTime: quote(day.date, stock.code)?.quoteTime ?? null,
@@ -418,8 +428,13 @@ export function buildEmotionTracking(
             yesterdayChangePct: stock.changePct,
             changePct: q?.changePct ?? null,
             quoteTime: q?.quoteTime ?? null,
+            quoteState: q
+              ? ('READY' as const)
+              : currentEvidence?.noTrade?.[stock.code]
+                ? ('NO_TRADE' as const)
+                : ('MISSING' as const),
             label: !q
-              ? '当日报价缺失'
+              ? currentEvidence?.noTrade?.[stock.code] ?? '当日报价缺失'
               : !hasCurrent
                 ? '当日报价可用，封板状态缺失'
                 : sealed
@@ -491,8 +506,8 @@ export function buildEmotionTracking(
       adjacent &&
       currentEvidence &&
       !missingSessions.length &&
-      allOldQuotes.every((x) => x.changePct !== null) &&
-      failed.every((x) => x.changePct !== null) &&
+      allOldQuotes.every((x) => x.quoteState !== 'MISSING') &&
+      failed.every((x) => x.quoteState !== 'MISSING') &&
       rebounds.every((x) => x.status === 'READY') &&
       groups.every((x) => x.status === 'READY')
         ? ('READY' as const)
@@ -503,7 +518,7 @@ export function buildEmotionTracking(
       rows: old,
       ...coverage(
         allOldQuotes.length,
-        allOldQuotes.filter((x) => x.changePct !== null).length,
+        allOldQuotes.filter((x) => x.quoteState !== 'MISSING').length,
         missingSessions.length
           ? '区间存在缺日；断板日仅在相邻完整收盘间确认'
           : '按此前最高板≥3板入池，断板后保留；窗口外个股不在本次样本',
@@ -513,7 +528,7 @@ export function buildEmotionTracking(
       rows: failed,
       ...coverage(
         adjacent ? failed.length : 0,
-        failed.filter((x) => x.changePct !== null).length,
+        failed.filter((x) => x.quoteState !== 'MISSING').length,
         adjacent
           ? '昨日收盘炸板名单固定，今日完整报价才计算比例'
           : '缺少紧邻前一交易日完整炸板名单',

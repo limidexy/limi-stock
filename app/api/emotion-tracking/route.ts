@@ -50,6 +50,7 @@ async function capture(requested: string, lookback: number) {
         quotes: day.closeQuotes,
         trends: evidence[day.date]?.trends ?? {},
         concepts: evidence[day.date]?.concepts,
+        noTrade: evidence[day.date]?.noTrade,
       };
   const saved = await loadExactModuleSnapshot<TrackingDay>(
     'emotion-tracking-evidence',
@@ -61,6 +62,7 @@ async function capture(requested: string, lookback: number) {
       ...evidence[date],
       quotes: { ...saved.quotes, ...evidence[date]?.quotes },
       trends: { ...saved.trends, ...evidence[date]?.trends },
+      noTrade: { ...saved.noTrade, ...evidence[date]?.noTrade },
     };
   if (live) {
     const candidates = trackingCandidates(history, date, lookback);

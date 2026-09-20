@@ -4,8 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { timelineHeadline } from '@/lib/timeline-evidence';
 import { LadderOverview } from '@/components/market-reading-board';
 import { EmotionTrackingBoard } from '@/components/emotion-tracking-board';
-import { DynamicMainlineBoard } from '@/components/dynamic-mainline-board';
-import type { DynamicMainlineDocument } from '@/lib/dynamic-mainline-source';
 import {
   windowedRadarEvents,
   type RadarEvent,
@@ -19,7 +17,6 @@ import {
   ArrowUpRight,
   CalendarDays,
   Clock3,
-  GitBranch,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -1785,13 +1782,9 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState('dynamic-mainline');
+  const [activeTab, setActiveTab] = useState('emotion-tracking');
   const radar = usePolling<RadarData>('/api/radar', 15_000);
   const flow = usePolling<FlowData>('/api/flow', 60_000);
-  const dynamicMainline = usePolling<DynamicMainlineDocument>(
-    '/api/dynamic-mainline',
-    300_000,
-  );
   const ladder = usePolling<LadderData>('/api/ladder', 30_000);
   const speed = usePolling<SpeedData>(
     '/api/speed',
@@ -1931,7 +1924,6 @@ export default function Home() {
     await Promise.all([
       radar.refresh(),
       flow.refresh(),
-      dynamicMainline.refresh(),
       ladder.refresh(),
       speed.refresh(),
       intradayEmotion.refresh(),
@@ -2093,12 +2085,6 @@ export default function Home() {
               。这些日期不会用相邻交易日或实时行情替代。
             </p>
           ) : null}
-          <p className="mt-3 text-xs text-muted-foreground">
-            动态关系为历史回放研究：
-            {dynamicMainline.data?.probabilityResearch.dynamicDates ?? '—'}/
-            {dynamicMainline.data?.probabilityResearch.dynamicDateTarget ?? 60}
-            个交易日，概率未校准，暂不参与选股。
-          </p>
         </details>
 
         <Tabs
@@ -2107,10 +2093,6 @@ export default function Home() {
           className="gap-4"
         >
           <TabsList variant="line" className="max-w-full overflow-x-auto">
-            <TabsTrigger value="dynamic-mainline">
-              <GitBranch />
-              严格主线回放
-            </TabsTrigger>
             <TabsTrigger value="emotion">
               <CalendarDays />
               情绪周期
@@ -2140,21 +2122,6 @@ export default function Home() {
               涨速榜
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="dynamic-mainline">
-            {dynamicMainline.data?.dates?.length ? (
-              <DynamicMainlineBoard
-                data={dynamicMainline.data}
-                latestCloseDate={history.snapshots.at(-1)?.date}
-              />
-            ) : (
-              <EmptyState>
-                {dynamicMainline.loading
-                  ? '正在加载动态启动、扩散、兑现与反核节点…'
-                  : dynamicMainline.error || '动态主线研究数据尚未生成'}
-              </EmptyState>
-            )}
-          </TabsContent>
 
           <TabsContent value="emotion" className="space-y-4">
             <IntradayEmotionBoard
