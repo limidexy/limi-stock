@@ -101,6 +101,16 @@ test('exact-date 5m supplements are useful but never upgraded to 1m confirmation
   assert.match(result.label, /5分钟/);
   assert.match(result.reason, /不是日线倒推/);
 });
+test('complete exact-date 1m supplements replace shorter same-resolution paths', () => {
+  const result = buildEmotionTracking(history, evidence, '2026-09-18');
+  for (const code of ['001216', '603230']) {
+    const row = result.rebounds.rows.find((item) => item.code === code);
+    assert.equal(row?.status, 'READY');
+    assert.equal(row?.points, 241);
+  }
+  assert.equal(result.rebounds.available, result.rebounds.requested);
+  assert.equal(result.leadLag.available, result.leadLag.requested);
+});
 test('old highest-board survives its break; no future winners join prior identities', () => {
   const result = buildEmotionTracking(history, evidence, '2026-09-04');
   const old = result.oldLeaders.rows.find((x) => x.code === '002084');

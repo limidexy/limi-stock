@@ -359,7 +359,13 @@ if (fs.existsSync(supplementsRoot))
       if (!close || Math.abs(close.price - row.dailyClose) > 0.011)
         throw Error(`Minute supplement close mismatch ${date}:${row.code}`);
       const existing = dates[day].trends[row.code];
-      if (!existing || row.intervalMinutes < (existing.intervalMinutes ?? 1))
+      const existingInterval = existing?.intervalMinutes ?? 1;
+      if (
+        !existing ||
+        row.intervalMinutes < existingInterval ||
+        (row.intervalMinutes === existingInterval &&
+          points.length > (existing.points?.length ?? 0))
+      )
         dates[day].trends[row.code] = {
           code: row.code,
           name: row.name,
