@@ -152,7 +152,14 @@ function stockNames(node: DynamicMainlineNode) {
   const names = [
     ...new Set(node.stocks.map((stock) => stock.name).filter(Boolean)),
   ];
-  return names.length ? names.join('、') : '代表股待补';
+  return names.join('、');
+}
+
+function driverNames(node: DynamicMainlineNode) {
+  return node.drivers
+    .slice(0, 3)
+    .map((driver) => driver.name)
+    .join('、');
 }
 
 function coreNames(node: DynamicMainlineNode) {
@@ -167,16 +174,17 @@ function coreNames(node: DynamicMainlineNode) {
 
 function headline(node: DynamicMainlineNode) {
   const stocks = stockNames(node);
+  const drivers = driverNames(node);
   const cores = coreNames(node).join('、');
   switch (node.eventType) {
     case 'SECTOR_STARTUP':
-      return `${node.sector}启动，${stocks}率先加速。`;
+      return `${node.sector}启动，${drivers}率先拉升。`;
     case 'SECTOR_DIFFUSION':
-      return `${node.sector}从局部转向扩散，${stocks}等多股跟随。`;
+      return `${node.sector}由点及面扩散，${drivers}同步走强。`;
     case 'CORE_BREADTH_DIVERGENCE':
-      return `${node.sector}核心仍强，但上涨宽度回落，核心与跟风开始分歧。`;
+      return `${node.sector}前排仍强但跟风收缩，${drivers}仍居板块前列。`;
     case 'SECTOR_REALIZATION':
-      return `${node.sector}强势股数量与中位涨幅同时回落，出现板块兑现。`;
+      return `${node.sector}强势股数量和板块中位涨幅同步回落，进入兑现。`;
     case 'CORE_LED_START':
       return `${cores || stocks}先动，${node.sector}同组股进入跟随观察。`;
     case 'TARGET_IGNITION':
@@ -192,7 +200,7 @@ function headline(node: DynamicMainlineNode) {
     case 'REALIZATION':
       return `${stocks}从日内高点回落，${node.sector}个股端出现兑现。`;
     default:
-      return `${node.sector}出现动态转折，${stocks}是当时代表股。`;
+      return `${node.sector}出现严格筛选后的动态转折。`;
   }
 }
 
@@ -383,7 +391,7 @@ function DynamicDaySummary({ day }: { day: DynamicMainlineDay }) {
             {day.visibleNodes}
           </CardAction>
           <CardDescription>
-            {day.visibleSectorCount}个板块链·隐藏{day.hiddenNodes}个低优先级节点
+            {day.visibleSectorCount}条板块链·其余{day.hiddenNodes}个候选不展示
           </CardDescription>
         </CardHeader>
       </Card>
@@ -396,7 +404,7 @@ function DynamicDaySummary({ day }: { day: DynamicMainlineDay }) {
           <CardAction className="market-up text-xl font-semibold">
             {rising}
           </CardAction>
-          <CardDescription>板块跨阈值、核心先动与领涨扩散</CardDescription>
+          <CardDescription>至少3只具体驱动股并伴随宽度扩张</CardDescription>
         </CardHeader>
       </Card>
       <Card size="sm">
@@ -408,7 +416,7 @@ function DynamicDaySummary({ day }: { day: DynamicMainlineDay }) {
           <CardAction className="market-down text-xl font-semibold">
             {falling}
           </CardAction>
-          <CardDescription>核心与宽度分离、强势股数量回落</CardDescription>
+          <CardDescription>跟风收缩或强势股与中位涨幅同步回落</CardDescription>
         </CardHeader>
       </Card>
       <Card size="sm">
@@ -436,7 +444,6 @@ export function DynamicMainlineBoard({
     data.dates.at(-1)?.date ?? '',
   );
   const [filter, setFilter] = useState<Filter>('ALL');
-  const [expanded, setExpanded] = useState(false);
   const day =
     data.dates.find((item) => item.date === selectedDate) ?? data.dates.at(-1);
   const nodes = useMemo(() => {
@@ -445,8 +452,8 @@ export function DynamicMainlineBoard({
       filter === 'ALL'
         ? rows
         : rows.filter((node) => EVENT_META[node.eventType]?.filter === filter);
-    return expanded ? filtered : filtered.slice(0, 30);
-  }, [day, expanded, filter]);
+    return filtered;
+  }, [day, filter]);
   const totalFiltered =
     filter === 'ALL'
       ? (day?.nodes.length ?? 0)
@@ -463,7 +470,6 @@ export function DynamicMainlineBoard({
 
   return (
     <div className="space-y-4">
-      <ProbabilityProgress data={data.probabilityResearch} />
       <DynamicDaySummary day={day} />
       <Card>
         <CardHeader className="space-y-3">
@@ -471,10 +477,10 @@ export function DynamicMainlineBoard({
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="size-5 text-cyan-500" />
-                动态盘面主线·历史回放
+                主线转折·严格回放
               </CardTitle>
               <CardDescription className="mt-1">
-                按真实转折分钟生成，依次看谁先动、是否扩散、何时兑现、回踩后有没有二次承接
+                每天最多8个节点；没有具体驱动股、没有板块宽度证据或全日相对强度不足的事件不展示
               </CardDescription>
             </div>
             <Badge variant="outline" className="status-degraded">
@@ -487,7 +493,6 @@ export function DynamicMainlineBoard({
               value={day.date}
               onChange={(event) => {
                 setSelectedDate(event.target.value);
-                setExpanded(false);
               }}
             >
               {data.dates.map((item) => (
@@ -510,7 +515,6 @@ export function DynamicMainlineBoard({
                 variant={filter === value ? 'default' : 'outline'}
                 onClick={() => {
                   setFilter(value);
-                  setExpanded(false);
                 }}
               >
                 {label}
@@ -575,16 +579,42 @@ export function DynamicMainlineBoard({
                     ) : null}
                     <details className="mt-2 text-xs text-muted-foreground">
                       <summary className="cursor-pointer">
-                        查看代表股、关系链与边界
+                        查看具体驱动股、关系链与边界
                       </summary>
                       <div className="mt-2 space-y-2 leading-5">
-                        <p>
-                          代表股：
-                          {node.stocks
-                            .map((stock) => `${stock.name}（${stock.code}）`)
-                            .join('、') || '待补'}
-                          。
-                        </p>
+                        {node.drivers.length ? (
+                          <div>
+                            <p className="font-medium text-foreground/80">
+                              节点时刻具体驱动
+                            </p>
+                            <div className="mt-1 grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
+                              {node.drivers.map((driver) => (
+                                <p
+                                  key={driver.code}
+                                  className="rounded bg-background/70 px-2 py-1"
+                                >
+                                  {driver.name}（{driver.code}）· 节点
+                                  {driver.returnPct === null
+                                    ? '—'
+                                    : `${driver.returnPct >= 0 ? '+' : ''}${driver.returnPct.toFixed(2)}%`}
+                                  · 短窗
+                                  {driver.windowChangePct === null
+                                    ? '—'
+                                    : `${driver.windowChangePct >= 0 ? '+' : ''}${driver.windowChangePct.toFixed(2)}%`}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {node.stocks.length ? (
+                          <p>
+                            研究对象：
+                            {node.stocks
+                              .map((stock) => `${stock.name}（${stock.code}）`)
+                              .join('、')}
+                            。
+                          </p>
+                        ) : null}
                         {coreNames(node).length ? (
                           <p>前日冻结核心：{coreNames(node).join('、')}。</p>
                         ) : null}
@@ -600,22 +630,26 @@ export function DynamicMainlineBoard({
               );
             })}
           </div>
-          {totalFiltered > 30 ? (
-            <Button
-              variant="outline"
-              className="ml-[74px] sm:ml-[91px]"
-              onClick={() => setExpanded((value) => !value)}
-            >
-              {expanded ? '收起后续节点' : `展开全部${totalFiltered}个节点`}
-            </Button>
+          {!totalFiltered ? (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              该日期没有通过严格证据门的
+              {filter === 'ALL' ? '主线节点' : '同类节点'}。
+            </div>
           ) : null}
           <p className="mt-4 border-t pt-3 text-xs leading-5 text-muted-foreground">
-            {data.sourceNotice}默认层只保留高重要性板块链与有支持的修复节点；
-            其余{data.coverage.hiddenNodes.toLocaleString()}
-            个低优先级节点仍保留在研究证据包中， 没有被删除。
+            {data.sourceNotice}
+            当日同一分钟最多保留2条领先板块，避免把开盘普涨和统计噪声写成多条“主线”。
           </p>
         </CardContent>
       </Card>
+      <details className="rounded-xl border bg-card p-4">
+        <summary className="cursor-pointer font-medium">
+          修复概率研究进度（未校准，不参与选股）
+        </summary>
+        <div className="mt-4">
+          <ProbabilityProgress data={data.probabilityResearch} />
+        </div>
+      </details>
     </div>
   );
 }

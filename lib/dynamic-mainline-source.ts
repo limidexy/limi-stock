@@ -8,6 +8,13 @@ export type DynamicMainlineStock = {
   priorCoreName: string | null;
 };
 
+export type DynamicMainlineDriver = {
+  code: string;
+  name: string;
+  returnPct: number | null;
+  windowChangePct: number | null;
+};
+
 export type DynamicMainlineNode = {
   id: string;
   time: string;
@@ -21,6 +28,7 @@ export type DynamicMainlineNode = {
   importanceRank: number;
   mainlineReason: string;
   stocks: DynamicMainlineStock[];
+  drivers: DynamicMainlineDriver[];
   evidence: Record<string, string | number | boolean>;
   chain: {
     score: number | null;

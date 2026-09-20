@@ -441,7 +441,6 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 }
 
 function MarketCommandCenter({
-  timeline,
   radarEvents,
   flow,
   emotion,
@@ -449,7 +448,6 @@ function MarketCommandCenter({
   marketNotice,
   onNavigate,
 }: {
-  timeline: MarketTimelineData | null;
   radarEvents: RadarEvent[];
   flow: FlowData | null;
   emotion: IntradayEmotionSnapshot | null;
@@ -457,26 +455,6 @@ function MarketCommandCenter({
   marketNotice: string | null;
   onNavigate: (tab: string) => void;
 }) {
-  const positiveEvents =
-    timeline?.events.filter(
-      (event) => event.kind === 'START' || event.kind === 'STRONG',
-    ) ?? [];
-  const negativeEvents =
-    timeline?.events.filter(
-      (event) => event.kind === 'CASHOUT' || event.kind === 'WEAKEN',
-    ) ?? [];
-  const latestPositive = [...positiveEvents].sort((a, b) =>
-    b.time.localeCompare(a.time),
-  )[0];
-  const latestNegative = [...negativeEvents].sort((a, b) =>
-    b.time.localeCompare(a.time),
-  )[0];
-  const positive = [...positiveEvents].sort(
-    (a, b) => Math.abs(b.flowDelta) - Math.abs(a.flowDelta),
-  )[0];
-  const negative = [...negativeEvents].sort(
-    (a, b) => Math.abs(b.flowDelta) - Math.abs(a.flowDelta),
-  )[0];
   const rising = radarEvents.find((event) => event.direction === 'up');
   const falling = radarEvents.find((event) => event.direction === 'down');
   const inflow = flow?.split.cumulativeInflow[0] ?? flow?.split.inflow[0];
@@ -495,26 +473,22 @@ function MarketCommandCenter({
         ' · ',
       )
     : '情绪数据连接中';
-  const strongest = positive
-    ? timelineHeadline(positive)
-    : rising
-      ? `${rising.name}明显拉升，${
-          rising.drivers
-            .slice(0, 3)
-            .map((stock) => stock.name)
-            .join('、') || '驱动股待确认'
-        }`
-      : '当前未检测到达到阈值的主线启动';
-  const weakest = negative
-    ? timelineHeadline(negative)
-    : falling
-      ? `${falling.name}明显下跌，${
-          falling.drivers
-            .slice(0, 3)
-            .map((stock) => stock.name)
-            .join('、') || '领跌股待确认'
-        }`
-      : '当前未检测到达到阈值的集中走弱';
+  const strongest = rising
+    ? `${rising.name}明显拉升，${
+        rising.drivers
+          .slice(0, 3)
+          .map((stock) => stock.name)
+          .join('、') || '驱动股暂不可用'
+      }`
+    : '当前未检测到达到阈值的板块拉升';
+  const weakest = falling
+    ? `${falling.name}明显下跌，${
+        falling.drivers
+          .slice(0, 3)
+          .map((stock) => stock.name)
+          .join('、') || '领跌股暂不可用'
+      }`
+    : '当前未检测到达到阈值的集中走弱';
 
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-950 to-slate-900 text-slate-100 shadow-sm dark:border-slate-800">
@@ -527,17 +501,17 @@ function MarketCommandCenter({
               className="border-slate-700 bg-slate-900 text-slate-300"
               variant="outline"
             >
-              {timeline?.sessionState === 'LIVE' ? '盘中' : '最近定格'}
+              {flow?.sessionState === 'LIVE' ? '盘中' : '最近定格'}
             </Badge>
           </div>
           <p className="mt-1 text-xs text-slate-400">
             {marketNotice ??
-              `行情日期 ${fmtTradeDate(timeline?.tradeDate ?? emotion?.tradeDate)}`}
+              `行情日期 ${fmtTradeDate(flow?.tradeDate ?? emotion?.tradeDate)}`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {[
-            ['timeline', '启动兑现'],
+            ['radar', '板块异动'],
             ['emotion', '情绪周期'],
             ['promotion', '连板天梯'],
             ['speed', '涨速共振'],
@@ -592,43 +566,31 @@ function MarketCommandCenter({
 
         <button
           className="min-h-32 bg-slate-950 p-4 text-left transition hover:bg-slate-900"
-          onClick={() => onNavigate('timeline')}
+          onClick={() => onNavigate('radar')}
         >
           <span className="text-xs text-slate-400">主线 / 最强启动</span>
           <strong className="mt-2 block text-sm leading-6 text-red-300">
             {strongest}
           </strong>
           <span className="mt-2 block text-xs text-slate-400">
-            {positive
-              ? `${positive.time} · ${fmtFlowDirection(positive.flowDelta)}${
-                  latestPositive && latestPositive.id !== positive.id
-                    ? ` · 最新回流 ${latestPositive.time} ${latestPositive.sectorName}`
-                    : ''
-                }`
-              : inflow
-                ? `${inflow.name} ${fmtFlowDirection(inflow.latestMainNetInflow)}`
-                : '等待资金转折'}
+            {inflow
+              ? `${inflow.name} ${fmtFlowDirection(inflow.latestMainNetInflow)}`
+              : '等待价格与资金同向确认'}
           </span>
         </button>
 
         <button
           className="min-h-32 bg-slate-950 p-4 text-left transition hover:bg-slate-900"
-          onClick={() => onNavigate('timeline')}
+          onClick={() => onNavigate('radar')}
         >
           <span className="text-xs text-slate-400">弱侧 / 最强下杀</span>
           <strong className="mt-2 block text-sm leading-6 text-emerald-300">
             {weakest}
           </strong>
           <span className="mt-2 block text-xs text-slate-400">
-            {negative
-              ? `${negative.time} · ${fmtFlowDirection(negative.flowDelta)}${
-                  latestNegative && latestNegative.id !== negative.id
-                    ? ` · 最新走弱 ${latestNegative.time} ${latestNegative.sectorName}`
-                    : ''
-                }`
-              : outflow
-                ? `${outflow.name} ${fmtFlowDirection(outflow.latestMainNetInflow)}`
-                : '等待弱侧确认'}
+            {outflow
+              ? `${outflow.name} ${fmtFlowDirection(outflow.latestMainNetInflow)}`
+              : '等待价格与资金同向确认'}
           </span>
         </button>
 
@@ -1823,10 +1785,9 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState('timeline');
+  const [activeTab, setActiveTab] = useState('dynamic-mainline');
   const radar = usePolling<RadarData>('/api/radar', 15_000);
   const flow = usePolling<FlowData>('/api/flow', 60_000);
-  const timeline = usePolling<MarketTimelineData>('/api/timeline', 60_000);
   const dynamicMainline = usePolling<DynamicMainlineDocument>(
     '/api/dynamic-mainline',
     300_000,
@@ -1887,7 +1848,6 @@ export default function Home() {
   const latestAt = [
     radar.data?.retrievedAt,
     flow.data?.retrievedAt,
-    timeline.data?.retrievedAt,
     ladder.data?.retrievedAt,
     speed.data?.retrievedAt,
     intradayEmotion.data?.retrievedAt,
@@ -1898,13 +1858,6 @@ export default function Home() {
   const closedSnapshot =
     history.archive?.sessionState === 'CLOSED' ? history.archive : undefined;
   const moduleHealth = [
-    {
-      name: '盘面脉络',
-      error: timeline.error,
-      state: timeline.data?.status,
-      date: timeline.data?.tradeDate,
-      detail: timeline.data?.reason,
-    },
     {
       name: '板块异动',
       error: radar.error,
@@ -1978,7 +1931,6 @@ export default function Home() {
     await Promise.all([
       radar.refresh(),
       flow.refresh(),
-      timeline.refresh(),
       dynamicMainline.refresh(),
       ladder.refresh(),
       speed.refresh(),
@@ -2040,7 +1992,7 @@ export default function Home() {
                 李米看板
               </h1>
               <p className="truncate text-xs text-muted-foreground">
-                盘面脉络、板块资金、连板梯队与涨速一屏联动
+                板块异动、资金分流、情绪与连板梯队一屏联动
               </p>
             </div>
           </div>
@@ -2077,7 +2029,6 @@ export default function Home() {
 
       <div className="mx-auto max-w-[1500px] space-y-4 px-4 py-4 sm:px-6 sm:py-6">
         <MarketCommandCenter
-          timeline={timeline.data}
           radarEvents={radarEvents}
           flow={flow.data}
           emotion={intradayEmotion.data}
@@ -2156,13 +2107,9 @@ export default function Home() {
           className="gap-4"
         >
           <TabsList variant="line" className="max-w-full overflow-x-auto">
-            <TabsTrigger value="timeline">
-              <Clock3 />
-              盘面脉络
-            </TabsTrigger>
             <TabsTrigger value="dynamic-mainline">
               <GitBranch />
-              动态脉络
+              严格主线回放
             </TabsTrigger>
             <TabsTrigger value="emotion">
               <CalendarDays />
@@ -2193,20 +2140,6 @@ export default function Home() {
               涨速榜
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="timeline">
-            {timeline.data?.events?.length ? (
-              <MarketTimelineBoard data={timeline.data} />
-            ) : (
-              <EmptyState>
-                {timeline.loading
-                  ? '正在对齐板块、指数与个股的分钟节点…'
-                  : timeline.data?.reason ||
-                    timeline.error ||
-                    '当前还没有达到阈值的盘面节点'}
-              </EmptyState>
-            )}
-          </TabsContent>
 
           <TabsContent value="dynamic-mainline">
             {dynamicMainline.data?.dates?.length ? (

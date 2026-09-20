@@ -78,6 +78,178 @@ function compactEvidence(value) {
   return kept;
 }
 
+function compactDrivers(value) {
+  const rows = Array.isArray(value?.drivers) ? value.drivers : [];
+  return [
+    ...new Map(
+      rows
+        .filter((row) => row?.stock_code && row?.stock_name)
+        .map((row) => [
+          String(row.stock_code).padStart(6, '0'),
+          {
+            code: String(row.stock_code).padStart(6, '0'),
+            name: String(row.stock_name),
+            returnPct: finite(row.return_pct),
+            windowChangePct: finite(row.change_window_pct),
+          },
+        ]),
+    ).values(),
+  ].slice(0, 5);
+}
+
+function minuteOf(clock) {
+  const [hour, minute] = String(clock).split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function normalizeSector(value) {
+  const sector = String(value ?? '');
+  return (
+    {
+      房地产开: '房地产开发',
+      计算机设: '计算机设备',
+      汽车零部: '汽车零部件',
+      自动化设: '自动化设备',
+      非金属材: '非金属材料',
+      农产品加: '农产品加工',
+    }[sector] ?? sector
+  );
+}
+
+function phaseFamily(eventType) {
+  if (['SECTOR_STARTUP', 'SECTOR_DIFFUSION'].includes(eventType))
+    return 'RISE';
+  if (
+    ['CORE_BREADTH_DIVERGENCE', 'SECTOR_REALIZATION'].includes(eventType)
+  )
+    return 'FALL';
+  return 'REPAIR';
+}
+
+function evidencePasses(node) {
+  const e = node.evidence;
+  const driverChanges = node.drivers
+    .map((driver) => driver.windowChangePct)
+    .filter((value) => value !== null);
+  const maxDriverChange = driverChanges.length
+    ? Math.max(...driverChanges)
+    : 0;
+  if (node.eventType === 'SECTOR_STARTUP')
+    return (
+      node.drivers.length >= 3 &&
+      maxDriverChange >= 1 &&
+      Number(e.median_change_window_pct ?? 0) >= 0.4 &&
+      Number(e.breadth_change ?? 0) >= 0.12
+    );
+  if (node.eventType === 'SECTOR_DIFFUSION')
+    return (
+      node.drivers.length >= 3 &&
+      maxDriverChange >= 0.8 &&
+      Number(e.positive_rate ?? 0) >= 0.6 &&
+      Number(e.strong_count ?? 0) >= 3
+    );
+  if (node.eventType === 'CORE_BREADTH_DIVERGENCE')
+    return (
+      node.drivers.length >= 3 &&
+      Number(e.positive_rate_drop_from_peak ?? 0) <= -0.18
+    );
+  if (node.eventType === 'SECTOR_REALIZATION')
+    return (
+      node.drivers.length >= 3 &&
+      Number(e.median_fade_from_peak_pct ?? 0) <= -0.4 &&
+      Number(e.strong_count_drop_from_peak ?? 0) <= -2
+    );
+  if (
+    ['ANTI_NUCLEAR_RECOVERY', 'SECOND_RECOVERY_SUPPORTED'].includes(
+      node.eventType,
+    )
+  )
+    return (
+      node.stocks.length >= 2 &&
+      Number(node.score ?? 0) >= 4.5 &&
+      Number(e.sector_positive_rate ?? 0) >= 0.55
+    );
+  return false;
+}
+
+function phasePriority(node) {
+  const priorities = {
+    SECTOR_DIFFUSION: 6,
+    SECTOR_STARTUP: 5,
+    SECTOR_REALIZATION: 4,
+    CORE_BREADTH_DIVERGENCE: 3,
+    SECOND_RECOVERY_SUPPORTED: 2,
+    ANTI_NUCLEAR_RECOVERY: 1,
+  };
+  return priorities[node.eventType] ?? 0;
+}
+
+function strictMainline(nodes) {
+  const eligible = nodes.filter(evidencePasses);
+  const sectorScores = new Map();
+  for (const node of eligible) {
+    const phases = new Set(
+      eligible
+        .filter((item) => item.sector === node.sector)
+        .map((item) => phaseFamily(item.eventType)),
+    );
+    const score = Number(node.chain.score ?? node.score ?? 0) + phases.size * 0.4;
+    sectorScores.set(
+      node.sector,
+      Math.max(sectorScores.get(node.sector) ?? 0, score),
+    );
+  }
+  const leadingSectors = new Set(
+    [...sectorScores.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-CN'))
+      .slice(0, 4)
+      .map(([sector]) => sector),
+  );
+  const collapsed = [];
+  for (const node of eligible
+    .filter((item) => leadingSectors.has(item.sector))
+    .sort(
+      (a, b) =>
+        a.time.localeCompare(b.time) ||
+        Number(b.score ?? 0) - Number(a.score ?? 0),
+    )) {
+    const family = phaseFamily(node.eventType);
+    const existingIndex = collapsed.findIndex(
+      (item) =>
+        item.sector === node.sector &&
+        phaseFamily(item.eventType) === family &&
+        Math.abs(minuteOf(item.time) - minuteOf(node.time)) <= 8,
+    );
+    if (existingIndex >= 0) {
+      const existing = collapsed[existingIndex];
+      if (
+        phasePriority(node) > phasePriority(existing) ||
+        Number(node.score ?? 0) > Number(existing.score ?? 0)
+      )
+        collapsed[existingIndex] = node;
+      continue;
+    }
+    collapsed.push(node);
+  }
+  const selected = [];
+  for (const node of collapsed.sort(
+    (a, b) =>
+      a.time.localeCompare(b.time) ||
+      Number(b.score ?? 0) - Number(a.score ?? 0),
+  )) {
+    const simultaneous = selected.filter(
+      (item) => Math.abs(minuteOf(item.time) - minuteOf(node.time)) <= 2,
+    );
+    if (simultaneous.length >= 2) continue;
+    selected.push(node);
+    if (selected.length >= 8) break;
+  }
+  return selected.map((node, index) => ({
+    ...node,
+    importanceRank: index + 1,
+  }));
+}
+
 function uniqueStocks(rows) {
   return [
     ...new Map(
@@ -145,14 +317,14 @@ const dates = (mainline.days ?? [])
       hiddenNodes: Number(day.hidden_expandable_nodes ?? 0),
       visibleSectorCount: Number(day.visible_sector_count ?? 0),
       dynamicChainCutoff: finite(day.dynamic_chain_cutoff),
-      nodes: (day.nodes ?? [])
-        .map((node) => ({
+      nodes: strictMainline(
+        (day.nodes ?? []).map((node) => ({
           id: `${day.target_date}-${node.observed_at}-${node.sector}-${node.event_type}-${node.importance_rank_within_day}`,
           time: String(node.observed_at ?? ''),
           lastConfirmedAt: String(
             node.last_confirmed_at ?? node.observed_at ?? '',
           ),
-          sector: String(node.sector ?? ''),
+          sector: normalizeSector(node.sector),
           eventType: String(node.event_type ?? ''),
           sourceLayer: String(node.source_layer ?? ''),
           score: finite(node.score),
@@ -161,6 +333,7 @@ const dates = (mainline.days ?? [])
           importanceRank: Number(node.importance_rank_within_day ?? 0),
           mainlineReason: String(node.mainline_reason ?? ''),
           stocks: uniqueStocks(node.stocks),
+          drivers: compactDrivers(node.evidence),
           evidence: compactEvidence(node.evidence),
           chain: {
             score: finite(node.chain?.chain_score),
@@ -168,13 +341,8 @@ const dates = (mainline.days ?? [])
             stockCount: Number(node.chain?.stock_count ?? 0),
             phases: [...new Set(node.chain?.phases ?? [])],
           },
-        }))
-        .sort(
-          (a, b) =>
-            a.time.localeCompare(b.time) ||
-            a.importanceRank - b.importanceRank ||
-            a.sector.localeCompare(b.sector, 'zh-CN'),
-        ),
+        })),
+      ),
     };
   })
   .sort((a, b) => a.date.localeCompare(b.date));
@@ -219,19 +387,25 @@ const labels = labelGroups.flatMap((group) =>
     groupLabel: group.label,
   })),
 );
+for (const day of dates) {
+  day.visibleNodes = day.nodes.length;
+  day.hiddenNodes = Math.max(0, day.mergedNodes - day.nodes.length);
+  day.visibleSectorCount = new Set(day.nodes.map((node) => node.sector)).size;
+}
+
 const document = {
-  version: 'v2.49-dashboard-dynamic-mainline-preview',
+  version: 'v2.51-dashboard-strict-mainline-replay',
   status: dates.length ? 'READY' : 'MISSING',
   generatedAt: new Date().toISOString(),
   sourceState: 'ARCHIVED_REPLAY',
   sourceNotice:
-    '历史逐分钟回放，非当前实时行情；节点由状态转折触发，不是固定时间报时。',
+    '历史逐分钟回放，非当前实时行情；只显示具备多只具体驱动股、板块宽度变化和全日相对强度的节点。指数分钟证据未接入时，不声称指数共振。',
   coverage: {
     dates: dates.length,
     rawEvents: Number(mainline.coverage?.raw_events ?? 0),
     mergedNodes: Number(mainline.coverage?.merged_nodes ?? 0),
-    visibleNodes: Number(mainline.coverage?.default_visible_nodes ?? 0),
-    hiddenNodes: Number(mainline.coverage?.hidden_expandable_nodes ?? 0),
+    visibleNodes: dates.reduce((sum, day) => sum + day.nodes.length, 0),
+    hiddenNodes: dates.reduce((sum, day) => sum + day.hiddenNodes, 0),
   },
   policy: {
     eventDriven: mainline.policy?.event_driven === true,

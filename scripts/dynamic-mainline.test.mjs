@@ -61,6 +61,8 @@ test('all replay dates and node identities are internally consistent', () => {
   for (const day of document.dates) {
     assert.equal(day.status, 'READY');
     assert.equal(day.nodes.length, day.visibleNodes);
+    assert.ok(day.nodes.length <= 8);
+    assert.ok(new Set(day.nodes.map((node) => node.sector)).size <= 4);
     assert.ok(day.minuteSnapshots >= 120);
     for (const node of day.nodes) {
       ids.push(node.id);
@@ -75,6 +77,23 @@ test('all replay dates and node identities are internally consistent', () => {
         node.stocks.some((stock) => /某某|待确认/.test(stock.name)),
         false,
       );
+      assert.equal(
+        node.drivers.some((driver) => /某某|待确认|待补/.test(driver.name)),
+        false,
+      );
+      if (node.sourceLayer === 'SECTOR') {
+        assert.ok(node.drivers.length >= 3);
+        assert.equal(
+          node.drivers.every(
+            (driver) =>
+              driver.code &&
+              driver.name &&
+              Number.isFinite(driver.returnPct) &&
+              Number.isFinite(driver.windowChangePct),
+          ),
+          true,
+        );
+      }
     }
   }
   assert.equal(new Set(ids).size, ids.length);
