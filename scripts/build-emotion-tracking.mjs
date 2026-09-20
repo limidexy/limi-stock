@@ -373,9 +373,13 @@ if (fs.existsSync(supplementsRoot))
           points,
           intervalMinutes: row.intervalMinutes,
           source:
-            row.intervalMinutes === 1
-              ? '腾讯精确日期1分钟行情'
-              : '东方财富精确日期5分钟行情',
+            row.provider === 'pytdx_history_minute_dual_server'
+              ? '通达信公共协议精确日期1分钟分时（双服务器一致）'
+              : row.provider === 'pytdx_history_minute_five_server_majority'
+                ? '通达信公共协议精确日期1分钟分时（五服务器逐分钟多数确认）'
+                : row.intervalMinutes === 1
+                  ? '腾讯精确日期1分钟行情'
+                  : '精确日期5分钟行情',
         };
       if (row.intervalMinutes === 1) oneMinute += 1;
       else fiveMinute += 1;

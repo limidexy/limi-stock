@@ -111,6 +111,25 @@ test('complete exact-date 1m supplements replace shorter same-resolution paths',
   assert.equal(result.rebounds.available, result.rebounds.requested);
   assert.equal(result.leadLag.available, result.leadLag.requested);
 });
+test('historical 5m gaps are replaced only by exact-date 1m consensus paths', () => {
+  for (const date of ['2026-08-17', '2026-09-08', '2026-09-09']) {
+    const trends = Object.values(evidence[date].trends);
+    assert.ok(trends.length > 0);
+    assert.equal(trends.every((row) => row.intervalMinutes === 1), true);
+    assert.equal(trends.every((row) => row.points.length === 240), true);
+    assert.equal(
+      trends.every((row) => row.source.includes('精确日期1分钟分时')),
+      true,
+    );
+  }
+  assert.equal(
+    evidence['2026-09-09'].trends['600865'].source,
+    '通达信公共协议精确日期1分钟分时（五服务器逐分钟多数确认）',
+  );
+  assert.match(evidence['2026-09-08'].source, /1分钟49，5分钟0/);
+  assert.equal(Object.keys(evidence['2026-09-09'].trends).length, 73);
+  assert.match(evidence['2026-09-09'].source, /1分钟73，5分钟0/);
+});
 test('old highest-board survives its break; no future winners join prior identities', () => {
   const result = buildEmotionTracking(history, evidence, '2026-09-04');
   const old = result.oldLeaders.rows.find((x) => x.code === '002084');
