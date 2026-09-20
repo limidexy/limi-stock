@@ -4,6 +4,8 @@ export type PriceTrend = {
   preClose: number | null;
   points: Array<{ time: string; price: number }>;
   stale?: boolean;
+  intervalMinutes?: number;
+  source?: string;
 };
 
 export function parseTrendPoints(rows: unknown[], tradeDate: string) {

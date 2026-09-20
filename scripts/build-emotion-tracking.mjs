@@ -301,6 +301,106 @@ if (fs.existsSync(archivesRoot))
       });
     }
   }
+
+// Independently stored exact-date minute supplements. Daily bars are never
+// expanded into synthetic intraday paths. A 5m supplement is useful evidence,
+// but remains DEGRADED for rules that require consecutive 1m observations.
+const supplementsRoot = path.join(root, 'data/market_minute_supplements_v252');
+if (fs.existsSync(supplementsRoot))
+  for (const date of fs
+    .readdirSync(supplementsRoot)
+    .filter((value) => /^\d{8}$/.test(value))
+    .sort()) {
+    const dir = path.join(supplementsRoot, date),
+      manifestPath = path.join(dir, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) continue;
+    const manifest = read(manifestPath),
+      day = dashed(date);
+    if (
+      manifest.version !== 'emotion-minute-supplement:v2.52' ||
+      manifest.tradeDate !== date ||
+      !['READY', 'DEGRADED'].includes(manifest.status) ||
+      !dates[day]
+    )
+      continue;
+    const artifactPath = path.resolve(root, manifest.artifact.path),
+      bytes = fs.readFileSync(artifactPath);
+    if (
+      bytes.length !== manifest.artifact.bytes ||
+      sha(bytes) !== manifest.artifact.sha256
+    )
+      throw Error(`Minute supplement integrity failed ${date}`);
+    const rows = zlib
+      .gunzipSync(bytes)
+      .toString()
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(JSON.parse);
+    if (rows.length !== manifest.artifact.rows)
+      throw Error(`Minute supplement row count mismatch ${date}`);
+    let oneMinute = 0,
+      fiveMinute = 0;
+    for (const row of rows) {
+      if (
+        row.tradeDate !== date ||
+        !/^\d{6}$/.test(row.code) ||
+        ![1, 5].includes(row.intervalMinutes) ||
+        !Array.isArray(row.rows) ||
+        !row.rows.length ||
+        !wanted.has(row.code)
+      )
+        throw Error(`Minute supplement contract failed ${date}:${row.code}`);
+      const points = row.rows.map((point) => ({
+        time: point.time,
+        price: point.close,
+      }));
+      const close = points.find((point) => point.time === '15:00');
+      if (!close || Math.abs(close.price - row.dailyClose) > 0.011)
+        throw Error(`Minute supplement close mismatch ${date}:${row.code}`);
+      const existing = dates[day].trends[row.code];
+      if (!existing || row.intervalMinutes < (existing.intervalMinutes ?? 1))
+        dates[day].trends[row.code] = {
+          code: row.code,
+          name: row.name,
+          preClose: row.preClose,
+          points,
+          intervalMinutes: row.intervalMinutes,
+          source:
+            row.intervalMinutes === 1
+              ? '腾讯精确日期1分钟行情'
+              : '东方财富精确日期5分钟行情',
+        };
+      if (row.intervalMinutes === 1) oneMinute += 1;
+      else fiveMinute += 1;
+    }
+    dates[day].source += ` · 历史分钟补充${rows.length}只（1分钟${oneMinute}，5分钟${fiveMinute}）`;
+    dates[day].artifacts = [
+      ...(dates[day].artifacts ?? []),
+      {
+        path: manifest.artifact.path,
+        sha256: manifest.artifact.sha256,
+        bytes: manifest.artifact.bytes,
+      },
+    ];
+    const item = audit.find((row) => row.date === day);
+    if (item) {
+      item.trends = Object.keys(dates[day].trends).length;
+      item.minuteState =
+        manifest.status === 'READY' &&
+        manifest.available === manifest.requested &&
+        fiveMinute === 0
+          ? 'READY'
+          : 'DEGRADED';
+      item.minuteCoverage = {
+        requested: manifest.requested,
+        available: manifest.available,
+        oneMinute,
+        fiveMinute,
+      };
+      item.minuteSource = 'EXACT_DATE_SUPPLEMENT_V252';
+    }
+  }
 audit.sort((a, b) => a.date.localeCompare(b.date));
 dailyCache?.close();
 const output = 'lib/emotion-tracking.generated.json';

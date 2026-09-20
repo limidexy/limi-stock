@@ -72,8 +72,34 @@ test('old-leader quote paths use exact-date close evidence and distinguish no-tr
     .find((stock) => stock.code === '605577')
     ?.path.filter((day) => day.quoteNote === '停牌')
     .map((day) => day.date);
-  assert.deepEqual(suspendedDates, ['2026-09-10', '2026-09-11']);
+  assert.deepEqual(suspendedDates, [
+    '2026-09-09',
+    '2026-09-10',
+    '2026-09-11',
+  ]);
   assert.equal(evidence['2026-09-09'].noTrade['605577'], '停牌');
+});
+test('exact-date 5m supplements are useful but never upgraded to 1m confirmation', () => {
+  const result = reboundObservation(
+    {
+      code: '600000',
+      name: '测试股',
+      preClose: 10,
+      intervalMinutes: 5,
+      source: 'exact-date fixture',
+      points: Array.from({ length: 48 }, (_, index) => ({
+        time:
+          index < 24
+            ? `${String(9 + Math.floor((35 + index * 5) / 60)).padStart(2, '0')}:${String((35 + index * 5) % 60).padStart(2, '0')}`
+            : `${String(13 + Math.floor((5 + (index - 24) * 5) / 60)).padStart(2, '0')}:${String((5 + (index - 24) * 5) % 60).padStart(2, '0')}`,
+        price: index < 8 ? 9.4 : index < 16 ? 10 : 10.1,
+      })),
+    },
+    '15:00',
+  );
+  assert.equal(result.status, 'DEGRADED');
+  assert.match(result.label, /5分钟/);
+  assert.match(result.reason, /不是日线倒推/);
 });
 test('old highest-board survives its break; no future winners join prior identities', () => {
   const result = buildEmotionTracking(history, evidence, '2026-09-04');
@@ -99,10 +125,10 @@ test('old highest-board survives its break; no future winners join prior identit
 });
 test('missing prior session never becomes yesterday by selecting the last known archive', () => {
   assert.equal(priorSession('2026-09-08', '2026-09-04'), false);
-  // 2026-09-08 is now repaired with its exact 2026-09-07 predecessor.
-  // Keep the fail-closed regression on 2026-09-10, whose 2026-09-09 CLOSE
-  // package is still deliberately absent.
-  const r = buildEmotionTracking(history, evidence, '2026-09-10');
+  // Exact-date recovery can fill real history over time. Keep this regression
+  // deterministic by removing the immediately preceding session from a copy.
+  const withoutPriorSession = history.filter((day) => day.date !== '2026-09-09');
+  const r = buildEmotionTracking(withoutPriorSession, evidence, '2026-09-10');
   assert.equal(r.failedRepair.rows.length, 0);
 });
 test('close quotes require exact date and closing cutoff; live quotes accept actual seconds but reject future/stale', () => {

@@ -161,6 +161,46 @@ export function reboundObservation(
       points: points.length,
       event: null,
     };
+  if ((trend?.intervalMinutes ?? 1) > 1) {
+    let low = points[0];
+    let recovered = null as (typeof points)[number] | null;
+    for (const point of points.slice(1)) {
+      if (point.pct < low.pct) {
+        low = point;
+        recovered = null;
+      } else if (
+        !recovered &&
+        low.pct <= -5 &&
+        point.pct - low.pct >= 4
+      )
+        recovered = point;
+    }
+    const last = points.at(-1)!;
+    return {
+      status: 'DEGRADED' as const,
+      label: recovered
+        ? '5分钟见深跌拉回 · 待1分钟确认'
+        : low.pct <= -5
+          ? '5分钟见深跌 · 未确认拉回'
+          : '5分钟回放 · 未见深跌拉回',
+      event: recovered
+        ? {
+            lowTime: low.time,
+            lowPct: low.pct,
+            time: recovered.time,
+            changePct: recovered.pct,
+            recoveryPp: recovered.pct - low.pct,
+          }
+        : null,
+      lowTime: low.time,
+      lowPct: low.pct,
+      lastTime: last.time,
+      lastPct: last.pct,
+      points: points.length,
+      reason:
+        '这是精确日期的5分钟行情，不是日线倒推；可看启动、下杀和修复方向，但不用于3分钟反核或核心带动先后确认',
+    };
+  }
   let low = points[0];
   let gapRecovery = false;
   let event: {
@@ -457,11 +497,22 @@ export function buildEmotionTracking(
     ...(adjacent ? candidates.failed : []),
     ...(adjacent ? stocksOf(prev).filter((x) => x.height >= 2) : []),
   ]);
-  const rebounds = watched.map((stock) => ({
-    code: stock.code,
-    name: stock.name,
-    ...reboundObservation(currentEvidence?.trends[stock.code], cutoff),
-  }));
+  const rebounds = watched.map((stock) =>
+    currentEvidence?.noTrade?.[stock.code]
+      ? {
+          code: stock.code,
+          name: stock.name,
+          status: 'NO_TRADE' as const,
+          label: currentEvidence.noTrade[stock.code],
+          points: 0,
+          event: null,
+        }
+      : {
+          code: stock.code,
+          name: stock.name,
+          ...reboundObservation(currentEvidence?.trends[stock.code], cutoff),
+        },
+  );
   const groups = adjacent
     ? [...new Set(stocksOf(prev).map((x) => x.industry))]
         .filter((x) => x && !['UNKNOWN', '未分类'].includes(x))
@@ -512,7 +563,7 @@ export function buildEmotionTracking(
       !missingSessions.length &&
       allOldQuotes.every((x) => x.quoteState !== 'MISSING') &&
       failed.every((x) => x.quoteState !== 'MISSING') &&
-      rebounds.every((x) => x.status === 'READY') &&
+      rebounds.every((x) => ['READY', 'NO_TRADE'].includes(x.status)) &&
       groups.every((x) => x.status === 'READY')
         ? ('READY' as const)
         : ('DEGRADED' as const),
@@ -547,7 +598,7 @@ export function buildEmotionTracking(
       rows: rebounds,
       ...coverage(
         watched.length,
-        rebounds.filter((x) => x.status === 'READY').length,
+        rebounds.filter((x) => ['READY', 'NO_TRADE'].includes(x.status)).length,
         '仅监测老高标、昨日连板及炸板股；分钟收盘跌至-5%以下、拉回≥4个百分点并连续3分钟守住≥3个百分点。不是资金主动性确认',
       ),
     },

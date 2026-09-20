@@ -378,7 +378,7 @@ export function EmotionTrackingBoard({
                       </div>
                     )}
                     <p className="mt-2 text-muted-foreground">
-                      {stock.status} · {stock.points}个有效分钟
+                      {stock.status} · {stock.points}个有效分钟点
                       {'reason' in stock && stock.reason
                         ? ` · ${stock.reason}`
                         : ''}
@@ -447,7 +447,7 @@ export function EmotionTrackingBoard({
               <p className="mt-2">{current.source}</p>
               <p>{current.boundary}</p>
               <p className="mt-2">
-                打开该板块时每30秒检查并保存当日分钟证据。关闭页面不会继续后台采集；历史缺口不会自动伪造补齐。涨跌幅以昨收为基准，不等于可实现交易收益。
+                盘中打开该板块时每30秒检查；收盘后由独立任务校验并保存目标股分钟证据，失败会保留原因并提醒。历史缺口只接入精确日期分钟源，不用日线倒推。涨跌幅以昨收为基准，不等于可实现交易收益。
               </p>
             </details>
           </>
