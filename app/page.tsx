@@ -2143,7 +2143,10 @@ export default function Home() {
 
           <TabsContent value="dynamic-mainline">
             {dynamicMainline.data?.dates?.length ? (
-              <DynamicMainlineBoard data={dynamicMainline.data} />
+              <DynamicMainlineBoard
+                data={dynamicMainline.data}
+                latestCloseDate={history.snapshots.at(-1)?.date}
+              />
             ) : (
               <EmptyState>
                 {dynamicMainline.loading

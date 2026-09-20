@@ -437,8 +437,10 @@ function DynamicDaySummary({ day }: { day: DynamicMainlineDay }) {
 
 export function DynamicMainlineBoard({
   data,
+  latestCloseDate,
 }: {
   data: DynamicMainlineDocument;
+  latestCloseDate?: string;
 }) {
   const [selectedDate, setSelectedDate] = useState(
     data.dates.at(-1)?.date ?? '',
@@ -446,6 +448,11 @@ export function DynamicMainlineBoard({
   const [filter, setFilter] = useState<Filter>('ALL');
   const day =
     data.dates.find((item) => item.date === selectedDate) ?? data.dates.at(-1);
+  const latestDynamicDate = data.dates.at(-1)?.date ?? '';
+  const closeDigits = String(latestCloseDate ?? '').replace(/\D/g, '');
+  const dynamicBehind = Boolean(
+    closeDigits && latestDynamicDate && closeDigits > latestDynamicDate,
+  );
   const nodes = useMemo(() => {
     const rows = day?.nodes ?? [];
     const filtered =
@@ -470,6 +477,13 @@ export function DynamicMainlineBoard({
 
   return (
     <div className="space-y-4">
+      {dynamicBehind ? (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.055] px-4 py-3 text-sm leading-6">
+          <strong>全市场分钟证据未跟上收盘日期：</strong>
+          收盘数据已到{dateLabel(closeDigits)}，本模块最后一个完整回放日是
+          {dateLabel(latestDynamicDate)}。缺失日期不会用精选股票池或收盘快照冒充全市场分钟行情。
+        </div>
+      ) : null}
       <DynamicDaySummary day={day} />
       <Card>
         <CardHeader className="space-y-3">
