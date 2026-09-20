@@ -399,6 +399,7 @@ export function buildEmotionTracking(
       brokenDate: broken,
       changePct: quote(date, stock.code)?.changePct ?? null,
       quoteState: quoteState(date, stock.code),
+      quoteNote: evidence[date]?.noTrade?.[stock.code] ?? null,
       path: days.map((day) => ({
         date: day.date,
         changePct: quote(day.date, stock.code)?.changePct ?? null,

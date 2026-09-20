@@ -25,7 +25,8 @@ const pct = (n: number | null | undefined) =>
 const pathQuote = (
   n: number | null | undefined,
   state?: 'READY' | 'NO_TRADE' | 'MISSING',
-) => (state === 'NO_TRADE' ? '无成交' : pct(n));
+  note?: string | null,
+) => (state === 'NO_TRADE' ? (note === '停牌' ? '停牌' : '无成交') : pct(n));
 const tone = (n: number | null | undefined) =>
   n == null
     ? 'text-muted-foreground'
@@ -241,7 +242,11 @@ export function EmotionTrackingBoard({
                       <span
                         className={`font-mono font-semibold ${tone(stock.changePct)}`}
                       >
-                        {pathQuote(stock.changePct, stock.quoteState)}
+                        {pathQuote(
+                          stock.changePct,
+                          stock.quoteState,
+                          stock.quoteNote,
+                        )}
                       </span>
                     </div>
                     <p className="my-2 text-sm text-muted-foreground">
@@ -261,7 +266,11 @@ export function EmotionTrackingBoard({
                           <p
                             className={`my-1 font-mono font-semibold ${tone(day.changePct)}`}
                           >
-                            {pathQuote(day.changePct, day.quoteState)}
+                            {pathQuote(
+                              day.changePct,
+                              day.quoteState,
+                              day.quoteNote,
+                            )}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {day.height
@@ -299,7 +308,11 @@ export function EmotionTrackingBoard({
                         <span
                           className={`font-mono font-semibold ${tone(stock.changePct)}`}
                         >
-                          {pathQuote(stock.changePct, stock.quoteState)}
+                          {pathQuote(
+                            stock.changePct,
+                            stock.quoteState,
+                            stock.label,
+                          )}
                         </span>
                       </div>
                       <p className="my-1 text-xs text-muted-foreground">

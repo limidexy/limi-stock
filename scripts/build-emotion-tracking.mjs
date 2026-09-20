@@ -3,6 +3,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 
 // Mechanical extraction only. No fetching, old-date substitutions, or prices inferred from pools.
 const root = path.resolve(process.cwd(), '..');
@@ -21,6 +22,29 @@ const wanted = new Set(
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 const read = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const dashed = (d) => `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`;
+const dailyCachePath = path.join(
+  root,
+  'data/historical_close_backfill_v251/daily.sqlite3',
+);
+const dailyCache = fs.existsSync(dailyCachePath)
+  ? new DatabaseSync(dailyCachePath, { readOnly: true })
+  : null;
+const suspensionQuery = dailyCache?.prepare(
+  'SELECT trade_status, close, preclose, volume FROM daily WHERE date = ? AND code = ?',
+);
+const providerCode = (code) =>
+  `${code.startsWith('6') ? 'sh' : code.startsWith('0') || code.startsWith('3') ? 'sz' : 'bj'}.${code}`;
+const confirmedSuspension = (date, code) => {
+  const row = suspensionQuery?.get(date, providerCode(code));
+  return Boolean(
+    row &&
+      Number(row.trade_status) === 0 &&
+      Number.isFinite(Number(row.close)) &&
+      Number.isFinite(Number(row.preclose)) &&
+      Math.abs(Number(row.close) - Number(row.preclose)) < 0.0001 &&
+      (row.volume == null || Number(row.volume) === 0),
+  );
+};
 const dates = {},
   audit = [];
 for (const date of fs
@@ -87,7 +111,9 @@ for (const date of fs
   const breadthCodes = new Set([...breadth.values()].map((row) => row.code));
   for (const code of knownByDate)
     if (wanted.has(code) && !breadthCodes.has(code))
-      noTrade[code] = '当日全市场收盘包无成交记录';
+      noTrade[code] = confirmedSuspension(date, code)
+        ? '停牌'
+        : '当日全市场收盘包无成交记录';
   const metadata = new Map(
     structure.selectedSecurityMetadata.map((x) => [x.symbol, x]),
   );
@@ -233,7 +259,9 @@ if (fs.existsSync(archivesRoot))
       );
       for (const code of knownByDate)
         if (wanted.has(code) && !present.has(code))
-          noTrade[code] = '当日已校验收盘归档无成交记录';
+          noTrade[code] = confirmedSuspension(date, code)
+            ? '停牌'
+            : '当日已校验收盘归档无成交记录';
       const metadata = new Map(
         (structure.selectedSecurityMetadata ?? []).map((x) => [x.symbol, x]),
       );
@@ -270,6 +298,7 @@ if (fs.existsSync(archivesRoot))
     }
   }
 audit.sort((a, b) => a.date.localeCompare(b.date));
+dailyCache?.close();
 const output = 'lib/emotion-tracking.generated.json';
 fs.writeFileSync(
   output,

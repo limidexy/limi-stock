@@ -67,7 +67,7 @@ test('old-leader quote paths use exact-date close evidence and distinguish no-tr
     .flatMap((stock) => stock.path.map((day) => ({ stock, day })))
     .find(({ stock, day }) => stock.code === '605577' && day.date === '2026-09-11');
   assert.equal(noTrade?.day.quoteState, 'NO_TRADE');
-  assert.match(noTrade?.day.quoteNote ?? '', /无成交记录/);
+  assert.equal(noTrade?.day.quoteNote, '停牌');
 });
 test('old highest-board survives its break; no future winners join prior identities', () => {
   const result = buildEmotionTracking(history, evidence, '2026-09-04');
