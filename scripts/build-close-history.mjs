@@ -100,9 +100,10 @@ function marketPackagePath(date, file) {
 
 function readIndexCloses(date) {
   const filePath = marketPackagePath(date, 'minute_ohlcv.jsonl.gz');
-  if (!filePath) return {};
+  const dailyPath = marketPackagePath(date, 'daily_ohlcv.jsonl.gz');
+  if (!filePath && !dailyPath) return {};
   const lines = zlib
-    .gunzipSync(fs.readFileSync(filePath))
+    .gunzipSync(fs.readFileSync(filePath ?? dailyPath))
     .toString('utf8')
     .trim()
     .split('\n');
@@ -110,12 +111,15 @@ function readIndexCloses(date) {
   const result = {};
   for (const line of lines) {
     const row = JSON.parse(line);
-    if (!wanted.has(row.symbol) || !Array.isArray(row.rows) || !row.rows.length)
-      continue;
-    const last =
-      [...row.rows].reverse().find((point) => point.time === '15:00') ??
-      row.rows.at(-1);
-    result[row.symbol] = Number.isFinite(last?.close) ? last.close : null;
+    if (!wanted.has(row.symbol)) continue;
+    if (Array.isArray(row.rows) && row.rows.length) {
+      const last =
+        [...row.rows].reverse().find((point) => point.time === '15:00') ??
+        row.rows.at(-1);
+      result[row.symbol] = Number.isFinite(last?.close) ? last.close : null;
+    } else {
+      result[row.symbol] = Number.isFinite(row.close) ? row.close : null;
+    }
   }
   return result;
 }

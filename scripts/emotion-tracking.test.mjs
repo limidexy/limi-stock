@@ -73,7 +73,10 @@ test('old highest-board survives its break; no future winners join prior identit
 });
 test('missing prior session never becomes yesterday by selecting the last known archive', () => {
   assert.equal(priorSession('2026-09-08', '2026-09-04'), false);
-  const r = buildEmotionTracking(history, evidence, '2026-09-08');
+  // 2026-09-08 is now repaired with its exact 2026-09-07 predecessor.
+  // Keep the fail-closed regression on 2026-09-10, whose 2026-09-09 CLOSE
+  // package is still deliberately absent.
+  const r = buildEmotionTracking(history, evidence, '2026-09-10');
   assert.equal(r.failedRepair.rows.length, 0);
 });
 test('close quotes require exact date and closing cutoff; live quotes accept actual seconds but reject future/stale', () => {
