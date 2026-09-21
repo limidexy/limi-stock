@@ -26,6 +26,7 @@ export type ReadingLadder = {
   sessionState?: string;
   retrievedAt?: string;
   counts?: { previousLimitUp: number };
+  sealedStocks?: EmotionStock[];
   competitors: ReadingCompetitor[];
 };
 
@@ -464,6 +465,12 @@ export function shortEmotionReading(
       }
     : null;
   const supplied = ladderReading(timedLadder, facts.date);
+  const stateStocks = suppliedLadder?.sealedStocks?.length
+    ? uniqueStocks(suppliedLadder.sealedStocks)
+    : stocks;
+  const stateSource = suppliedLadder?.sealedStocks?.length
+    ? '梯队接口同批涨停池'
+    : '情绪接口涨停池';
   const stateMismatches = structureReady
     ? supplied.rows.filter((row) => {
         if (
@@ -471,7 +478,7 @@ export function shortEmotionReading(
           row.toHeight !== row.fromHeight + 1
         )
           return true;
-        const sealed = stocks.find((stock) => stock.code === row.code);
+        const sealed = stateStocks.find((stock) => stock.code === row.code);
         return sealed
           ? row.state !== 'SEALED' || sealed.height !== row.fromHeight + 1
           : row.state === 'SEALED';
@@ -894,7 +901,7 @@ export function shortEmotionReading(
       value: highPoolRows.length
         ? `${highPoolAdvanced}/${highPoolRows.length}晋级 · ${highPoolFailed}只触板未封`
         : '—',
-      detail: `深水断板${highPoolDeep.length}只，极端负反馈${highPoolExtreme.length}只。`,
+      detail: `${stateSource}核对；深水断板${highPoolDeep.length}只，极端负反馈${highPoolExtreme.length}只。`,
       state:
         highPoolQuoted.length === highPoolRows.length ? 'READY' : 'DEGRADED',
     },
