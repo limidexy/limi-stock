@@ -10,6 +10,11 @@ export type ReadingCompetitor = {
   industry: string;
   quoteTime?: string;
   priceQuoteTime?: string;
+  amount?: number | null;
+  firstTouch?: string | null;
+  lastSeal?: string | null;
+  breakCount?: number;
+  sealFund?: number | null;
 };
 
 export type ReadingLadder = {
@@ -30,6 +35,8 @@ export const finite = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 export const percentage = (numerator: number, denominator: number) =>
   denominator > 0 ? (numerator / denominator) * 100 : null;
+const pctText = (value: number | null) =>
+  value === null ? '—' : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 export function median(values: number[]) {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -71,13 +78,17 @@ export function ladderReading(
   const cohort = (input: ReadingCompetitor[]) => {
     const advanced = input.filter((row) => row.state === 'SEALED').length;
     const failed = input.filter((row) => row.state === 'FAILED').length;
+    const attempts = advanced + failed;
     const changes = input.map((row) => row.changePct).filter(finite);
     return {
       count: input.length,
       advanced,
       failed,
+      attempts,
       dropped: input.length - advanced - failed,
       rate: ready ? percentage(advanced, input.length) : null,
+      attemptRate: ready ? percentage(attempts, input.length) : null,
+      sealRate: ready ? percentage(advanced, attempts) : null,
       median: ready ? median(changes) : null,
       priceReady: changes.length,
     };
@@ -144,6 +155,10 @@ export type EmotionStock = {
   height: number;
   changePct: number | null;
   industry: string;
+  firstTouch?: string | null;
+  lastSeal?: string | null;
+  breakCount?: number;
+  sealFund?: number | null;
 };
 
 export function emotionReading(facts: EmotionFacts) {
@@ -397,9 +412,10 @@ export function emotionBoardFamily(code: string) {
 
 export type EmotionTone = 'positive' | 'negative' | 'mixed' | 'unknown';
 
-// Independent short-term sentiment: high-board structure + a fixed previous
-// limit-up cohort + the failure side. No index or broad-market inputs in the label.
-// These are transparent observation rules, not a calibrated strategy/cycle forecast.
+// High-board and relay are deliberately judged separately. Relay uses the fixed
+// previous consecutive-board cohort; high-board uses the top relative tiers and
+// their failure posture. Index/breadth are only a relative-strength context, never
+// a substitute for the cohort. These are descriptive rules, not a prediction.
 export function shortEmotionReading(
   facts: EmotionFacts,
   previous?: EmotionFacts | null,
@@ -525,13 +541,6 @@ export function shortEmotionReading(
   const mainHighRows = highRows.filter(
     (stock) => emotionBoardFamily(stock.code) === '主板',
   );
-  const classificationRows = mainHighRows.length ? mainHighRows : highRows;
-  const negativeRatio =
-    classificationRows.length &&
-    classificationRows.every((row) => finite(row.changePct))
-      ? classificationRows.filter((row) => row.changePct! < 0).length /
-        classificationRows.length
-      : null;
   const mainMiddleHigh = mainHighRows.filter((stock) => stock.fromHeight >= 3);
   const highestPrior = Math.max(
     0,
@@ -539,6 +548,40 @@ export function shortEmotionReading(
   );
   const oldLeaders = highRows.filter(
     (stock) => stock.fromHeight === highestPrior,
+  );
+  const highPoolFloor = highestPrior ? Math.max(2, highestPrior - 1) : 0;
+  const highPoolRows = highRows.filter(
+    (stock) => stock.fromHeight >= highPoolFloor,
+  );
+  const middleRows = highRows.filter(
+    (stock) => stock.fromHeight < highPoolFloor,
+  );
+  const highPoolAdvanced = highPoolRows.filter(
+    (stock) => stock.state === 'SEALED',
+  ).length;
+  const highPoolFailed = highPoolRows.filter(
+    (stock) => stock.state === 'FAILED',
+  ).length;
+  const highPoolQuoted = highPoolRows.filter((stock) =>
+    finite(stock.changePct),
+  );
+  const highPoolNegative = highPoolQuoted.filter(
+    (stock) => stock.changePct! < 0,
+  );
+  const highPoolDeep = highPoolQuoted.filter(
+    (stock) => stock.state !== 'SEALED' && stock.changePct! <= -5,
+  );
+  const highPoolExtreme = highPoolQuoted.filter(
+    (stock) => stock.state !== 'SEALED' && stock.changePct! <= -9,
+  );
+  const middleAdvanced = middleRows.filter(
+    (stock) => stock.state === 'SEALED',
+  ).length;
+  const middleDeep = middleRows.filter(
+    (stock) =>
+      stock.state !== 'SEALED' &&
+      finite(stock.changePct) &&
+      stock.changePct <= -5,
   );
   const weakest = [...negative].sort(
     (a, b) => b.fromHeight - a.fromHeight || a.changePct! - b.changePct!,
@@ -548,72 +591,201 @@ export function shortEmotionReading(
     !facts.stale &&
     observed.poolsReady &&
     structureReady;
-  let label = '情绪证据待补';
-  let tone: EmotionTone = 'unknown';
-  if (ready) {
-    tone = 'mixed';
-    const classificationRate = main.started
-      ? percentage(main.advanced, main.started)
-      : rate;
-    const weakRelay = classificationRate !== null && classificationRate < 25;
-    const strongRelay = classificationRate !== null && classificationRate >= 50;
-    const pressure =
-      facts.limitDown >= 5 && facts.limitDown >= facts.limitUp * 0.15;
-    if (facts.limitUp + facts.failed === 0) {
-      label = '暂无触板样本 · 情绪待观察';
-      tone = 'unknown';
-    } else if (classificationRows.length > 0 && classificationRows.length < 3) {
-      label = '接力样本较少 · 暂看个股';
-    } else if (
+  const consecutiveQuotesComplete =
+    cohort.ready &&
+    cohort.consecutive.count > 0 &&
+    cohort.consecutive.priceReady === cohort.consecutive.count;
+  const nonSealedRelay = highRows.filter((row) => row.state !== 'SEALED');
+  const relayDeep = nonSealedRelay.filter(
+    (row) => finite(row.changePct) && row.changePct <= -5,
+  );
+  const relayExtreme = nonSealedRelay.filter(
+    (row) => finite(row.changePct) && row.changePct <= -9,
+  );
+  const relayNegativeRatio = consecutiveQuotesComplete
+    ? percentage(
+        nonSealedRelay.filter((row) => row.changePct! < 0).length,
+        highRows.length,
+      )
+    : null;
+  const weakPressure = !consecutiveQuotesComplete
+    ? '待补证据'
+    : relayExtreme.length > 0 || (relayNegativeRatio ?? 0) >= 60
+      ? '极高'
+      : relayDeep.length >= 2 || (relayNegativeRatio ?? 0) >= 40
+        ? '高'
+        : relayDeep.length > 0 || (relayNegativeRatio ?? 0) >= 25
+          ? '中'
+          : '低';
+
+  const industryGroups = [...new Set(highRows.map((row) => row.industry))]
+    .filter((industry) => industry && industry !== '未知')
+    .map((industry) => {
+      const members = highRows.filter((row) => row.industry === industry);
+      const advanced = members.filter((row) => row.state === 'SEALED').length;
+      return { industry, count: members.length, advanced };
+    })
+    .filter((group) => group.count >= 2)
+    .sort((a, b) => b.advanced - a.advanced || b.count - a.count);
+  const industryRelay = industryGroups.find(
+    (group) => group.advanced >= 2 || group.advanced / group.count >= 0.5,
+  );
+
+  const sealedDetails = highRows
+    .filter((row) => row.state === 'SEALED')
+    .map((row) => ({
+      row,
+      stock: stocks.find((stock) => stock.code === row.code),
+    }));
+  const sealProcessReady =
+    sealedDetails.length > 0 &&
+    sealedDetails.every(
+      ({ stock }) =>
+        stock &&
+        stock.firstTouch !== undefined &&
+        stock.breakCount !== undefined,
+    );
+  const oneWordCount = sealProcessReady
+    ? sealedDetails.filter(
+        ({ stock }) =>
+          stock?.firstTouch === '09:25' && (stock.breakCount ?? 0) === 0,
+      ).length
+    : 0;
+  const turnoverCount = sealProcessReady
+    ? sealedDetails.length - oneWordCount
+    : 0;
+  const participation = !sealedDetails.length
+    ? '暂无成功晋级样本'
+    : !sealProcessReady
+      ? '封板过程待补，不能判断一字或换手'
+      : oneWordCount === sealedDetails.length
+        ? `一致型接力为主（${oneWordCount}/${sealedDetails.length}），强度高但参与性低`
+        : turnoverCount >= oneWordCount
+          ? `换手型接力为主（${turnoverCount}/${sealedDetails.length}），承接经过盘中交易检验`
+          : `一致与换手并存（一致${oneWordCount}、换手${turnoverCount}）`;
+
+  const mainFamily = mainHighRows.length
+    ? main
+    : (families.find((f) => f.started > 0) ?? main);
+  const marketSupportive =
+    observed.indexMood === '三大指数上涨' || observed.broad === '多数上涨';
+  const marketHostile =
+    observed.indexMood === '三大指数下跌' || observed.broad === '多数下跌';
+  const activeContext =
+    !observed.indexReady || !observed.breadthReady
+      ? '指数或赚钱面不完整，主动/被动强弱不定性'
+      : highPoolDeep.length > 0 && marketSupportive
+        ? '环境不差而高标深水，偏主动走弱'
+        : highPoolAdvanced > 0 && marketHostile
+          ? '环境偏弱仍有高标晋级，显示相对抗跌'
+          : '高标表现与市场环境大体同向';
+
+  let highLabel = '高标数据不足';
+  let highTone: EmotionTone = 'unknown';
+  if (ready && highPoolRows.length > 0) {
+    highTone = 'mixed';
+    const highRate = highPoolAdvanced / highPoolRows.length;
+    const lowSupport = (cohort.first.rate ?? 0) >= 25;
+    const relaySupport = (rate ?? 0) >= 50;
+    const severeSpread = highPoolExtreme.length > 0 || highPoolDeep.length >= 2;
+    const mainBoardBreak =
       mainMiddleHigh.length >= 3 &&
       mainMiddleHigh.every((stock) => stock.state !== 'SEALED') &&
-      pressure
-    ) {
-      label = '主板高位断层 · 弱侧承压';
-      tone = 'negative';
-    } else if (weakRelay && negativeRatio !== null && negativeRatio >= 0.5) {
-      label = '高标分化 · 接力偏弱';
-      tone = 'negative';
+      facts.limitDown >= 5 &&
+      facts.limitDown >= facts.limitUp * 0.15;
+    if (mainBoardBreak) {
+      highLabel = '主板高位断层';
+      highTone = 'negative';
+    } else if (highPoolAdvanced === 0 && severeSpread) {
+      highLabel = marketSupportive ? '高标主动走弱' : '高标负反馈扩大';
+      highTone = 'negative';
     } else if (
-      classificationRate !== null &&
-      classificationRate < 40 &&
-      pressure
+      highPoolAdvanced === 0 &&
+      highPoolNegative.length === highPoolRows.length
     ) {
-      label = '接力分歧 · 弱侧承压';
-      tone = 'negative';
+      highLabel = '高标退潮';
+      highTone = 'negative';
     } else if (
-      strongRelay &&
-      negativeRatio !== null &&
-      negativeRatio <= 0.25 &&
-      observed.sealRate !== null &&
-      observed.sealRate >= 75 &&
-      !pressure &&
-      !main.gaps.length
+      highRate >= 0.5 &&
+      relaySupport &&
+      lowSupport &&
+      !mainFamily.gaps.length
     ) {
-      label = '接力偏强 · 强侧占优';
-      tone = 'positive';
-    } else if (
-      main.highest >= 4 &&
-      main.gaps.length &&
-      observed.sealRate !== null &&
-      observed.sealRate < 55
-    ) {
-      label = '高标孤立 · 封板分歧';
-      tone = 'negative';
-    } else if (pressure) {
-      label = '强弱分化 · 亏损效应仍在';
-    } else if (
-      strongRelay &&
-      observed.sealRate !== null &&
-      observed.sealRate >= 75
-    ) {
-      label = '接力有承接 · 封板较强';
-    } else if (observed.sealRate !== null && observed.sealRate >= 75) {
-      label = '封板较强 · 接力待核';
+      highLabel = severeSpread ? '高标有承接' : '高标一致强';
+      highTone = severeSpread ? 'mixed' : 'positive';
+    } else if (highRate >= 0.5 && (!relaySupport || !lowSupport)) {
+      highLabel = '高标抱团';
+      highTone = 'mixed';
+    } else if (highPoolAdvanced > 0) {
+      highLabel = highPoolRows.length >= 3 ? '高标淘汰赛' : '高标分歧';
     } else {
-      label = '情绪分歧 · 承接待观察';
+      highLabel = '高标分歧';
     }
   }
+  const highSummary =
+    highLabel === '高标一致强'
+      ? '最高两档多数完成晋级，中低位仍有补充，当前更接近高标生态共振。'
+      : highLabel === '高标抱团'
+        ? '少数高标仍强，但中低位承接或低位补充不足，不能把核心存活当成整体情绪强。'
+        : highLabel === '主板高位断层'
+          ? '主板昨日3板及以上集体未晋级，同时跌停压力不低；独立20cm高标不能掩盖主板传棒断裂。'
+          : highLabel === '高标主动走弱'
+            ? '市场环境并不差，但高标出现深水负反馈，说明核心筹码自身承接在减弱。'
+            : highLabel === '高标负反馈扩大' || highLabel === '高标退潮'
+              ? '最高两档晋级受阻且深水负反馈增加，风险正从失败个股向高标池扩散。'
+              : highLabel === '高标数据不足'
+                ? '缺少完整高标池或准确反馈，不用最高板数字代替高标生态。'
+                : '高标池同时出现晋级与淘汰，当前重点看负反馈是否继续向中位扩散。';
+
+  let relayLabel = '接力数据不足';
+  let relayTone: EmotionTone = 'unknown';
+  const relaySampleReady = ready && cohort.ready && highRows.length >= 3;
+  if (relaySampleReady) {
+    relayTone = 'mixed';
+    const relayRate = cohort.consecutive.rate ?? 0;
+    const relaySealRate = cohort.consecutive.sealRate ?? 0;
+    const extremeRisk = relayExtreme.length > 0 || highLabel === '高标退潮';
+    const middleBroken =
+      middleRows.length >= 2 && middleAdvanced === 0 && middleDeep.length > 0;
+    if (
+      relayRate < 25 &&
+      extremeRisk &&
+      (weakPressure === '高' || weakPressure === '极高')
+    ) {
+      relayLabel = '接力退潮';
+      relayTone = 'negative';
+    } else if (relayRate >= 50 && relaySealRate >= 75) {
+      const fullStrength =
+        weakPressure === '低' &&
+        !extremeRisk &&
+        !middleBroken &&
+        !mainFamily.gaps.length &&
+        Boolean(industryRelay);
+      relayLabel = fullStrength ? '接力偏强' : '接力有承接';
+      relayTone = fullStrength ? 'positive' : 'mixed';
+    } else if (relayRate >= 50 && relaySealRate < 75) {
+      relayLabel = '接力分歧';
+    } else if (relayRate < 50 && relaySealRate >= 75) {
+      relayLabel = '高位接力未确认';
+    } else {
+      relayLabel = '接力偏弱';
+      relayTone = 'negative';
+    }
+  }
+  const relaySummary =
+    relayLabel === '接力偏强'
+      ? '候选愿意进攻、触板后大多封住，弱侧代价低，并出现同一行业的层级传递线索。'
+      : relayLabel === '接力有承接'
+        ? '晋级和封板达到基础承接线，但高标、弱侧、断层或主线关系仍有瑕疵。'
+        : relayLabel === '接力分歧'
+          ? '敢冲的候选不算少，但触板后站不稳，接力意愿与稳定性发生分离。'
+          : relayLabel === '高位接力未确认'
+            ? '少数冲板股封得住，但真正发起晋级的候选不足，不能因封板率漂亮就判强。'
+            : relayLabel === '接力退潮'
+              ? '晋级意愿低、失败代价扩大，高标或中位负反馈已形成扩散。'
+              : relayLabel === '接力数据不足'
+                ? '候选少于3只或相邻交易日样本不完整，只展示个股事实，不做强弱定性。'
+                : '晋级不足且封板稳定性不高，接力在变差，但是否退潮还要看负反馈扩散。';
   const compare =
     previous &&
     adjacentCloses(facts, previous) &&
@@ -649,11 +821,25 @@ export function shortEmotionReading(
       transition = '接力收缩、弱侧扩大 · 退潮压力';
     else if (strongImproved && compare.down <= 0)
       transition =
-        quoteComplete && negativeRatio !== null && negativeRatio <= 0.25
+        consecutiveQuotesComplete &&
+        relayNegativeRatio !== null &&
+        relayNegativeRatio <= 25
           ? '强端扩散、弱侧未扩大 · 修复迹象'
           : '封板端改善 · 高位修复待核';
     else transition = '强弱信号交错 · 继续看承接';
   }
+  const relayDirection = !compare
+    ? '单时点'
+    : (compare.seal ?? 0) >= 5 && compare.up > 0 && compare.consecutive >= 0
+      ? relayTone === 'negative'
+        ? '修复'
+        : '强化'
+      : ((compare.seal ?? 0) <= -5 && compare.up < 0) ||
+          (compare.height < 0 && compare.consecutive < 0)
+        ? relayTone === 'negative'
+          ? '恶化'
+          : '降温'
+        : '稳定';
   const missing = [
     !structureReady && '当日完整涨停梯队未齐',
     !cohort.ready && '缺少相邻交易日完整涨停名单，不能确认接力',
@@ -661,9 +847,120 @@ export function shortEmotionReading(
       !quoteComplete &&
       `昨日涨停股当日价格覆盖${cohort.all.priceReady}/${cohort.all.count}，不计算不完整样本收益中位数`,
     facts.stale && '最近成功结果，非当前实时，不合成当前情绪',
+    !consecutiveQuotesComplete &&
+      '昨日连板股当日价格未齐，弱侧压力和接力溢价不定性',
+    !sealProcessReady &&
+      highPoolAdvanced > 0 &&
+      '成功晋级股封板过程不全，不能区分一致型与换手型接力',
+    '缺少概念级主线身份、预期差和核心带动关系；行业聚类仅作接力线索',
+    facts.cutoff === '15:00' && '收盘快照不能还原竞价、盘中承接或反核路径',
   ].filter(Boolean) as string[];
+  const highEvidence = [
+    {
+      label: '动态高标池',
+      value: highPoolRows.length
+        ? `昨${highPoolFloor}板及以上 ${highPoolRows.length}只`
+        : '待补',
+      detail: highPoolRows.length
+        ? highPoolRows
+            .map((row) => `${row.name}（昨${row.fromHeight}板）`)
+            .join('、')
+        : '没有用固定“4板以上”机械定义高标。',
+      state: highPoolRows.length ? 'READY' : 'MISSING',
+    },
+    {
+      label: '集体反馈',
+      value: highPoolRows.length
+        ? `${highPoolAdvanced}/${highPoolRows.length}晋级 · ${highPoolFailed}只触板未封`
+        : '—',
+      detail: `深水断板${highPoolDeep.length}只，极端负反馈${highPoolExtreme.length}只。`,
+      state:
+        highPoolQuoted.length === highPoolRows.length ? 'READY' : 'DEGRADED',
+    },
+    {
+      label: '中位吹哨',
+      value: middleRows.length
+        ? `${middleAdvanced}/${middleRows.length}晋级 · 深水${middleDeep.length}只`
+        : '暂无独立中位样本',
+      detail: '中位先恶化时，即使最高板仍封住，也不能判断生态健康。',
+      state: cohort.ready ? 'READY' : 'MISSING',
+    },
+    {
+      label: '低位补充',
+      value: cohort.ready
+        ? `${cohort.first.advanced}/${cohort.first.count}首板晋级`
+        : '—',
+      detail: '用1进2观察后续接棒者，不用首板总数替代。',
+      state: cohort.ready ? 'READY' : 'MISSING',
+    },
+    {
+      label: '主动 / 被动',
+      value: activeContext,
+      detail: '只做环境对照；没有分钟路径时不声称弱转强、地天或主动回封。',
+      state:
+        observed.indexReady && observed.breadthReady ? 'READY' : 'DEGRADED',
+    },
+  ];
+  const relayEvidence = [
+    {
+      label: '候选与尝试',
+      value: cohort.ready
+        ? `${cohort.consecutive.attempts}/${cohort.consecutive.count}触及晋级板 · ${cohort.consecutive.attemptRate?.toFixed(1) ?? '—'}%`
+        : '—',
+      detail: '尝试率回答“敢不敢冲”，分母固定为昨日2板及以上候选。',
+      state: cohort.ready ? 'READY' : 'MISSING',
+    },
+    {
+      label: '晋级与封住',
+      value: cohort.ready
+        ? `${cohort.consecutive.advanced}/${cohort.consecutive.count}晋级 · 接力封板率${cohort.consecutive.sealRate?.toFixed(1) ?? '—'}%`
+        : '—',
+      detail: '晋级率看最终交棒；接力封板率只在触及晋级板的候选中计算。',
+      state: cohort.ready ? 'READY' : 'MISSING',
+    },
+    {
+      label: '昨日接力反馈',
+      value: consecutiveQuotesComplete
+        ? `收盘涨跌幅中位数 ${pctText(cohort.consecutive.median)}`
+        : `${cohort.consecutive.priceReady}/${cohort.consecutive.count}只价格可用`,
+      detail: '当前只有相对昨收的收盘反馈，不冒充开盘溢价或真实买入收益。',
+      state: consecutiveQuotesComplete ? 'READY' : 'DEGRADED',
+    },
+    {
+      label: '失败成本',
+      value: `${weakPressure} · 深水${relayDeep.length}只 · 极端${relayExtreme.length}只`,
+      detail: '相同晋级率下，失败者是否深水、跌停，决定下一棒还敢不敢接。',
+      state: consecutiveQuotesComplete ? 'READY' : 'DEGRADED',
+    },
+    {
+      label: '梯队与主线',
+      value: industryRelay
+        ? `${industryRelay.industry} ${industryRelay.advanced}/${industryRelay.count}晋级`
+        : '未发现可靠的同一行业接力簇',
+      detail: mainFamily.gaps.length
+        ? `${mainFamily.name}${mainFamily.gaps.join('、')}板空层；行业不等于概念主线。`
+        : `${mainFamily.name}当前无板数空层；概念主线关系仍待数据。`,
+      state: industryRelay ? 'DEGRADED' : 'MISSING',
+    },
+    {
+      label: '接力类型 / 参与性',
+      value: participation,
+      detail: '一字强度与换手承接分开；强不等于好参与。',
+      state: sealProcessReady ? 'READY' : 'DEGRADED',
+    },
+  ];
+  const tone: EmotionTone =
+    highTone === 'unknown' || relayTone === 'unknown'
+      ? 'unknown'
+      : highTone === relayTone
+        ? highTone
+        : (highTone === 'negative' && relayTone !== 'positive') ||
+            (relayTone === 'negative' && highTone !== 'positive')
+          ? 'negative'
+          : 'mixed';
+  const label = `${highLabel} · ${relayLabel}${relayDirection === '单时点' ? '' : `｜${relayDirection}`}`;
   return {
-    version: 'short-emotion-v1',
+    version: 'short-emotion-v2',
     label,
     tone,
     status: !ready
@@ -690,8 +987,38 @@ export function shortEmotionReading(
     families,
     compare,
     transition,
+    highBoard: {
+      label: highLabel,
+      tone: highTone,
+      summary: highSummary,
+      poolFloor: highPoolFloor,
+      rows: highPoolRows,
+      advanced: highPoolAdvanced,
+      failed: highPoolFailed,
+      deep: highPoolDeep,
+      extreme: highPoolExtreme,
+      activeContext,
+      evidence: highEvidence,
+    },
+    relay: {
+      label: relayLabel,
+      tone: relayTone,
+      direction: relayDirection,
+      summary: relaySummary,
+      candidateCount: cohort.consecutive.count,
+      attemptRate: cohort.consecutive.attemptRate,
+      promotionRate: cohort.consecutive.rate,
+      sealRate: cohort.consecutive.sealRate,
+      premiumMedian: consecutiveQuotesComplete
+        ? cohort.consecutive.median
+        : null,
+      weakPressure,
+      participation,
+      industryRelay,
+      evidence: relayEvidence,
+    },
     missing,
     caution:
-      '局部高标封住≠全面转强；断板≠亏损。本面板归纳情绪结构，逐日反馈与分钟过程见独立“情绪跟踪”；路径缺口不推断反核或带动因果。',
+      '高标与接力分别判断：最高板存活不等于接力强，普通晋级较多也不能抵消核心高标的极端负反馈。局部封住≠全面转强；断板≠亏损。缺少分钟路径时不推断反核、弱转强或带动因果。',
   };
 }

@@ -70,7 +70,13 @@ function exactCloseLadder() {
 test('all real close prices make the current-day sentiment ready without claiming strategy accuracy', () => {
   const result = shortEmotionReading(sep4(), sep3(), exactCloseLadder());
   assert.equal(result.status, 'READY');
-  assert.equal(result.label, '高标分化 · 接力偏弱');
+  assert.equal(result.version, 'short-emotion-v2');
+  assert.equal(result.highBoard.label, '高标淘汰赛');
+  assert.equal(result.relay.label, '接力退潮');
+  assert.equal(result.relay.candidateCount, 9);
+  assert.equal(result.cohort.consecutive.attempts, 3);
+  assert.ok(Math.abs(result.relay.attemptRate - 33.33333333333333) < 1e-8);
+  assert.ok(Math.abs(result.relay.sealRate - 33.33333333333333) < 1e-8);
   assert.equal(result.cohort.all.priceReady, 44);
   assert.equal(result.negative.length, 6);
   assert.equal(result.positive.length, 3);
@@ -120,8 +126,11 @@ test('empty pools do not create an emotional divergence or a false zero-percent 
     ladders: [],
   });
   assert.equal(result.tone, 'unknown');
-  assert.match(result.label, /暂无触板样本/);
+  assert.equal(result.highBoard.label, '高标数据不足');
+  assert.equal(result.relay.label, '接力数据不足');
   assert.equal(result.cohort.consecutive.rate, null);
+  assert.equal(result.cohort.consecutive.attemptRate, null);
+  assert.equal(result.cohort.consecutive.sealRate, null);
 });
 
 test('the same sealing percentage does not override high-board contraction and failure pressure', () => {
