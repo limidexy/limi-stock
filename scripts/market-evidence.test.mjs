@@ -99,6 +99,18 @@ test('supplied prior date, identity, state and capture time must match the exact
   }
 });
 
+test('one first-board pool race degrades low support without erasing verified high-board relay', () => {
+  const ladder = exactCloseLadder();
+  const firstBoard = ladder.competitors.find((row) => row.fromHeight === 1);
+  assert.ok(firstBoard);
+  firstBoard.state = firstBoard.state === 'SEALED' ? 'DROPPED' : 'SEALED';
+  const result = shortEmotionReading(sep4(), sep3(), ladder);
+  assert.equal(result.status, 'DEGRADED');
+  assert.notEqual(result.highBoard.label, '高标数据不足');
+  assert.notEqual(result.relay.label, '接力数据不足');
+  assert.match(result.missing.join('；'), /首板池与梯队接口存在1只瞬时差异/);
+});
+
 test('individual stale, absent or future price times cannot enter a complete return distribution', () => {
   for (const quoteTime of [
     undefined,

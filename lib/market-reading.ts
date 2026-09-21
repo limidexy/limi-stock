@@ -464,19 +464,30 @@ export function shortEmotionReading(
       }
     : null;
   const supplied = ladderReading(timedLadder, facts.date);
+  const stateMismatches = structureReady
+    ? supplied.rows.filter((row) => {
+        if (
+          !['SEALED', 'FAILED', 'DROPPED'].includes(row.state) ||
+          row.toHeight !== row.fromHeight + 1
+        )
+          return true;
+        const sealed = stocks.find((stock) => stock.code === row.code);
+        return sealed
+          ? row.state !== 'SEALED' || sealed.height !== row.fromHeight + 1
+          : row.state === 'SEALED';
+      })
+    : supplied.rows;
+  const firstBoardCount = supplied.rows.filter(
+    (row) => row.fromHeight === 1,
+  ).length;
+  const toleratedFirstBoardDrift = Math.max(
+    1,
+    Math.floor(firstBoardCount * 0.02),
+  );
   const stateAligned =
     structureReady &&
-    supplied.rows.every((row) => {
-      if (
-        !['SEALED', 'FAILED', 'DROPPED'].includes(row.state) ||
-        row.toHeight !== row.fromHeight + 1
-      )
-        return false;
-      const sealed = stocks.find((stock) => stock.code === row.code);
-      return sealed
-        ? row.state === 'SEALED' && sealed.height === row.fromHeight + 1
-        : row.state !== 'SEALED';
-    });
+    !stateMismatches.some((row) => row.fromHeight >= 2) &&
+    stateMismatches.length <= toleratedFirstBoardDrift;
   const priorStocks = previous?.ladders?.flatMap((level) => level.stocks) ?? [];
   const priorAligned =
     previous &&
@@ -850,6 +861,9 @@ export function shortEmotionReading(
   const missing = [
     !structureReady && '当日完整涨停梯队未齐',
     !cohort.ready && '缺少相邻交易日完整涨停名单，不能确认接力',
+    useSupplied &&
+      stateMismatches.length > 0 &&
+      `当日首板池与梯队接口存在${stateMismatches.length}只瞬时差异；高标与昨日连板身份已核对，低位补充按降级展示`,
     cohort.ready &&
       !quoteComplete &&
       `昨日涨停股当日价格覆盖${cohort.all.priceReady}/${cohort.all.count}，不计算不完整样本收益中位数`,
@@ -974,7 +988,7 @@ export function shortEmotionReading(
       ? facts.status === 'MISSING'
         ? 'MISSING'
         : 'DEGRADED'
-      : quoteComplete
+      : quoteComplete && stateMismatches.length === 0
         ? 'READY'
         : 'DEGRADED',
     structureReady,
