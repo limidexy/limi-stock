@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { timelineHeadline } from '@/lib/timeline-evidence';
-import { LadderOverview } from '@/components/market-reading-board';
+import {
+  LadderOverview,
+  toEmotionFacts,
+} from '@/components/market-reading-board';
 import { EmotionTrackingBoard } from '@/components/emotion-tracking-board';
+import { UnifiedMarketBoard } from '@/components/unified-market-board';
+import { unifiedMarketReading } from '@/lib/unified-market';
 import {
   windowedRadarEvents,
   type RadarEvent,
@@ -15,6 +20,7 @@ import {
   ArrowDownRight,
   ArrowLeftRight,
   ArrowUpRight,
+  BrainCircuit,
   CalendarDays,
   Clock3,
   RefreshCw,
@@ -508,6 +514,7 @@ function MarketCommandCenter({
         </div>
         <div className="flex flex-wrap gap-2">
           {[
+            ['overview', '盘面全景'],
             ['radar', '板块异动'],
             ['emotion', '情绪周期'],
             ['promotion', '连板天梯'],
@@ -1782,7 +1789,7 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState('emotion-tracking');
+  const [activeTab, setActiveTab] = useState('overview');
   const radar = usePolling<RadarData>('/api/radar', 15_000);
   const flow = usePolling<FlowData>('/api/flow', 60_000);
   const ladder = usePolling<LadderData>('/api/ladder', 30_000);
@@ -1800,6 +1807,25 @@ export default function Home() {
   );
   const history = closeHistory.data ?? CLOSE_HISTORY;
   const radarEvents = useWindowedRadar(radar.data, Boolean(radar.error));
+  const emotionDate = intradayEmotion.data?.tradeDate.replaceAll('-', '') ?? '';
+  const currentEmotionClose = history.snapshots.find(
+    (snapshot) => snapshot.date.replaceAll('-', '') === emotionDate,
+  );
+  const previousEmotionClose = history.snapshots
+    .filter((snapshot) => snapshot.date.replaceAll('-', '') < emotionDate)
+    .at(-1);
+  const unifiedReading = intradayEmotion.data
+    ? unifiedMarketReading({
+        facts: toEmotionFacts(intradayEmotion.data),
+        close: currentEmotionClose,
+        previousClose: previousEmotionClose,
+        ladder: ladder.data,
+        radar: radar.data,
+        radarEvents,
+        flow: flow.data,
+        speed: speed.data,
+      })
+    : null;
   const sharedRadarSectors = useMemo(() => {
     const sectors = new Map<string, string[]>();
     for (const event of radarEvents)
@@ -2093,6 +2119,10 @@ export default function Home() {
           className="gap-4"
         >
           <TabsList variant="line" className="max-w-full overflow-x-auto">
+            <TabsTrigger value="overview">
+              <BrainCircuit />
+              盘面全景
+            </TabsTrigger>
             <TabsTrigger value="emotion">
               <CalendarDays />
               情绪周期
@@ -2122,6 +2152,18 @@ export default function Home() {
               涨速榜
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="overview" className="space-y-4">
+            {unifiedReading ? (
+              <UnifiedMarketBoard reading={unifiedReading} />
+            ) : (
+              <EmptyState>
+                {intradayEmotion.loading
+                  ? '正在建立盘面十二模块…'
+                  : intradayEmotion.error || '盘面证据暂不可用'}
+              </EmptyState>
+            )}
+          </TabsContent>
 
           <TabsContent value="emotion" className="space-y-4">
             <IntradayEmotionBoard
