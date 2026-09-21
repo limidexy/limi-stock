@@ -549,9 +549,14 @@ export function shortEmotionReading(
   const oldLeaders = highRows.filter(
     (stock) => stock.fromHeight === highestPrior,
   );
-  const highPoolFloor = highestPrior ? Math.max(2, highestPrior - 1) : 0;
-  const highPoolRows = highRows.filter(
-    (stock) => stock.fromHeight >= highPoolFloor,
+  const highPoolHeights = [
+    ...new Set(highRows.map((stock) => stock.fromHeight)),
+  ]
+    .sort((a, b) => b - a)
+    .slice(0, 2);
+  const highPoolFloor = highPoolHeights.at(-1) ?? 0;
+  const highPoolRows = highRows.filter((stock) =>
+    highPoolHeights.includes(stock.fromHeight),
   );
   const middleRows = highRows.filter(
     (stock) => stock.fromHeight < highPoolFloor,
@@ -701,7 +706,9 @@ export function shortEmotionReading(
       highTone = 'negative';
     } else if (
       highPoolAdvanced === 0 &&
-      highPoolNegative.length === highPoolRows.length
+      highPoolRows.length >= 2 &&
+      highPoolNegative.length === highPoolRows.length &&
+      (highPoolDeep.length > 0 || (rate ?? 0) < 25)
     ) {
       highLabel = '高标退潮';
       highTone = 'negative';

@@ -155,6 +155,20 @@ test('an independent 20cm five-board cannot mask the main-board relay break', ()
   assert.equal(result.families[1].leaders[0].name, '蓝盾光电');
 });
 
+test('the dynamic high-board pool uses the two actual top tiers instead of an empty arithmetic tier', () => {
+  const result = shortEmotionReading(
+    archivedFacts('2026-09-18'),
+    archivedFacts('2026-09-17'),
+  );
+  assert.equal(result.highBoard.poolFloor, 3);
+  assert.deepEqual(
+    [...new Set(result.highBoard.rows.map((row) => row.fromHeight))],
+    [5, 3],
+  );
+  assert.equal(result.highBoard.label, '高标抱团');
+  assert.notEqual(result.highBoard.label, '高标退潮');
+});
+
 test('independent sentiment does not change just because indices or market breadth change', () => {
   const base = sep4();
   const changed = {
