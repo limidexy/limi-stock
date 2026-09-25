@@ -420,9 +420,11 @@ export function unifiedMarketReading(
             }参与驱动`,
             risingFlow
               ? `板块主力净额${money(risingFlow.latestMainNetInflow)}${risingFlow.persistenceLabel ? `，${risingFlow.persistenceLabel}` : ''}`
-              : flow
-                ? `资金数据日期${flow.tradeDate}未与${facts.date}对齐，已停用`
-                : '未取得同板块资金流证据',
+              : alignedFlow
+                ? `当日资金表未找到“${topRising.name}”同名板块，概念与行业口径不同，未强行映射`
+                : flow
+                  ? `资金数据日期${flow.tradeDate}未与${facts.date}对齐，已停用`
+                  : '未取得同板块资金流证据',
           ]
         : [radar?.reason ?? '板块价格、资金与成分股证据不足'],
       boundary:
