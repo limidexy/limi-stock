@@ -1,4 +1,8 @@
 import closeHistoryDocument from '@/lib/close-history.generated.json';
+import type {
+  AuctionOrderbookEvidence,
+  IntradayMinuteEvidence,
+} from '@/lib/close-derived-evidence';
 
 export type CloseStock = {
   code: string;
@@ -105,6 +109,8 @@ export type IntradayEmotionSnapshot = {
   cycleNode: string;
   concentratedIndustries: Array<{ name: string; count: number }>;
   leaders: string[];
+  intradayEvidence?: IntradayMinuteEvidence | null;
+  auctionEvidence?: AuctionOrderbookEvidence | null;
   ladders?: CloseSnapshot['ladders'];
   failedStocks?: CloseStock[];
   limitDownStocks?: CloseStock[];

@@ -7,9 +7,15 @@ import {
   type ReadingLadder,
 } from '@/lib/market-reading';
 import type { CloseSnapshot } from '@/lib/close-history';
+import type {
+  AuctionOrderbookEvidence,
+  IntradayMinuteEvidence,
+} from '@/lib/close-derived-evidence';
+import { alignedEvidence } from '@/lib/unified-market-evidence';
 import type { RadarEvent, RadarSnapshot } from '@/lib/radar-evidence';
 
 export type KnowledgeState = 'READY' | 'DEGRADED' | 'MISSING';
+export type KnowledgeJudgment = 'CONFIRMED' | 'OBSERVE' | 'UNCONFIRMED';
 export type KnowledgeTone = 'positive' | 'negative' | 'mixed' | 'neutral';
 
 export type KnowledgeModule = {
@@ -30,6 +36,7 @@ export type KnowledgeModule = {
   question: string;
   conclusion: string;
   state: KnowledgeState;
+  judgment: KnowledgeJudgment;
   tone: KnowledgeTone;
   evidence: string[];
   boundary: string;
@@ -40,6 +47,7 @@ export type UnifiedFlow = {
   status: KnowledgeState;
   tradeDate: string;
   sessionState?: 'LIVE' | 'CLOSED';
+  sourceState?: 'LIVE' | 'ARCHIVED' | 'STALE';
   reason?: string;
   series: Array<{
     code: string;
@@ -61,11 +69,18 @@ export type UnifiedFlow = {
       persistenceLabel?: string;
     }>;
   };
+  allRows?: Array<{
+    code: string;
+    name: string;
+    latestMainNetInflow: number;
+    persistenceLabel?: string;
+  }>;
 };
 
 export type UnifiedSpeed = {
   status: KnowledgeState;
   tradeDate: string;
+  sourceState?: 'LIVE' | 'ARCHIVED' | 'STALE';
   rows: Array<{
     code: string;
     name: string;
@@ -84,6 +99,8 @@ export type UnifiedMarketInput = {
   radarEvents: RadarEvent[];
   flow?: UnifiedFlow | null;
   speed?: UnifiedSpeed | null;
+  intradayEvidence?: IntradayMinuteEvidence | null;
+  auctionEvidence?: AuctionOrderbookEvidence | null;
 };
 
 export type UnifiedMarketReading = {
@@ -139,6 +156,7 @@ function conceptResonance(speed?: UnifiedSpeed | null) {
 
 function flowFor(name: string, flow?: UnifiedFlow | null) {
   return [
+    ...(flow?.allRows ?? []),
     ...(flow?.split.persistentStrong ?? []),
     ...(flow?.split.cumulativeInflow ?? []),
     ...(flow?.series ?? []),
@@ -157,6 +175,8 @@ export function unifiedMarketReading(
     radarEvents,
     flow,
     speed,
+    intradayEvidence,
+    auctionEvidence,
   } = input;
   const observed = emotionReading(facts);
   const previousFacts: EmotionFacts | null = previousClose
@@ -189,9 +209,13 @@ export function unifiedMarketReading(
           ? '缩量环境'
           : '存量环境';
 
+  const alignedFlow = alignedEvidence(facts.date, flow);
+  const alignedSpeed = alignedEvidence(facts.date, speed);
   const topRising = radarEvents.find((event) => event.direction === 'up');
   const topFalling = radarEvents.find((event) => event.direction === 'down');
-  const risingFlow = topRising ? flowFor(topRising.name, flow) : undefined;
+  const risingFlow = topRising
+    ? flowFor(topRising.name, alignedFlow)
+    : undefined;
   const flowAligned = Boolean(
     topRising &&
     risingFlow &&
@@ -199,7 +223,7 @@ export function unifiedMarketReading(
     topRising.driverState === 'READY' &&
     topRising.drivers.length >= 2,
   );
-  const resonance = conceptResonance(speed);
+  const resonance = conceptResonance(alignedSpeed);
 
   const relayWinners = cohort.ready
     ? cohort.rows.filter((row) => row.fromHeight >= 2 && row.state === 'SEALED')
@@ -254,6 +278,20 @@ export function unifiedMarketReading(
     (stock) => stock.firstTouch === '09:25' && (stock.breakCount ?? 0) === 0,
   );
   const windowEvents = radarEvents.filter((event) => event.windowReady);
+  const minuteEvidenceReady =
+    intradayEvidence?.status === 'READY' &&
+    intradayEvidence.resolution === 'ONE_MINUTE_LAST_FULL_MARKET_SNAPSHOT' &&
+    intradayEvidence.minuteSnapshots >= 241;
+  const relationEvidenceReady = Boolean(
+    minuteEvidenceReady &&
+    intradayEvidence &&
+    intradayEvidence.candidateCount > 0 &&
+    intradayEvidence.candidateWithObservations ===
+      intradayEvidence.candidateCount,
+  );
+  const relationEventCount = Object.values(
+    intradayEvidence?.eventCounts ?? {},
+  ).reduce((sum, count) => sum + count, 0);
 
   const environmentState: KnowledgeState =
     turnoverDelta !== null && observed.indexReady && observed.breadthReady
@@ -271,6 +309,7 @@ export function unifiedMarketReading(
       question: '流动性和指数风险环境是什么？',
       conclusion: `${liquidity} · ${observed.indexMood} · ${observed.broad}`,
       state: environmentState,
+      judgment: environmentState === 'READY' ? 'CONFIRMED' : 'OBSERVE',
       tone:
         observed.indexMood === '三大指数上涨' && observed.broad === '多数上涨'
           ? 'positive'
@@ -294,6 +333,7 @@ export function unifiedMarketReading(
       question: '总体、短线、核心是否共振？',
       conclusion: `${observed.indexMood}｜${observed.board}｜${short.highBoard.label}、${short.relay.label}`,
       state: emotionState,
+      judgment: emotionState === 'READY' ? 'CONFIRMED' : 'OBSERVE',
       tone:
         short.highBoard.tone === 'negative' || short.relay.tone === 'negative'
           ? 'negative'
@@ -324,7 +364,13 @@ export function unifiedMarketReading(
             ? `${resonance[0]}出现涨速共振，连板正反馈不足`
             : '连板正反馈不足，赚钱模式分散'
         : '连板样本不完整，赚钱模式不能定性',
-      state: cohort.ready ? 'DEGRADED' : 'MISSING',
+      state:
+        cohort.ready && alignedSpeed?.rows.length
+          ? 'READY'
+          : cohort.ready
+            ? 'DEGRADED'
+            : 'MISSING',
+      judgment: relayWinners.length >= 2 || resonance ? 'CONFIRMED' : 'OBSERVE',
       tone: relayWinners.length >= 2 ? 'positive' : 'mixed',
       evidence: [
         cohort.ready
@@ -332,7 +378,11 @@ export function unifiedMarketReading(
           : '缺少同日期、同口径的前一日连板身份池',
         resonance
           ? `涨速榜${resonance[0]}同现${resonance[1].count}只：${resonance[1].stocks.slice(0, 4).join('、')}`
-          : '涨速榜暂未形成至少2只的同概念共振',
+          : alignedSpeed
+            ? '当日涨速榜暂未形成至少2只的同概念共振'
+            : speed
+              ? `涨速证据日期${speed.tradeDate}与当日不一致，已停用`
+              : '缺少当日涨速证据',
       ],
       boundary:
         '当前只覆盖连板和涨速共振，尚未完整覆盖20cm、容量趋势、低吸和反包模式。',
@@ -346,10 +396,18 @@ export function unifiedMarketReading(
         ? `${flowAligned ? '主线候选' : '强势方向'}：${topRising.name}${flowAligned ? '（价格与资金同向）' : '；持续性未确认'}`
         : '当前没有达到异动阈值的强势方向',
       state: topRising
-        ? 'DEGRADED'
+        ? topRising.driverState === 'READY' &&
+          (Boolean(risingFlow) || topRising.windowReady)
+          ? 'READY'
+          : 'DEGRADED'
         : radar?.status === 'MISSING'
           ? 'MISSING'
           : 'DEGRADED',
+      judgment: flowAligned
+        ? 'CONFIRMED'
+        : topRising
+          ? 'OBSERVE'
+          : 'UNCONFIRMED',
       tone: flowAligned ? 'positive' : 'mixed',
       evidence: topRising
         ? [
@@ -362,7 +420,9 @@ export function unifiedMarketReading(
             }参与驱动`,
             risingFlow
               ? `板块主力净额${money(risingFlow.latestMainNetInflow)}${risingFlow.persistenceLabel ? `，${risingFlow.persistenceLabel}` : ''}`
-              : '未取得同板块资金流证据',
+              : flow
+                ? `资金数据日期${flow.tradeDate}未与${facts.date}对齐，已停用`
+                : '未取得同板块资金流证据',
           ]
         : [radar?.reason ?? '板块价格、资金与成分股证据不足'],
       boundary:
@@ -378,6 +438,10 @@ export function unifiedMarketReading(
         short.highBoard.rows.length && short.status === 'READY'
           ? 'READY'
           : 'DEGRADED',
+      judgment:
+        short.highBoard.rows.length && short.status === 'READY'
+          ? 'CONFIRMED'
+          : 'OBSERVE',
       tone:
         short.highBoard.tone === 'unknown' ? 'neutral' : short.highBoard.tone,
       evidence: short.highBoard.evidence.map(
@@ -396,6 +460,10 @@ export function unifiedMarketReading(
         short.relay.candidateCount >= 3 && short.status === 'READY'
           ? 'READY'
           : 'DEGRADED',
+      judgment:
+        short.relay.candidateCount >= 3 && short.status === 'READY'
+          ? 'CONFIRMED'
+          : 'OBSERVE',
       tone: short.relay.tone === 'unknown' ? 'neutral' : short.relay.tone,
       evidence: short.relay.evidence.map(
         (item) => `${item.label}：${item.value}`,
@@ -411,7 +479,13 @@ export function unifiedMarketReading(
       conclusion: topStocks.length
         ? `${topStocks.length === 1 ? '高位核心候选' : '同身位核心竞争'}：${topStocks.map((stock) => stock.name).join('、')}`
         : '高位核心候选尚未形成',
-      state: topStocks.length ? 'DEGRADED' : 'MISSING',
+      state:
+        topStocks.length && boardProcess.length
+          ? 'READY'
+          : topStocks.length
+            ? 'DEGRADED'
+            : 'MISSING',
+      judgment: topStocks.length ? 'OBSERVE' : 'UNCONFIRMED',
       tone: topStocks.length === 1 ? 'mixed' : 'neutral',
       evidence: [
         topStocks.length
@@ -433,8 +507,9 @@ export function unifiedMarketReading(
         strongestPeer && weakestPeer
           ? `同窗分离：${strongestPeer.name}强于${weakestPeer.name}`
           : '参照系不完整，不能判断超预期',
-      state:
-        quoteReady && strongestPeer && weakestPeer ? 'DEGRADED' : 'MISSING',
+      state: quoteReady && strongestPeer && weakestPeer ? 'READY' : 'MISSING',
+      judgment:
+        quoteReady && strongestPeer && weakestPeer ? 'OBSERVE' : 'UNCONFIRMED',
       tone: strongestPeer && weakestPeer ? 'mixed' : 'neutral',
       evidence:
         strongestPeer && weakestPeer
@@ -453,10 +528,14 @@ export function unifiedMarketReading(
       question: '隔夜预期如何重新定价？',
       conclusion: '真实订单簿语义未接入，竞价评分关闭',
       state: 'MISSING',
+      judgment: 'UNCONFIRMED',
       tone: 'neutral',
       evidence: [
         'ORDERBOOK_READY=false',
         'scoringEnabled=false；DISPLAY_READY不能替代真实09:15—09:25订单簿',
+        auctionEvidence?.latestLocalDate
+          ? `本机异动系统订单簿最新日期${auctionEvidence.latestLocalDate}，与${facts.date}不一致，已禁止使用`
+          : '本机未找到目标交易日订单簿证据',
       ],
       boundary:
         '没有反复验证虚拟价格、匹配量和未匹配量，就不判断抢筹、撤单或弱转强。',
@@ -470,6 +549,7 @@ export function unifiedMarketReading(
         ? `封板过程可见：一字一致${oneWord.length}只，开板回封${resealed.length}只；筹码交换仍未完整定性`
         : '封板过程和换手证据不足',
       state: boardProcess.length ? 'DEGRADED' : 'MISSING',
+      judgment: boardProcess.length ? 'OBSERVE' : 'UNCONFIRMED',
       tone: resealed.length > 0 ? 'mixed' : 'neutral',
       evidence: [
         `可核验首触/炸板/回封 ${boardProcess.length}只`,
@@ -485,8 +565,23 @@ export function unifiedMarketReading(
       question: '启动、扩散、兑现和二次承接是否真实？',
       conclusion: windowEvents.length
         ? `已识别${windowEvents.length}个真实短窗异动，完整传导链仍未确认`
-        : '缺少连续分钟传导证据，不能判断真实承接',
-      state: windowEvents.length ? 'DEGRADED' : 'MISSING',
+        : relationEvidenceReady
+          ? '完整1分钟路径与候选关系已校验，当日未识别到达阈值的传导事件'
+          : minuteEvidenceReady
+            ? '精确1分钟路径完整，但候选关系观察未覆盖，不判断带动与承接'
+            : '缺少连续分钟传导证据，不能判断真实承接',
+      state:
+        windowEvents.length || relationEvidenceReady
+          ? 'READY'
+          : minuteEvidenceReady
+            ? 'DEGRADED'
+            : 'MISSING',
+      judgment:
+        windowEvents.length || relationEvidenceReady
+          ? 'CONFIRMED'
+          : minuteEvidenceReady
+            ? 'OBSERVE'
+            : 'UNCONFIRMED',
       tone: windowEvents.some((event) => event.direction === 'up')
         ? 'mixed'
         : 'neutral',
@@ -497,7 +592,17 @@ export function unifiedMarketReading(
               (event) =>
                 `${event.name}${event.direction === 'up' ? '启动' : '下杀'}，短窗${pct(event.displayChangePct ?? event.changePct)}`,
             )
-        : ['当前仅有日内快照，未形成可复核的连续分钟路径'],
+        : relationEvidenceReady
+          ? [
+              `精确1分钟快照${intradayEvidence!.minuteSnapshots}个，分辨率${intradayEvidence!.resolution}`,
+              `动态事件${relationEventCount}个；零事件表示未达规则阈值，不是数据缺失`,
+            ]
+          : minuteEvidenceReady
+            ? [
+                `精确1分钟快照${intradayEvidence!.minuteSnapshots}个，价格路径READY`,
+                `关系候选观察${intradayEvidence!.candidateWithObservations}/${intradayEvidence!.candidateCount}，不用零事件冒充“当日无传导”`,
+              ]
+            : ['当前仅有日内快照，未形成可复核的连续分钟路径'],
       boundary:
         '短窗异动不等于龙头带动；没有先后顺序、助攻耗时和回踩后的再承接，就不生成盘面故事。',
       next: '如果核心先动、30分钟内助攻扩散、回踩缩量且再次承接，才确认点带面。',
@@ -518,6 +623,10 @@ export function unifiedMarketReading(
         observed.poolsReady && cohort.ready && quoteReady
           ? 'READY'
           : 'DEGRADED',
+      judgment:
+        observed.poolsReady && cohort.ready && quoteReady
+          ? 'CONFIRMED'
+          : 'OBSERVE',
       tone:
         relayLosers.length >= 2 || facts.limitDown >= 5 ? 'negative' : 'mixed',
       evidence: [

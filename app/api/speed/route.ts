@@ -1,4 +1,10 @@
-import { fetchStockMetadata, getSpeedSnapshot } from '@/lib/market';
+import {
+  fetchRecentLimitHistory,
+  fetchStockMetadata,
+  getMarketDateContext,
+  getSpeedSnapshot,
+} from '@/lib/market';
+import { archivedCloseSpeed } from '@/lib/close-derived-evidence';
 import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
   loadLatestModuleSnapshot,
@@ -49,6 +55,56 @@ export async function GET() {
     return Response.json(repaired, {
       headers: { 'cache-control': 'no-store' },
     });
+  }
+  const context = await getMarketDateContext().catch(() => null);
+  const exactCloseFallback =
+    context?.sourceState === 'ARCHIVED'
+      ? archivedCloseSpeed(context.tradeDate)
+      : null;
+  if (exactCloseFallback) {
+    const rows = await Promise.all(
+      exactCloseFallback.rows.map(async (row) => {
+        const [metadata, history] = await Promise.all([
+          fetchStockMetadata(row.code).catch(() => null),
+          fetchRecentLimitHistory(row.code, row.name).catch(() => null),
+        ]);
+        return {
+          ...row,
+          industry: metadata?.industry ?? row.industry,
+          concepts: metadata?.concepts ?? row.concepts,
+          metadataState: metadata?.concepts.length
+            ? ('READY' as const)
+            : row.metadataState,
+          recentLimitCount: history?.count ?? row.recentLimitCount,
+          recentLimitSessions: history?.sessions ?? row.recentLimitSessions,
+          recentLimitState: history?.status ?? row.recentLimitState,
+          recentLimitMethod: history?.method ?? row.recentLimitMethod,
+          recentLimitReason: history?.reason,
+        };
+      }),
+    );
+    const conceptReady = rows.filter(
+      (row) => row.metadataState === 'READY',
+    ).length;
+    const recentLimitReady = rows.filter(
+      (row) => row.recentLimitState !== 'MISSING',
+    ).length;
+    return Response.json(
+      {
+        ...exactCloseFallback,
+        rows,
+        status:
+          conceptReady === rows.length && recentLimitReady === rows.length
+            ? ('READY' as const)
+            : ('DEGRADED' as const),
+        coverage: {
+          requested: rows.length,
+          conceptReady,
+          recentLimitReady,
+        },
+      },
+      { headers: { 'cache-control': 'no-store' } },
+    );
   }
   try {
     const snapshot = await getSpeedSnapshot();

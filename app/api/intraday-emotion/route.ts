@@ -4,7 +4,11 @@ import type {
 } from '@/lib/close-history';
 import { CLOSE_HISTORY } from '@/lib/close-history';
 import { emotionReading } from '@/lib/market-reading';
-import { getIntradayEmotionSnapshot } from '@/lib/market';
+import { getIntradayEmotionSnapshot, getMarketDateContext } from '@/lib/market';
+import {
+  archivedAuctionEvidence,
+  archivedIntradayEvidence,
+} from '@/lib/close-derived-evidence';
 import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
   loadCloseHistory,
@@ -49,6 +53,8 @@ function fromCloseSnapshot(
     cycleNode: reading.headline,
     concentratedIndustries: snapshot.concentratedIndustries,
     leaders: snapshot.leaders,
+    intradayEvidence: archivedIntradayEvidence(snapshot.date),
+    auctionEvidence: archivedAuctionEvidence(snapshot.date),
     ladders: snapshot.ladders,
     failedStocks: snapshot.failedStocks,
     limitDownStocks: snapshot.limitDownStocks,
@@ -61,6 +67,7 @@ function fromCloseSnapshot(
 }
 
 export async function GET() {
+  const marketContext = await getMarketDateContext().catch(() => null);
   const archived =
     await loadArchivedSessionSnapshot<IntradayEmotionSnapshot>(
       'intraday-emotion',
@@ -95,7 +102,11 @@ export async function GET() {
     const persisted = await loadLatestModuleSnapshot<IntradayEmotionSnapshot>(
       'intraday-emotion',
     ).catch(() => null);
-    if (persisted)
+    if (
+      persisted &&
+      marketContext &&
+      persisted.tradeDate.replaceAll('-', '') === marketContext.tradeDate
+    )
       return Response.json(
         {
           ...persisted,
@@ -108,12 +119,19 @@ export async function GET() {
         { headers: { 'cache-control': 'no-store' } },
       );
     const history = await loadCloseHistory().catch(() => []);
-    const latest = history.at(-1);
+    const latest = marketContext
+      ? history.find(
+          (snapshot) =>
+            snapshot.date.replaceAll('-', '') === marketContext.tradeDate,
+        )
+      : undefined;
     if (latest)
       return Response.json(
         fromCloseSnapshot(
           latest,
-          '盘中情绪行情源正在重连，暂显示最近交易日收盘定格',
+          marketContext?.sourceState === 'ARCHIVED'
+            ? undefined
+            : '盘中情绪行情源正在重连，暂显示最近交易日收盘定格',
         ),
         { headers: { 'cache-control': 'no-store' } },
       );

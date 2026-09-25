@@ -1,4 +1,5 @@
-import { getFlowSnapshot } from '@/lib/market';
+import { getFlowSnapshot, getMarketDateContext } from '@/lib/market';
+import { archivedCloseFlow } from '@/lib/close-derived-evidence';
 import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
   loadLatestModuleSnapshot,
@@ -15,6 +16,15 @@ export async function GET() {
     >('flow');
   if (archived)
     return Response.json(archived, {
+      headers: { 'cache-control': 'no-store' },
+    });
+  const context = await getMarketDateContext().catch(() => null);
+  const exactCloseFallback =
+    context?.sourceState === 'ARCHIVED'
+      ? archivedCloseFlow(context.tradeDate)
+      : null;
+  if (exactCloseFallback)
+    return Response.json(exactCloseFallback, {
       headers: { 'cache-control': 'no-store' },
     });
   try {

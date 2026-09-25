@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type {
   KnowledgeModule,
+  KnowledgeJudgment,
   KnowledgeState,
   KnowledgeTone,
   UnifiedMarketReading,
@@ -46,6 +47,30 @@ function StatusBadge({ state }: { state: KnowledgeState }) {
   );
 }
 
+const judgmentLabel: Record<KnowledgeJudgment, string> = {
+  CONFIRMED: '已确认',
+  OBSERVE: '观察中',
+  UNCONFIRMED: '尚未确认',
+};
+
+function JudgmentBadge({ judgment }: { judgment: KnowledgeJudgment }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'whitespace-nowrap',
+        judgment === 'CONFIRMED'
+          ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+          : judgment === 'OBSERVE'
+            ? 'border-violet-500/35 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+            : 'border-slate-400/35 bg-slate-500/10 text-slate-600 dark:text-slate-300',
+      )}
+    >
+      {judgmentLabel[judgment]}
+    </Badge>
+  );
+}
+
 function ModuleCard({ item, index }: { item: KnowledgeModule; index: number }) {
   return (
     <article className="flex min-h-64 flex-col rounded-xl border bg-background/75 p-4 shadow-sm">
@@ -61,7 +86,10 @@ function ModuleCard({ item, index }: { item: KnowledgeModule; index: number }) {
             </p>
           </div>
         </div>
-        <StatusBadge state={item.state} />
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <StatusBadge state={item.state} />
+          <JudgmentBadge judgment={item.judgment} />
+        </div>
       </div>
 
       <p
@@ -123,8 +151,8 @@ export function UnifiedMarketBoard({
               {reading.cutoff}
             </p>
             <p className="mt-1">
-              READY {reading.readyCount} · DEGRADED {reading.degradedCount} ·
-              MISSING {reading.missingCount}
+              数据 READY {reading.readyCount} · DEGRADED {reading.degradedCount}{' '}
+              · MISSING {reading.missingCount}
             </p>
           </div>
         </div>
@@ -151,7 +179,7 @@ export function UnifiedMarketBoard({
           当前规则与真实行情 ＞ 当时可见的资金和价格 ＞ 市场环境与赚钱/亏钱效应
           ＞ 群体结构 ＞ 个股地位 ＞ 历史统计 ＞
           经验口诀。所有判断冻结在页面标注的时点；没有证据的模块明确显示
-          MISSING，不用收盘结果或网络概率倒填。
+          MISSING，并把“数据是否齐全”与“盘面结论是否确认”分开；不用收盘结果或网络概率倒填。
         </p>
       </div>
     </section>

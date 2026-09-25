@@ -5,6 +5,7 @@ import type {
 } from '@/lib/close-history';
 import { archivedQuote, archivedTrend } from '@/lib/archive-evidence';
 import { CLOSE_HISTORY } from '@/lib/close-history';
+import { enrichEmotionCloses } from '@/lib/emotion-tracking-source';
 import { loadCloseHistory } from '@/lib/persistence';
 import { emotionReading } from '@/lib/market-reading';
 import { buildRadarSnapshot } from '@/lib/radar-evidence';
@@ -2289,8 +2290,8 @@ export async function repairArchivedLadder(
   )
     return archivedLadderRepair.value;
   if (!snapshot.competitors.length || !snapshot.coverage) return snapshot;
-  const archiveHistory = await loadCloseHistory().catch(
-    () => CLOSE_HISTORY.snapshots,
+  const archiveHistory = enrichEmotionCloses(
+    await loadCloseHistory().catch(() => CLOSE_HISTORY.snapshots),
   );
   const previousClose = archiveHistory.find(
     (close) =>
@@ -2309,6 +2310,11 @@ export async function repairArchivedLadder(
   const priorDateState = archiveMatches
     ? ('READY' as DataState)
     : snapshot.priorDateState;
+  const currentClose = archiveHistory.find(
+    (close) =>
+      close.date.replaceAll('-', '') === snapshot.tradeDate &&
+      close.cutoff === '15:00',
+  );
   const missing = snapshot.competitors.filter(
     (row) => !quoteComplete(row) || row.quoteState !== 'READY',
   );
@@ -2327,10 +2333,18 @@ export async function repairArchivedLadder(
         snapshot.sessionState === 'CLOSED'
           ? archivedQuote(marketSymbol(row.code), snapshot.tradeDate)
           : null;
-      const exactClose =
-        historical &&
-        archivedTrend(marketSymbol(row.code), snapshot.tradeDate)?.points.at(-1)
-          ?.time === '15:00'
+      const exactCloseFromHistory = currentClose?.closeQuotes?.[row.code];
+      const exactClose = exactCloseFromHistory
+        ? {
+            changePct: exactCloseFromHistory.changePct,
+            quoteTime: exactCloseFromHistory.quoteTime,
+            quoteSource: exactCloseFromHistory.source,
+          }
+        : historical &&
+            archivedTrend(
+              marketSymbol(row.code),
+              snapshot.tradeDate,
+            )?.points.at(-1)?.time === '15:00'
           ? historical
           : null;
       const updated = {
@@ -2363,9 +2377,9 @@ export async function repairArchivedLadder(
   const quoteReady = competitors.filter(
     (row) => row.quoteState === 'READY',
   ).length;
-  const currentCloseStocks = archiveHistory
-    .find((close) => close.date.replaceAll('-', '') === snapshot.tradeDate)
-    ?.ladders.flatMap((level) => level.stocks);
+  const currentCloseStocks = currentClose?.ladders.flatMap(
+    (level) => level.stocks,
+  );
   const value = {
     ...snapshot,
     priorDateState,

@@ -119,6 +119,7 @@ type FlowData = {
   tradeDate: string;
   requestedDate?: string;
   sessionState?: 'LIVE' | 'CLOSED';
+  sourceState?: 'LIVE' | 'ARCHIVED' | 'STALE';
   phase: string;
   lastPointTime: string | null;
   source?: string;
@@ -126,6 +127,7 @@ type FlowData = {
   reason?: string;
   coverage?: { requested: number; available: number };
   series: SectorFlowSeries[];
+  allRows?: SectorFlowSeries[];
   split: {
     inflow: SectorFlowSeries[];
     outflow: SectorFlowSeries[];
@@ -223,6 +225,7 @@ type SpeedData = {
   requestedDate?: string;
   phase?: string;
   sessionState?: 'LIVE' | 'CLOSED';
+  sourceState?: 'LIVE' | 'ARCHIVED' | 'STALE';
   reason?: string;
   coverage?: {
     requested: number;
@@ -1824,6 +1827,8 @@ export default function Home() {
         radarEvents,
         flow: flow.data,
         speed: speed.data,
+        intradayEvidence: intradayEmotion.data.intradayEvidence,
+        auctionEvidence: intradayEmotion.data.auctionEvidence,
       })
     : null;
   const sharedRadarSectors = useMemo(() => {
