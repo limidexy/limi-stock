@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-09-21T07:51:44.078Z",
+  "generatedAt": "2026-09-25T09:40:56.375Z",
   "methodology": {
     "facts": "涨停、炸板、跌停、市场宽度、连板高度和个股均来自当日15:00收盘包。",
     "labels": "指数情绪、短线情绪与周期节点由固定阈值规则判定，属于解释标签，不是原始行情字段。"
@@ -33771,6 +33771,3061 @@
       "coverage": {
         "reported": 5554,
         "available": 5554
+      }
+    },
+    {
+      "date": "2026-09-22",
+      "previousDate": "2026-09-21",
+      "cutoff": "15:00",
+      "status": "READY",
+      "source": "CLOSE收盘包 v2.51-historical-close-backfill",
+      "limitUp": 63,
+      "failed": 18,
+      "limitDown": 3,
+      "sealRate": 77.77777777777779,
+      "highestBoard": 6,
+      "consecutiveCount": 24,
+      "turnover": 0,
+      "breadth": {
+        "requested": 5221,
+        "rowsAvailable": 5207,
+        "up": 2278,
+        "down": 2787,
+        "flat": 142,
+        "medianChangePct": -0.17391304347825765
+      },
+      "indexMood": "震荡",
+      "shortMood": "轮动",
+      "cycleNode": "弱修复",
+      "concentratedIndustries": [
+        {
+          "name": "家居用品",
+          "count": 5
+        },
+        {
+          "name": "出版",
+          "count": 4
+        },
+        {
+          "name": "广告营销",
+          "count": 3
+        },
+        {
+          "name": "化学制药",
+          "count": 3
+        },
+        {
+          "name": "元件",
+          "count": 3
+        }
+      ],
+      "leaders": [
+        "华瓷股份"
+      ],
+      "indices": [
+        {
+          "code": "sh000001",
+          "name": "上证",
+          "close": 3952.128,
+          "changePct": 0.05622917197798394
+        },
+        {
+          "code": "sz399001",
+          "name": "深证",
+          "close": 13723.74,
+          "changePct": -0.04573919047460295
+        },
+        {
+          "code": "sz399006",
+          "name": "创业板",
+          "close": 3399.93,
+          "changePct": 0.010001206027787646
+        }
+      ],
+      "ladders": [
+        {
+          "height": 6,
+          "stocks": [
+            {
+              "code": "001216",
+              "name": "华瓷股份",
+              "changePct": 10.01662540435791,
+              "industry": "家居用品",
+              "height": 6,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 259140452
+            }
+          ]
+        },
+        {
+          "height": 5,
+          "stocks": [
+            {
+              "code": "603230",
+              "name": "内蒙新华",
+              "changePct": 9.97977066040039,
+              "industry": "出版",
+              "height": 5,
+              "firstTouch": "09:34",
+              "lastSeal": "09:42",
+              "breakCount": 3,
+              "sealFund": 64824551
+            }
+          ]
+        },
+        {
+          "height": 4,
+          "stocks": [
+            {
+              "code": "000504",
+              "name": "南华生物",
+              "changePct": 9.990917205810547,
+              "industry": "医疗服务",
+              "height": 4,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 272598522
+            }
+          ]
+        },
+        {
+          "height": 3,
+          "stocks": [
+            {
+              "code": "601811",
+              "name": "新华文轩",
+              "changePct": 10.006540298461914,
+              "industry": "出版",
+              "height": 3,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 143779042
+            },
+            {
+              "code": "001317",
+              "name": "三羊马",
+              "changePct": 10.006670951843262,
+              "industry": "铁路公路",
+              "height": 3,
+              "firstTouch": "09:32",
+              "lastSeal": "09:45",
+              "breakCount": 2,
+              "sealFund": 50305251
+            },
+            {
+              "code": "603068",
+              "name": "博通集成",
+              "changePct": 10.002284049987793,
+              "industry": "半导体",
+              "height": 3,
+              "firstTouch": "09:56",
+              "lastSeal": "13:47",
+              "breakCount": 1,
+              "sealFund": 26671729
+            },
+            {
+              "code": "000910",
+              "name": "大亚圣象",
+              "changePct": 10.063898086547852,
+              "industry": "家居用品",
+              "height": 3,
+              "firstTouch": "13:12",
+              "lastSeal": "13:12",
+              "breakCount": 0,
+              "sealFund": 18386164
+            }
+          ]
+        },
+        {
+          "height": 2,
+          "stocks": [
+            {
+              "code": "000607",
+              "name": "华媒控股",
+              "changePct": 9.933774948120117,
+              "industry": "广告营销",
+              "height": 2,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 149326061
+            },
+            {
+              "code": "002614",
+              "name": "奥佳华",
+              "changePct": 10.079999923706055,
+              "industry": "其他家电",
+              "height": 2,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 110766541
+            },
+            {
+              "code": "600743",
+              "name": "华远控股",
+              "changePct": 9.871244430541992,
+              "industry": "房地产服",
+              "height": 2,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 108447260
+            },
+            {
+              "code": "000756",
+              "name": "新华制药",
+              "changePct": 10.0204496383667,
+              "industry": "化学制药",
+              "height": 2,
+              "firstTouch": "09:25",
+              "lastSeal": "10:10",
+              "breakCount": 7,
+              "sealFund": 61147164
+            },
+            {
+              "code": "600825",
+              "name": "新华传媒",
+              "changePct": 9.931507110595703,
+              "industry": "出版",
+              "height": 2,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 2146426334
+            },
+            {
+              "code": "603636",
+              "name": "南威软件",
+              "changePct": 10.027472496032715,
+              "industry": "IT服务Ⅱ",
+              "height": 2,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 96513162
+            },
+            {
+              "code": "001234",
+              "name": "泰慕士",
+              "changePct": 10.00376033782959,
+              "industry": "服装家纺",
+              "height": 2,
+              "firstTouch": "09:30",
+              "lastSeal": "09:30",
+              "breakCount": 0,
+              "sealFund": 250279760
+            },
+            {
+              "code": "002303",
+              "name": "美盈森",
+              "changePct": 10.047846794128418,
+              "industry": "包装印刷",
+              "height": 2,
+              "firstTouch": "09:30",
+              "lastSeal": "09:39",
+              "breakCount": 1,
+              "sealFund": 72089130
+            },
+            {
+              "code": "600664",
+              "name": "哈药股份",
+              "changePct": 10.060606002807617,
+              "industry": "化学制药",
+              "height": 2,
+              "firstTouch": "09:31",
+              "lastSeal": "10:00",
+              "breakCount": 1,
+              "sealFund": 360169413
+            },
+            {
+              "code": "000560",
+              "name": "我爱我家",
+              "changePct": 10.031347274780273,
+              "industry": "房地产服",
+              "height": 2,
+              "firstTouch": "09:32",
+              "lastSeal": "13:00",
+              "breakCount": 6,
+              "sealFund": 51987599
+            },
+            {
+              "code": "603020",
+              "name": "爱普股份",
+              "changePct": 10.023866653442383,
+              "industry": "化学制品",
+              "height": 2,
+              "firstTouch": "09:32",
+              "lastSeal": "09:49",
+              "breakCount": 5,
+              "sealFund": 9234291
+            },
+            {
+              "code": "002178",
+              "name": "延华智能",
+              "changePct": 10.039369583129883,
+              "industry": "软件开发",
+              "height": 2,
+              "firstTouch": "09:39",
+              "lastSeal": "10:30",
+              "breakCount": 2,
+              "sealFund": 57225372
+            },
+            {
+              "code": "603580",
+              "name": "艾艾精工",
+              "changePct": 9.995805740356445,
+              "industry": "塑料",
+              "height": 2,
+              "firstTouch": "09:46",
+              "lastSeal": "09:53",
+              "breakCount": 3,
+              "sealFund": 27357036
+            },
+            {
+              "code": "002259",
+              "name": "升达林业",
+              "changePct": 9.955751419067383,
+              "industry": "燃气Ⅱ",
+              "height": 2,
+              "firstTouch": "10:24",
+              "lastSeal": "10:24",
+              "breakCount": 1,
+              "sealFund": 40606391
+            },
+            {
+              "code": "600721",
+              "name": "百花医药",
+              "changePct": 10.038022994995117,
+              "industry": "医疗服务",
+              "height": 2,
+              "firstTouch": "10:47",
+              "lastSeal": "14:42",
+              "breakCount": 5,
+              "sealFund": 9600845
+            },
+            {
+              "code": "300110",
+              "name": "华仁药业",
+              "changePct": 20.060789108276367,
+              "industry": "化学制药",
+              "height": 2,
+              "firstTouch": "10:50",
+              "lastSeal": "13:34",
+              "breakCount": 1,
+              "sealFund": 36394431
+            },
+            {
+              "code": "600503",
+              "name": "华丽家族",
+              "changePct": 9.876543045043945,
+              "industry": "房地产开",
+              "height": 2,
+              "firstTouch": "14:44",
+              "lastSeal": "14:44",
+              "breakCount": 0,
+              "sealFund": 36424262
+            }
+          ]
+        },
+        {
+          "height": 1,
+          "stocks": [
+            {
+              "code": "002290",
+              "name": "禾盛新材",
+              "changePct": 10.004239082336426,
+              "industry": "家电零部",
+              "height": 1,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 308716043
+            },
+            {
+              "code": "600770",
+              "name": "综艺股份",
+              "changePct": 9.950248718261719,
+              "industry": "综合Ⅱ",
+              "height": 1,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 133164213
+            },
+            {
+              "code": "605218",
+              "name": "伟时电子",
+              "changePct": 10.006901741027832,
+              "industry": "光学光电",
+              "height": 1,
+              "firstTouch": "09:30",
+              "lastSeal": "09:30",
+              "breakCount": 0,
+              "sealFund": 3199158
+            },
+            {
+              "code": "000676",
+              "name": "智度股份",
+              "changePct": 10.044313430786133,
+              "industry": "广告营销",
+              "height": 1,
+              "firstTouch": "09:30",
+              "lastSeal": "10:11",
+              "breakCount": 8,
+              "sealFund": 30385048
+            },
+            {
+              "code": "600641",
+              "name": "先导基电",
+              "changePct": 10.01006031036377,
+              "industry": "半导体",
+              "height": 1,
+              "firstTouch": "09:30",
+              "lastSeal": "13:00",
+              "breakCount": 3,
+              "sealFund": 183042277
+            },
+            {
+              "code": "002467",
+              "name": "二六三",
+              "changePct": 9.935205459594727,
+              "industry": "通信服务",
+              "height": 1,
+              "firstTouch": "09:32",
+              "lastSeal": "09:38",
+              "breakCount": 1,
+              "sealFund": 86609734
+            },
+            {
+              "code": "001266",
+              "name": "宏英智能",
+              "changePct": 9.994172096252441,
+              "industry": "自动化设",
+              "height": 1,
+              "firstTouch": "09:34",
+              "lastSeal": "13:45",
+              "breakCount": 3,
+              "sealFund": 43969690
+            },
+            {
+              "code": "002564",
+              "name": "天沃科技",
+              "changePct": 10.1010103225708,
+              "industry": "专用设备",
+              "height": 1,
+              "firstTouch": "09:34",
+              "lastSeal": "09:34",
+              "breakCount": 0,
+              "sealFund": 47351235
+            },
+            {
+              "code": "002141",
+              "name": "贤丰控股",
+              "changePct": 10.074073791503906,
+              "industry": "元件",
+              "height": 1,
+              "firstTouch": "09:35",
+              "lastSeal": "14:41",
+              "breakCount": 7,
+              "sealFund": 27374349
+            },
+            {
+              "code": "603216",
+              "name": "梦天家居",
+              "changePct": 10.009671211242676,
+              "industry": "家居用品",
+              "height": 1,
+              "firstTouch": "09:36",
+              "lastSeal": "09:50",
+              "breakCount": 3,
+              "sealFund": 23948925
+            },
+            {
+              "code": "001268",
+              "name": "联合精密",
+              "changePct": 10.02070426940918,
+              "industry": "家电零部",
+              "height": 1,
+              "firstTouch": "09:43",
+              "lastSeal": "10:58",
+              "breakCount": 1,
+              "sealFund": 100400324
+            },
+            {
+              "code": "603221",
+              "name": "爱丽家居",
+              "changePct": 10,
+              "industry": "家居用品",
+              "height": 1,
+              "firstTouch": "09:46",
+              "lastSeal": "09:46",
+              "breakCount": 0,
+              "sealFund": 48194575
+            },
+            {
+              "code": "603598",
+              "name": "引力传媒",
+              "changePct": 9.976798057556152,
+              "industry": "广告营销",
+              "height": 1,
+              "firstTouch": "09:47",
+              "lastSeal": "10:07",
+              "breakCount": 1,
+              "sealFund": 29585184
+            },
+            {
+              "code": "001322",
+              "name": "箭牌家居",
+              "changePct": 9.968354225158691,
+              "industry": "家居用品",
+              "height": 1,
+              "firstTouch": "09:51",
+              "lastSeal": "10:04",
+              "breakCount": 1,
+              "sealFund": 25686505
+            },
+            {
+              "code": "002313",
+              "name": "日海智能",
+              "changePct": 10.059171676635742,
+              "industry": "通信设备",
+              "height": 1,
+              "firstTouch": "09:54",
+              "lastSeal": "09:57",
+              "breakCount": 1,
+              "sealFund": 74761816
+            },
+            {
+              "code": "300324",
+              "name": "旋极信息",
+              "changePct": 20,
+              "industry": "计算机设",
+              "height": 1,
+              "firstTouch": "09:55",
+              "lastSeal": "14:50",
+              "breakCount": 2,
+              "sealFund": 18157766
+            },
+            {
+              "code": "002301",
+              "name": "齐心集团",
+              "changePct": 9.964412689208984,
+              "industry": "文娱用品",
+              "height": 1,
+              "firstTouch": "09:55",
+              "lastSeal": "09:55",
+              "breakCount": 0,
+              "sealFund": 57520007
+            },
+            {
+              "code": "301234",
+              "name": "五洲医疗",
+              "changePct": 20,
+              "industry": "医疗器械",
+              "height": 1,
+              "firstTouch": "09:56",
+              "lastSeal": "13:19",
+              "breakCount": 13,
+              "sealFund": 17257890
+            },
+            {
+              "code": "920526",
+              "name": "凯华材料",
+              "changePct": 29.985082626342773,
+              "industry": "电子化学",
+              "height": 1,
+              "firstTouch": "09:58",
+              "lastSeal": "14:49",
+              "breakCount": 5,
+              "sealFund": 9424620
+            },
+            {
+              "code": "605178",
+              "name": "时空科技",
+              "changePct": 10.001470565795898,
+              "industry": "专业工程",
+              "height": 1,
+              "firstTouch": "09:59",
+              "lastSeal": "09:59",
+              "breakCount": 0,
+              "sealFund": 63972374
+            },
+            {
+              "code": "002238",
+              "name": "天威视讯",
+              "changePct": 9.952607154846191,
+              "industry": "电视广播",
+              "height": 1,
+              "firstTouch": "10:09",
+              "lastSeal": "10:09",
+              "breakCount": 0,
+              "sealFund": 30559272
+            },
+            {
+              "code": "605398",
+              "name": "新炬网络",
+              "changePct": 10.009310722351074,
+              "industry": "IT服务Ⅱ",
+              "height": 1,
+              "firstTouch": "10:20",
+              "lastSeal": "10:22",
+              "breakCount": 1,
+              "sealFund": 55348454
+            },
+            {
+              "code": "601949",
+              "name": "中国出版",
+              "changePct": 9.966776847839355,
+              "industry": "出版",
+              "height": 1,
+              "firstTouch": "10:22",
+              "lastSeal": "10:22",
+              "breakCount": 0,
+              "sealFund": 66955725
+            },
+            {
+              "code": "002757",
+              "name": "南兴股份",
+              "changePct": 10.027700424194336,
+              "industry": "专用设备",
+              "height": 1,
+              "firstTouch": "10:29",
+              "lastSeal": "10:29",
+              "breakCount": 0,
+              "sealFund": 111853347
+            },
+            {
+              "code": "603039",
+              "name": "泛微网络",
+              "changePct": 10.002771377563477,
+              "industry": "软件开发",
+              "height": 1,
+              "firstTouch": "10:32",
+              "lastSeal": "14:25",
+              "breakCount": 3,
+              "sealFund": 37322962
+            },
+            {
+              "code": "605179",
+              "name": "一鸣食品",
+              "changePct": 9.996337890625,
+              "industry": "饮料乳品",
+              "height": 1,
+              "firstTouch": "10:43",
+              "lastSeal": "10:43",
+              "breakCount": 0,
+              "sealFund": 49244001
+            },
+            {
+              "code": "688781",
+              "name": "视涯科技-UW",
+              "changePct": 20.004619598388672,
+              "industry": "光学光电",
+              "height": 1,
+              "firstTouch": "11:00",
+              "lastSeal": "14:51",
+              "breakCount": 8,
+              "sealFund": 7259025
+            },
+            {
+              "code": "001260",
+              "name": "坤泰股份",
+              "changePct": 9.978307723999023,
+              "industry": "汽车零部",
+              "height": 1,
+              "firstTouch": "11:02",
+              "lastSeal": "13:32",
+              "breakCount": 1,
+              "sealFund": 4733352
+            },
+            {
+              "code": "605058",
+              "name": "澳弘电子",
+              "changePct": 9.993805885314941,
+              "industry": "元件",
+              "height": 1,
+              "firstTouch": "11:22",
+              "lastSeal": "14:45",
+              "breakCount": 6,
+              "sealFund": 16247350
+            },
+            {
+              "code": "603903",
+              "name": "中持股份",
+              "changePct": 10.014410018920898,
+              "industry": "环境治理",
+              "height": 1,
+              "firstTouch": "11:23",
+              "lastSeal": "14:20",
+              "breakCount": 1,
+              "sealFund": 25673451
+            },
+            {
+              "code": "605258",
+              "name": "协和电子",
+              "changePct": 9.992173194885254,
+              "industry": "元件",
+              "height": 1,
+              "firstTouch": "11:27",
+              "lastSeal": "11:27",
+              "breakCount": 0,
+              "sealFund": 37206200
+            },
+            {
+              "code": "600815",
+              "name": "厦工股份",
+              "changePct": 9.973752975463867,
+              "industry": "工程机械",
+              "height": 1,
+              "firstTouch": "13:00",
+              "lastSeal": "13:00",
+              "breakCount": 0,
+              "sealFund": 36106013
+            },
+            {
+              "code": "600403",
+              "name": "大有能源",
+              "changePct": 9.985527992248535,
+              "industry": "煤炭开采",
+              "height": 1,
+              "firstTouch": "13:02",
+              "lastSeal": "13:02",
+              "breakCount": 0,
+              "sealFund": 54083880
+            },
+            {
+              "code": "002768",
+              "name": "国恩股份",
+              "changePct": 10.007347106933594,
+              "industry": "塑料",
+              "height": 1,
+              "firstTouch": "13:05",
+              "lastSeal": "14:38",
+              "breakCount": 5,
+              "sealFund": 16725820
+            },
+            {
+              "code": "002672",
+              "name": "东江环保",
+              "changePct": 10.10929012298584,
+              "industry": "环境治理",
+              "height": 1,
+              "firstTouch": "13:11",
+              "lastSeal": "13:11",
+              "breakCount": 0,
+              "sealFund": 23168119
+            },
+            {
+              "code": "000595",
+              "name": "新能股份",
+              "changePct": 9.962406158447266,
+              "industry": "电力",
+              "height": 1,
+              "firstTouch": "13:52",
+              "lastSeal": "13:52",
+              "breakCount": 0,
+              "sealFund": 15753465
+            },
+            {
+              "code": "002912",
+              "name": "中新赛克",
+              "changePct": 10.008339881896973,
+              "industry": "计算机设",
+              "height": 1,
+              "firstTouch": "13:55",
+              "lastSeal": "14:09",
+              "breakCount": 2,
+              "sealFund": 7909119
+            },
+            {
+              "code": "600418",
+              "name": "江淮汽车",
+              "changePct": 10.010319709777832,
+              "industry": "商用车",
+              "height": 1,
+              "firstTouch": "14:14",
+              "lastSeal": "14:14",
+              "breakCount": 0,
+              "sealFund": 287040434
+            },
+            {
+              "code": "600479",
+              "name": "千金药业",
+              "changePct": 9.967584609985352,
+              "industry": "中药Ⅱ",
+              "height": 1,
+              "firstTouch": "14:55",
+              "lastSeal": "15:00",
+              "breakCount": 1,
+              "sealFund": 5429628
+            }
+          ]
+        }
+      ],
+      "failedStocks": [
+        {
+          "code": "002989",
+          "name": "中天精装",
+          "changePct": 2.458686113357544,
+          "industry": "装修装饰",
+          "height": 1,
+          "firstTouch": "09:45",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "605056",
+          "name": "咸亨国际",
+          "changePct": 3.4008681774139404,
+          "industry": "通用设备",
+          "height": 1,
+          "firstTouch": "10:18",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "600246",
+          "name": "万通发展",
+          "changePct": 3.6827194690704346,
+          "industry": "房地产开",
+          "height": 1,
+          "firstTouch": "10:03",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "600630",
+          "name": "龙头股份",
+          "changePct": 3.9473681449890137,
+          "industry": "服装家纺",
+          "height": 1,
+          "firstTouch": "09:32",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "002827",
+          "name": "高争民爆",
+          "changePct": 4.5460944175720215,
+          "industry": "化学制品",
+          "height": 1,
+          "firstTouch": "09:58",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "600792",
+          "name": "云煤能源",
+          "changePct": 5.3113555908203125,
+          "industry": "焦炭Ⅱ",
+          "height": 1,
+          "firstTouch": "13:02",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "002164",
+          "name": "宁波东力",
+          "changePct": 5.765766143798828,
+          "industry": "通用设备",
+          "height": 1,
+          "firstTouch": "10:02",
+          "lastSeal": null,
+          "breakCount": 6,
+          "sealFund": null
+        },
+        {
+          "code": "003032",
+          "name": "传智教育",
+          "changePct": 6.070287704467773,
+          "industry": "教育",
+          "height": 1,
+          "firstTouch": "10:34",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "603341",
+          "name": "龙旗科技",
+          "changePct": 6.130165100097656,
+          "industry": "消费电子",
+          "height": 1,
+          "firstTouch": "10:51",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "603353",
+          "name": "和顺石油",
+          "changePct": 6.6824750900268555,
+          "industry": "炼化及贸",
+          "height": 1,
+          "firstTouch": "09:41",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "600540",
+          "name": "新赛股份",
+          "changePct": 6.725663661956787,
+          "industry": "种植业",
+          "height": 1,
+          "firstTouch": "11:03",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "001389",
+          "name": "广合科技",
+          "changePct": 6.841283798217773,
+          "industry": "元件",
+          "height": 1,
+          "firstTouch": "09:30",
+          "lastSeal": null,
+          "breakCount": 12,
+          "sealFund": null
+        },
+        {
+          "code": "603256",
+          "name": "宏和科技",
+          "changePct": 6.916464805603027,
+          "industry": "玻璃玻纤",
+          "height": 1,
+          "firstTouch": "09:34",
+          "lastSeal": null,
+          "breakCount": 5,
+          "sealFund": null
+        },
+        {
+          "code": "000066",
+          "name": "中国长城",
+          "changePct": 6.940701007843018,
+          "industry": "计算机设",
+          "height": 1,
+          "firstTouch": "09:25",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "603893",
+          "name": "瑞芯微",
+          "changePct": 10,
+          "industry": "半导体",
+          "height": 1,
+          "firstTouch": "09:52",
+          "lastSeal": null,
+          "breakCount": 23,
+          "sealFund": null
+        },
+        {
+          "code": "688365",
+          "name": "光云科技",
+          "changePct": 13.915416717529297,
+          "industry": "IT服务Ⅱ",
+          "height": 1,
+          "firstTouch": "10:16",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "688105",
+          "name": "诺唯赞",
+          "changePct": 15.502182960510254,
+          "industry": "生物制品",
+          "height": 1,
+          "firstTouch": "10:36",
+          "lastSeal": null,
+          "breakCount": 3,
+          "sealFund": null
+        },
+        {
+          "code": "301047",
+          "name": "义翘神州",
+          "changePct": 16.089994430541992,
+          "industry": "生物制品",
+          "height": 1,
+          "firstTouch": "10:15",
+          "lastSeal": null,
+          "breakCount": 5,
+          "sealFund": null
+        }
+      ],
+      "limitDownStocks": [
+        {
+          "code": "603226",
+          "name": "菲林格尔",
+          "changePct": -10.008203506469727,
+          "industry": "家居用品",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "15:00",
+          "breakCount": 0,
+          "sealFund": 21829203
+        },
+        {
+          "code": "603375",
+          "name": "盛景微",
+          "changePct": -10,
+          "industry": "半导体",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "13:54",
+          "breakCount": 0,
+          "sealFund": 7446996
+        },
+        {
+          "code": "000668",
+          "name": "荣丰控股",
+          "changePct": -9.974160194396973,
+          "industry": "房地产开",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "13:47",
+          "breakCount": 0,
+          "sealFund": 4274868
+        }
+      ],
+      "coverage": {
+        "reported": 5221,
+        "available": 5207
+      }
+    },
+    {
+      "date": "2026-09-23",
+      "previousDate": "2026-09-22",
+      "cutoff": "15:00",
+      "status": "READY",
+      "source": "CLOSE收盘包 v2.51-historical-close-backfill",
+      "limitUp": 51,
+      "failed": 26,
+      "limitDown": 13,
+      "sealRate": 66.23376623376623,
+      "highestBoard": 4,
+      "consecutiveCount": 12,
+      "turnover": 0,
+      "breadth": {
+        "requested": 5221,
+        "rowsAvailable": 5208,
+        "up": 1753,
+        "down": 3369,
+        "flat": 86,
+        "medianChangePct": -0.6366103174603108
+      },
+      "indexMood": "偏弱",
+      "shortMood": "退潮",
+      "cycleNode": "强分歧",
+      "concentratedIndustries": [
+        {
+          "name": "通用设备",
+          "count": 6
+        },
+        {
+          "name": "半导体",
+          "count": 3
+        },
+        {
+          "name": "出版",
+          "count": 2
+        },
+        {
+          "name": "房地产服",
+          "count": 2
+        },
+        {
+          "name": "化学制品",
+          "count": 2
+        }
+      ],
+      "leaders": [
+        "新华文轩",
+        "大亚圣象"
+      ],
+      "indices": [
+        {
+          "code": "sh000001",
+          "name": "上证",
+          "close": 3936.5199,
+          "changePct": -0.3949290103964387
+        },
+        {
+          "code": "sz399001",
+          "name": "深证",
+          "close": 13636.07,
+          "changePct": -0.6388200301084113
+        },
+        {
+          "code": "sz399006",
+          "name": "创业板",
+          "close": 3379.61,
+          "changePct": -0.5976593635751204
+        }
+      ],
+      "ladders": [
+        {
+          "height": 4,
+          "stocks": [
+            {
+              "code": "601811",
+              "name": "新华文轩",
+              "changePct": 9.98810863494873,
+              "industry": "出版",
+              "height": 4,
+              "firstTouch": "09:30",
+              "lastSeal": "09:30",
+              "breakCount": 0,
+              "sealFund": 144132760
+            },
+            {
+              "code": "000910",
+              "name": "大亚圣象",
+              "changePct": 10.014513969421387,
+              "industry": "家居用品",
+              "height": 4,
+              "firstTouch": "09:30",
+              "lastSeal": "09:30",
+              "breakCount": 0,
+              "sealFund": 70774096
+            }
+          ]
+        },
+        {
+          "height": 3,
+          "stocks": [
+            {
+              "code": "600825",
+              "name": "新华传媒",
+              "changePct": 9.968847274780273,
+              "industry": "出版",
+              "height": 3,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 1920589748
+            },
+            {
+              "code": "001234",
+              "name": "泰慕士",
+              "changePct": 10.017093658447266,
+              "industry": "服装家纺",
+              "height": 3,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 342947730
+            },
+            {
+              "code": "603636",
+              "name": "南威软件",
+              "changePct": 9.987516403198242,
+              "industry": "IT服务Ⅱ",
+              "height": 3,
+              "firstTouch": "09:25",
+              "lastSeal": "09:58",
+              "breakCount": 3,
+              "sealFund": 55876050
+            },
+            {
+              "code": "600743",
+              "name": "华远控股",
+              "changePct": 10.15625,
+              "industry": "房地产服",
+              "height": 3,
+              "firstTouch": "09:30",
+              "lastSeal": "09:30",
+              "breakCount": 0,
+              "sealFund": 131299952
+            },
+            {
+              "code": "000560",
+              "name": "我爱我家",
+              "changePct": 9.97150993347168,
+              "industry": "房地产服",
+              "height": 3,
+              "firstTouch": "09:30",
+              "lastSeal": "10:31",
+              "breakCount": 4,
+              "sealFund": 73204297
+            },
+            {
+              "code": "002614",
+              "name": "奥佳华",
+              "changePct": 10.029069900512695,
+              "industry": "其他家电",
+              "height": 3,
+              "firstTouch": "09:31",
+              "lastSeal": "10:20",
+              "breakCount": 7,
+              "sealFund": 76508286
+            },
+            {
+              "code": "600503",
+              "name": "华丽家族",
+              "changePct": 10.112359046936035,
+              "industry": "房地产开",
+              "height": 3,
+              "firstTouch": "09:43",
+              "lastSeal": "14:56",
+              "breakCount": 8,
+              "sealFund": 17322203
+            }
+          ]
+        },
+        {
+          "height": 2,
+          "stocks": [
+            {
+              "code": "002238",
+              "name": "天威视讯",
+              "changePct": 10.05747127532959,
+              "industry": "电视广播",
+              "height": 2,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 118000354
+            },
+            {
+              "code": "605058",
+              "name": "澳弘电子",
+              "changePct": 10.005632400512695,
+              "industry": "元件",
+              "height": 2,
+              "firstTouch": "13:51",
+              "lastSeal": "13:51",
+              "breakCount": 0,
+              "sealFund": 44529905
+            },
+            {
+              "code": "600418",
+              "name": "江淮汽车",
+              "changePct": 9.990618705749512,
+              "industry": "商用车",
+              "height": 2,
+              "firstTouch": "14:41",
+              "lastSeal": "14:41",
+              "breakCount": 0,
+              "sealFund": 78975285
+            }
+          ]
+        },
+        {
+          "height": 1,
+          "stocks": [
+            {
+              "code": "600843",
+              "name": "上工申贝",
+              "changePct": 9.971098899841309,
+              "industry": "专用设备",
+              "height": 1,
+              "firstTouch": "09:30",
+              "lastSeal": "13:21",
+              "breakCount": 1,
+              "sealFund": 33749695
+            },
+            {
+              "code": "000850",
+              "name": "华茂股份",
+              "changePct": 9.929078102111816,
+              "industry": "纺织制造",
+              "height": 1,
+              "firstTouch": "09:31",
+              "lastSeal": "09:31",
+              "breakCount": 0,
+              "sealFund": 37428854
+            },
+            {
+              "code": "600293",
+              "name": "三峡新材",
+              "changePct": 10.119048118591309,
+              "industry": "玻璃玻纤",
+              "height": 1,
+              "firstTouch": "09:32",
+              "lastSeal": "09:32",
+              "breakCount": 0,
+              "sealFund": 57730829
+            },
+            {
+              "code": "603773",
+              "name": "沃格光电",
+              "changePct": 10.00214672088623,
+              "industry": "光学光电",
+              "height": 1,
+              "firstTouch": "09:33",
+              "lastSeal": "11:03",
+              "breakCount": 2,
+              "sealFund": 231065750
+            },
+            {
+              "code": "002426",
+              "name": "胜利精密",
+              "changePct": 10.037175178527832,
+              "industry": "消费电子",
+              "height": 1,
+              "firstTouch": "09:33",
+              "lastSeal": "09:33",
+              "breakCount": 0,
+              "sealFund": 89566640
+            },
+            {
+              "code": "603396",
+              "name": "金辰股份",
+              "changePct": 10.016977310180664,
+              "industry": "光伏设备",
+              "height": 1,
+              "firstTouch": "09:37",
+              "lastSeal": "09:37",
+              "breakCount": 0,
+              "sealFund": 52722122
+            },
+            {
+              "code": "600653",
+              "name": "申华控股",
+              "changePct": 10,
+              "industry": "汽车服务",
+              "height": 1,
+              "firstTouch": "09:45",
+              "lastSeal": "09:45",
+              "breakCount": 0,
+              "sealFund": 14777675
+            },
+            {
+              "code": "603949",
+              "name": "雪龙集团",
+              "changePct": 10.028653144836426,
+              "industry": "汽车零部",
+              "height": 1,
+              "firstTouch": "09:45",
+              "lastSeal": "09:45",
+              "breakCount": 1,
+              "sealFund": 29386752
+            },
+            {
+              "code": "688656",
+              "name": "浩欧博",
+              "changePct": 20.00340461730957,
+              "industry": "医疗器械",
+              "height": 1,
+              "firstTouch": "09:48",
+              "lastSeal": "09:55",
+              "breakCount": 1,
+              "sealFund": 19970417
+            },
+            {
+              "code": "002635",
+              "name": "安洁科技",
+              "changePct": 10.026211738586426,
+              "industry": "消费电子",
+              "height": 1,
+              "firstTouch": "09:49",
+              "lastSeal": "09:53",
+              "breakCount": 1,
+              "sealFund": 90300649
+            },
+            {
+              "code": "600605",
+              "name": "汇通能源",
+              "changePct": 9.986082077026367,
+              "industry": "一般零售",
+              "height": 1,
+              "firstTouch": "09:51",
+              "lastSeal": "11:03",
+              "breakCount": 3,
+              "sealFund": 14723938
+            },
+            {
+              "code": "600230",
+              "name": "沧州大化",
+              "changePct": 10.022271156311035,
+              "industry": "化学制品",
+              "height": 1,
+              "firstTouch": "09:55",
+              "lastSeal": "10:01",
+              "breakCount": 1,
+              "sealFund": 50814593
+            },
+            {
+              "code": "603222",
+              "name": "济民健康",
+              "changePct": 9.963099479675293,
+              "industry": "医疗器械",
+              "height": 1,
+              "firstTouch": "09:57",
+              "lastSeal": "09:57",
+              "breakCount": 0,
+              "sealFund": 39617154
+            },
+            {
+              "code": "300931",
+              "name": "通用电梯",
+              "changePct": 19.987506866455078,
+              "industry": "专用设备",
+              "height": 1,
+              "firstTouch": "09:59",
+              "lastSeal": "14:54",
+              "breakCount": 25,
+              "sealFund": 1940210
+            },
+            {
+              "code": "600802",
+              "name": "福建水泥",
+              "changePct": 10.054844856262207,
+              "industry": "水泥",
+              "height": 1,
+              "firstTouch": "10:01",
+              "lastSeal": "10:01",
+              "breakCount": 0,
+              "sealFund": 30231109
+            },
+            {
+              "code": "002286",
+              "name": "保龄宝",
+              "changePct": 10.06289291381836,
+              "industry": "农产品加",
+              "height": 1,
+              "firstTouch": "10:12",
+              "lastSeal": "10:12",
+              "breakCount": 0,
+              "sealFund": 48476732
+            },
+            {
+              "code": "002849",
+              "name": "威星智能",
+              "changePct": 9.995217323303223,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "10:16",
+              "lastSeal": "10:17",
+              "breakCount": 1,
+              "sealFund": 83033082
+            },
+            {
+              "code": "603328",
+              "name": "依顿电子",
+              "changePct": 9.985527992248535,
+              "industry": "元件",
+              "height": 1,
+              "firstTouch": "10:18",
+              "lastSeal": "10:18",
+              "breakCount": 0,
+              "sealFund": 157231840
+            },
+            {
+              "code": "603937",
+              "name": "丽岛新材",
+              "changePct": 10.008481979370117,
+              "industry": "工业金属",
+              "height": 1,
+              "firstTouch": "10:27",
+              "lastSeal": "10:27",
+              "breakCount": 0,
+              "sealFund": 45322238
+            },
+            {
+              "code": "301150",
+              "name": "中一科技",
+              "changePct": 20,
+              "industry": "电池",
+              "height": 1,
+              "firstTouch": "10:32",
+              "lastSeal": "10:34",
+              "breakCount": 2,
+              "sealFund": 62323362
+            },
+            {
+              "code": "002909",
+              "name": "集泰股份",
+              "changePct": 10.072992324829102,
+              "industry": "化学制品",
+              "height": 1,
+              "firstTouch": "10:34",
+              "lastSeal": "10:46",
+              "breakCount": 2,
+              "sealFund": 39738062
+            },
+            {
+              "code": "688628",
+              "name": "优利德",
+              "changePct": 19.995805740356445,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "10:51",
+              "lastSeal": "11:04",
+              "breakCount": 1,
+              "sealFund": 87667105
+            },
+            {
+              "code": "002119",
+              "name": "康强电子",
+              "changePct": 10.012260437011719,
+              "industry": "半导体",
+              "height": 1,
+              "firstTouch": "11:07",
+              "lastSeal": "11:07",
+              "breakCount": 0,
+              "sealFund": 159401396
+            },
+            {
+              "code": "002819",
+              "name": "东方中科",
+              "changePct": 9.981851577758789,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "11:12",
+              "lastSeal": "11:12",
+              "breakCount": 0,
+              "sealFund": 47909875
+            },
+            {
+              "code": "002633",
+              "name": "申科股份",
+              "changePct": 9.979209899902344,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "11:17",
+              "lastSeal": "11:17",
+              "breakCount": 0,
+              "sealFund": 32047878
+            },
+            {
+              "code": "002989",
+              "name": "中天精装",
+              "changePct": 9.992132186889648,
+              "industry": "装修装饰",
+              "height": 1,
+              "firstTouch": "11:25",
+              "lastSeal": "11:25",
+              "breakCount": 0,
+              "sealFund": 74672212
+            },
+            {
+              "code": "603803",
+              "name": "瑞斯康达",
+              "changePct": 10,
+              "industry": "通信设备",
+              "height": 1,
+              "firstTouch": "13:00",
+              "lastSeal": "13:00",
+              "breakCount": 0,
+              "sealFund": 131446998
+            },
+            {
+              "code": "603991",
+              "name": "领先股份",
+              "changePct": 10,
+              "industry": "半导体",
+              "height": 1,
+              "firstTouch": "13:01",
+              "lastSeal": "13:19",
+              "breakCount": 2,
+              "sealFund": 93582951
+            },
+            {
+              "code": "603124",
+              "name": "江南新材",
+              "changePct": 9.998482704162598,
+              "industry": "金属新材",
+              "height": 1,
+              "firstTouch": "13:02",
+              "lastSeal": "13:02",
+              "breakCount": 0,
+              "sealFund": 76661500
+            },
+            {
+              "code": "603067",
+              "name": "振华股份",
+              "changePct": 9.988962173461914,
+              "industry": "化学原料",
+              "height": 1,
+              "firstTouch": "13:04",
+              "lastSeal": "13:42",
+              "breakCount": 2,
+              "sealFund": 210916160
+            },
+            {
+              "code": "688337",
+              "name": "普源精电",
+              "changePct": 20,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "13:04",
+              "lastSeal": "13:05",
+              "breakCount": 1,
+              "sealFund": 46741905
+            },
+            {
+              "code": "002935",
+              "name": "天奥电子",
+              "changePct": 9.98116683959961,
+              "industry": "军工电子",
+              "height": 1,
+              "firstTouch": "13:05",
+              "lastSeal": "13:05",
+              "breakCount": 0,
+              "sealFund": 35451562
+            },
+            {
+              "code": "600371",
+              "name": "万向德农",
+              "changePct": 9.993634223937988,
+              "industry": "种植业",
+              "height": 1,
+              "firstTouch": "13:16",
+              "lastSeal": "13:16",
+              "breakCount": 0,
+              "sealFund": 44392302
+            },
+            {
+              "code": "603373",
+              "name": "安邦护卫",
+              "changePct": 10,
+              "industry": "专业服务",
+              "height": 1,
+              "firstTouch": "13:17",
+              "lastSeal": "13:17",
+              "breakCount": 0,
+              "sealFund": 58746347
+            },
+            {
+              "code": "688056",
+              "name": "莱伯泰科",
+              "changePct": 20,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "13:22",
+              "lastSeal": "13:22",
+              "breakCount": 0,
+              "sealFund": 23532518
+            },
+            {
+              "code": "688512",
+              "name": "慧智微-U",
+              "changePct": 20.027719497680664,
+              "industry": "半导体",
+              "height": 1,
+              "firstTouch": "13:28",
+              "lastSeal": "14:56",
+              "breakCount": 10,
+              "sealFund": 5646371
+            },
+            {
+              "code": "002937",
+              "name": "兴瑞科技",
+              "changePct": 10.003650665283203,
+              "industry": "汽车零部",
+              "height": 1,
+              "firstTouch": "14:11",
+              "lastSeal": "14:11",
+              "breakCount": 0,
+              "sealFund": 47815827
+            },
+            {
+              "code": "002541",
+              "name": "鸿路钢构",
+              "changePct": 10,
+              "industry": "专业工程",
+              "height": 1,
+              "firstTouch": "14:12",
+              "lastSeal": "14:12",
+              "breakCount": 0,
+              "sealFund": 50874746
+            },
+            {
+              "code": "002638",
+              "name": "勤上股份",
+              "changePct": 9.976798057556152,
+              "industry": "照明设备",
+              "height": 1,
+              "firstTouch": "14:13",
+              "lastSeal": "14:13",
+              "breakCount": 0,
+              "sealFund": 38448747
+            }
+          ]
+        }
+      ],
+      "failedStocks": [
+        {
+          "code": "601579",
+          "name": "会稽山",
+          "changePct": -1.8953551054000854,
+          "industry": "非白酒",
+          "height": 1,
+          "firstTouch": "10:13",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "002285",
+          "name": "世联行",
+          "changePct": -0.9375000596046448,
+          "industry": "房地产服",
+          "height": 1,
+          "firstTouch": "09:41",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "002564",
+          "name": "天沃科技",
+          "changePct": 0.7339449524879456,
+          "industry": "专用设备",
+          "height": 1,
+          "firstTouch": "09:34",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "002757",
+          "name": "南兴股份",
+          "changePct": 2.1148037910461426,
+          "industry": "专用设备",
+          "height": 1,
+          "firstTouch": "09:44",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "002146",
+          "name": "荣盛发展",
+          "changePct": 2.4193546772003174,
+          "industry": "房地产开",
+          "height": 1,
+          "firstTouch": "09:53",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "000002",
+          "name": "万科Ａ",
+          "changePct": 2.887139081954956,
+          "industry": "房地产开",
+          "height": 1,
+          "firstTouch": "09:52",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "600616",
+          "name": "金枫酒业",
+          "changePct": 3.262955665588379,
+          "industry": "非白酒",
+          "height": 1,
+          "firstTouch": "10:06",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "600675",
+          "name": "中华企业",
+          "changePct": 3.719008445739746,
+          "industry": "房地产开",
+          "height": 1,
+          "firstTouch": "09:39",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "002646",
+          "name": "天佑德酒",
+          "changePct": 3.966005563735962,
+          "industry": "白酒Ⅱ",
+          "height": 1,
+          "firstTouch": "10:10",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "605268",
+          "name": "王力安防",
+          "changePct": 4.660587787628174,
+          "industry": "家居用品",
+          "height": 1,
+          "firstTouch": "10:29",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "600231",
+          "name": "凌钢股份",
+          "changePct": 4.761904716491699,
+          "industry": "普钢",
+          "height": 1,
+          "firstTouch": "10:06",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "000868",
+          "name": "安凯客车",
+          "changePct": 4.822335243225098,
+          "industry": "商用车",
+          "height": 1,
+          "firstTouch": "09:38",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "600059",
+          "name": "古越龙山",
+          "changePct": 5.004633903503418,
+          "industry": "非白酒",
+          "height": 1,
+          "firstTouch": "09:42",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "600790",
+          "name": "轻纺城",
+          "changePct": 5.070422649383545,
+          "industry": "一般零售",
+          "height": 1,
+          "firstTouch": "10:09",
+          "lastSeal": null,
+          "breakCount": 3,
+          "sealFund": null
+        },
+        {
+          "code": "605088",
+          "name": "冠盛股份",
+          "changePct": 5.282405376434326,
+          "industry": "汽车零部",
+          "height": 1,
+          "firstTouch": "14:39",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "000504",
+          "name": "南华生物",
+          "changePct": 5.367465019226074,
+          "industry": "医疗服务",
+          "height": 1,
+          "firstTouch": "09:34",
+          "lastSeal": null,
+          "breakCount": 4,
+          "sealFund": null
+        },
+        {
+          "code": "000877",
+          "name": "天山股份",
+          "changePct": 6.7750678062438965,
+          "industry": "水泥",
+          "height": 1,
+          "firstTouch": "10:03",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "002205",
+          "name": "国统股份",
+          "changePct": 6.899724006652832,
+          "industry": "水泥",
+          "height": 1,
+          "firstTouch": "09:42",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "001216",
+          "name": "华瓷股份",
+          "changePct": 6.951265811920166,
+          "industry": "家居用品",
+          "height": 1,
+          "firstTouch": "09:34",
+          "lastSeal": null,
+          "breakCount": 4,
+          "sealFund": null
+        },
+        {
+          "code": "003036",
+          "name": "泰坦股份",
+          "changePct": 7.456140041351318,
+          "industry": "专用设备",
+          "height": 1,
+          "firstTouch": "09:42",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "002335",
+          "name": "科华数据",
+          "changePct": 7.832121849060059,
+          "industry": "其他电源",
+          "height": 1,
+          "firstTouch": "14:15",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "000823",
+          "name": "超声电子",
+          "changePct": 7.850912094116211,
+          "industry": "元件",
+          "height": 1,
+          "firstTouch": "14:01",
+          "lastSeal": null,
+          "breakCount": 5,
+          "sealFund": null
+        },
+        {
+          "code": "001326",
+          "name": "联域股份",
+          "changePct": 8.57432746887207,
+          "industry": "照明设备",
+          "height": 1,
+          "firstTouch": "10:59",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "001368",
+          "name": "通达创智",
+          "changePct": 8.972125053405762,
+          "industry": "文娱用品",
+          "height": 1,
+          "firstTouch": "10:31",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "600641",
+          "name": "先导基电",
+          "changePct": 9.282121658325195,
+          "industry": "半导体",
+          "height": 1,
+          "firstTouch": "09:34",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "300155",
+          "name": "安居宝",
+          "changePct": 11.94690227508545,
+          "industry": "计算机设",
+          "height": 1,
+          "firstTouch": "09:41",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        }
+      ],
+      "limitDownStocks": [
+        {
+          "code": "920229",
+          "name": "世纪数码",
+          "changePct": -30.000001907348633,
+          "industry": "专用设备",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "09:25",
+          "breakCount": 0,
+          "sealFund": 328070542
+        },
+        {
+          "code": "000607",
+          "name": "华媒控股",
+          "changePct": -10.0401611328125,
+          "industry": "广告营销",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "13:34",
+          "breakCount": 0,
+          "sealFund": 24712271
+        },
+        {
+          "code": "002253",
+          "name": "川大智胜",
+          "changePct": -10.02921199798584,
+          "industry": "软件开发",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "09:25",
+          "breakCount": 0,
+          "sealFund": 76053968
+        },
+        {
+          "code": "600630",
+          "name": "龙头股份",
+          "changePct": -10.021097183227539,
+          "industry": "服装家纺",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "09:52",
+          "breakCount": 0,
+          "sealFund": 126600400
+        },
+        {
+          "code": "600088",
+          "name": "中视传媒",
+          "changePct": -10.019776344299316,
+          "industry": "影视院线",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "13:38",
+          "breakCount": 0,
+          "sealFund": 30626791
+        },
+        {
+          "code": "003040",
+          "name": "楚天龙",
+          "changePct": -10.011312484741211,
+          "industry": "通信设备",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "11:09",
+          "breakCount": 0,
+          "sealFund": 89899455
+        },
+        {
+          "code": "603248",
+          "name": "锡华科技",
+          "changePct": -10.00837516784668,
+          "industry": "风电设备",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "14:24",
+          "breakCount": 0,
+          "sealFund": 19128786
+        },
+        {
+          "code": "001317",
+          "name": "三羊马",
+          "changePct": -10.006064414978027,
+          "industry": "铁路公路",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "11:03",
+          "breakCount": 0,
+          "sealFund": 93441722
+        },
+        {
+          "code": "605577",
+          "name": "龙版传媒",
+          "changePct": -10.005653381347656,
+          "industry": "出版",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "10:28",
+          "breakCount": 0,
+          "sealFund": 81411489
+        },
+        {
+          "code": "603823",
+          "name": "百合花",
+          "changePct": -10.003565788269043,
+          "industry": "化学制品",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "13:51",
+          "breakCount": 0,
+          "sealFund": 9552456
+        },
+        {
+          "code": "603679",
+          "name": "华体科技",
+          "changePct": -9.996170043945312,
+          "industry": "光学光电",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "15:00",
+          "breakCount": 0,
+          "sealFund": 10325195
+        },
+        {
+          "code": "000993",
+          "name": "闽东电力",
+          "changePct": -9.995217323303223,
+          "industry": "电力",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "09:49",
+          "breakCount": 0,
+          "sealFund": 460675282
+        },
+        {
+          "code": "000756",
+          "name": "新华制药",
+          "changePct": -9.97521686553955,
+          "industry": "化学制药",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "13:58",
+          "breakCount": 0,
+          "sealFund": 48120483
+        }
+      ],
+      "coverage": {
+        "reported": 5221,
+        "available": 5208
+      }
+    },
+    {
+      "date": "2026-09-24",
+      "previousDate": "2026-09-23",
+      "cutoff": "15:00",
+      "status": "READY",
+      "source": "CLOSE收盘包 v2.28",
+      "limitUp": 52,
+      "failed": 10,
+      "limitDown": 13,
+      "sealRate": 83.87096774193549,
+      "highestBoard": 5,
+      "consecutiveCount": 13,
+      "turnover": 1649388078560.4,
+      "breadth": {
+        "requested": 5536,
+        "rowsAvailable": 5530,
+        "up": 1111,
+        "down": 4282,
+        "flat": 137,
+        "medianChangePct": -1.2983501085177651
+      },
+      "indexMood": "弱势",
+      "shortMood": "退潮",
+      "cycleNode": "强分歧",
+      "concentratedIndustries": [
+        {
+          "name": "通用设备",
+          "count": 6
+        },
+        {
+          "name": "汽车零部",
+          "count": 4
+        },
+        {
+          "name": "出版",
+          "count": 3
+        },
+        {
+          "name": "医疗服务",
+          "count": 3
+        },
+        {
+          "name": "半导体",
+          "count": 2
+        }
+      ],
+      "leaders": [
+        "新华文轩"
+      ],
+      "indices": [
+        {
+          "code": "sh000001",
+          "name": "上证",
+          "close": 3888.374,
+          "changePct": -1.2230574523451554
+        },
+        {
+          "code": "sz399001",
+          "name": "深证",
+          "close": 13316.969,
+          "changePct": -2.340124390678555
+        },
+        {
+          "code": "sz399006",
+          "name": "创业板",
+          "close": 3288.948,
+          "changePct": -2.682617225064443
+        }
+      ],
+      "ladders": [
+        {
+          "height": 5,
+          "stocks": [
+            {
+              "code": "601811",
+              "name": "新华文轩",
+              "changePct": 10,
+              "industry": "出版",
+              "height": 5,
+              "firstTouch": "09:30",
+              "lastSeal": "09:30",
+              "breakCount": 0,
+              "sealFund": 135765309
+            }
+          ]
+        },
+        {
+          "height": 4,
+          "stocks": [
+            {
+              "code": "001234",
+              "name": "泰慕士",
+              "changePct": 10.00621509552002,
+              "industry": "服装家纺",
+              "height": 4,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 360840625
+            },
+            {
+              "code": "600825",
+              "name": "新华传媒",
+              "changePct": 10.056657791137695,
+              "industry": "出版",
+              "height": 4,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 1761208868
+            },
+            {
+              "code": "002614",
+              "name": "奥佳华",
+              "changePct": 10.039629936218262,
+              "industry": "其他家电",
+              "height": 4,
+              "firstTouch": "09:30",
+              "lastSeal": "09:31",
+              "breakCount": 1,
+              "sealFund": 103658628
+            }
+          ]
+        },
+        {
+          "height": 3,
+          "stocks": [
+            {
+              "code": "002238",
+              "name": "天威视讯",
+              "changePct": 10.05221939086914,
+              "industry": "电视广播",
+              "height": 3,
+              "firstTouch": "09:30",
+              "lastSeal": "13:10",
+              "breakCount": 3,
+              "sealFund": 12686711
+            }
+          ]
+        },
+        {
+          "height": 2,
+          "stocks": [
+            {
+              "code": "000850",
+              "name": "华茂股份",
+              "changePct": 10.107526779174805,
+              "industry": "纺织制造",
+              "height": 2,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 160092487
+            },
+            {
+              "code": "603949",
+              "name": "雪龙集团",
+              "changePct": 10.026041030883789,
+              "industry": "汽车零部",
+              "height": 2,
+              "firstTouch": "09:30",
+              "lastSeal": "09:30",
+              "breakCount": 0,
+              "sealFund": 78925298
+            },
+            {
+              "code": "002819",
+              "name": "东方中科",
+              "changePct": 9.983498573303223,
+              "industry": "通用设备",
+              "height": 2,
+              "firstTouch": "09:30",
+              "lastSeal": "09:41",
+              "breakCount": 2,
+              "sealFund": 97599594
+            },
+            {
+              "code": "002119",
+              "name": "康强电子",
+              "changePct": 9.992570877075195,
+              "industry": "半导体",
+              "height": 2,
+              "firstTouch": "09:33",
+              "lastSeal": "10:27",
+              "breakCount": 1,
+              "sealFund": 143093937
+            },
+            {
+              "code": "603396",
+              "name": "金辰股份",
+              "changePct": 10,
+              "industry": "光伏设备",
+              "height": 2,
+              "firstTouch": "09:34",
+              "lastSeal": "09:35",
+              "breakCount": 1,
+              "sealFund": 72841138
+            },
+            {
+              "code": "002909",
+              "name": "集泰股份",
+              "changePct": 9.94694995880127,
+              "industry": "化学制品",
+              "height": 2,
+              "firstTouch": "09:35",
+              "lastSeal": "10:19",
+              "breakCount": 2,
+              "sealFund": 89284129
+            },
+            {
+              "code": "600843",
+              "name": "上工申贝",
+              "changePct": 9.986859321594238,
+              "industry": "专用设备",
+              "height": 2,
+              "firstTouch": "10:04",
+              "lastSeal": "10:04",
+              "breakCount": 0,
+              "sealFund": 13278084
+            },
+            {
+              "code": "600802",
+              "name": "福建水泥",
+              "changePct": 9.966776847839355,
+              "industry": "水泥",
+              "height": 2,
+              "firstTouch": "14:24",
+              "lastSeal": "14:24",
+              "breakCount": 0,
+              "sealFund": 76295572
+            }
+          ]
+        },
+        {
+          "height": 1,
+          "stocks": [
+            {
+              "code": "000498",
+              "name": "山东路桥",
+              "changePct": 9.922179222106934,
+              "industry": "基础建设",
+              "height": 1,
+              "firstTouch": "09:25",
+              "lastSeal": "09:31",
+              "breakCount": 1,
+              "sealFund": 59982095
+            },
+            {
+              "code": "601567",
+              "name": "三星电气",
+              "changePct": 10.02031135559082,
+              "industry": "电网设备",
+              "height": 1,
+              "firstTouch": "09:25",
+              "lastSeal": "09:25",
+              "breakCount": 0,
+              "sealFund": 234273390
+            },
+            {
+              "code": "002321",
+              "name": "华英农业",
+              "changePct": 10.194174766540527,
+              "industry": "养殖业",
+              "height": 1,
+              "firstTouch": "09:30",
+              "lastSeal": "09:30",
+              "breakCount": 0,
+              "sealFund": 40973727
+            },
+            {
+              "code": "002413",
+              "name": "雷科防务",
+              "changePct": 10.061349868774414,
+              "industry": "军工电子",
+              "height": 1,
+              "firstTouch": "09:31",
+              "lastSeal": "13:09",
+              "breakCount": 2,
+              "sealFund": 106051987
+            },
+            {
+              "code": "603500",
+              "name": "祥和实业",
+              "changePct": 10.031679153442383,
+              "industry": "轨交设备",
+              "height": 1,
+              "firstTouch": "09:32",
+              "lastSeal": "09:32",
+              "breakCount": 1,
+              "sealFund": 78088042
+            },
+            {
+              "code": "000710",
+              "name": "贝瑞基因",
+              "changePct": 9.990009307861328,
+              "industry": "医疗服务",
+              "height": 1,
+              "firstTouch": "09:32",
+              "lastSeal": "09:32",
+              "breakCount": 0,
+              "sealFund": 43684377
+            },
+            {
+              "code": "000790",
+              "name": "华神科技",
+              "changePct": 10.117647171020508,
+              "industry": "中药Ⅱ",
+              "height": 1,
+              "firstTouch": "09:33",
+              "lastSeal": "09:33",
+              "breakCount": 0,
+              "sealFund": 86277204
+            },
+            {
+              "code": "603230",
+              "name": "内蒙新华",
+              "changePct": 10.005955696105957,
+              "industry": "出版",
+              "height": 1,
+              "firstTouch": "09:34",
+              "lastSeal": "14:11",
+              "breakCount": 6,
+              "sealFund": 16643317
+            },
+            {
+              "code": "002395",
+              "name": "双象股份",
+              "changePct": 10.023492813110352,
+              "industry": "塑料",
+              "height": 1,
+              "firstTouch": "09:35",
+              "lastSeal": "09:43",
+              "breakCount": 1,
+              "sealFund": 31754545
+            },
+            {
+              "code": "002622",
+              "name": "皓宸医疗",
+              "changePct": 10.12145709991455,
+              "industry": "医疗服务",
+              "height": 1,
+              "firstTouch": "09:36",
+              "lastSeal": "09:36",
+              "breakCount": 0,
+              "sealFund": 35267835
+            },
+            {
+              "code": "000678",
+              "name": "襄阳轴承",
+              "changePct": 10,
+              "industry": "汽车零部",
+              "height": 1,
+              "firstTouch": "09:37",
+              "lastSeal": "09:37",
+              "breakCount": 0,
+              "sealFund": 38513215
+            },
+            {
+              "code": "002029",
+              "name": "七匹狼",
+              "changePct": 9.97624683380127,
+              "industry": "服装家纺",
+              "height": 1,
+              "firstTouch": "09:37",
+              "lastSeal": "10:58",
+              "breakCount": 4,
+              "sealFund": 25589084
+            },
+            {
+              "code": "603278",
+              "name": "大业股份",
+              "changePct": 9.988776206970215,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "09:37",
+              "lastSeal": "09:38",
+              "breakCount": 1,
+              "sealFund": 46766776
+            },
+            {
+              "code": "688682",
+              "name": "霍莱沃",
+              "changePct": 19.987348556518555,
+              "industry": "军工电子",
+              "height": 1,
+              "firstTouch": "09:39",
+              "lastSeal": "09:53",
+              "breakCount": 2,
+              "sealFund": 11694777
+            },
+            {
+              "code": "600792",
+              "name": "云煤能源",
+              "changePct": 10.038609504699707,
+              "industry": "焦炭Ⅱ",
+              "height": 1,
+              "firstTouch": "09:39",
+              "lastSeal": "10:11",
+              "breakCount": 1,
+              "sealFund": 59100450
+            },
+            {
+              "code": "603767",
+              "name": "中马传动",
+              "changePct": 10,
+              "industry": "汽车零部",
+              "height": 1,
+              "firstTouch": "09:40",
+              "lastSeal": "10:13",
+              "breakCount": 1,
+              "sealFund": 71913512
+            },
+            {
+              "code": "301699",
+              "name": "洛轴股份",
+              "changePct": 19.986495971679688,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "09:42",
+              "lastSeal": "09:49",
+              "breakCount": 1,
+              "sealFund": 108161938
+            },
+            {
+              "code": "600358",
+              "name": "国旅联合",
+              "changePct": 10,
+              "industry": "广告营销",
+              "height": 1,
+              "firstTouch": "09:43",
+              "lastSeal": "10:24",
+              "breakCount": 7,
+              "sealFund": 14241084
+            },
+            {
+              "code": "605018",
+              "name": "长华集团",
+              "changePct": 10.017271041870117,
+              "industry": "汽车零部",
+              "height": 1,
+              "firstTouch": "09:46",
+              "lastSeal": "09:46",
+              "breakCount": 0,
+              "sealFund": 36697570
+            },
+            {
+              "code": "002164",
+              "name": "宁波东力",
+              "changePct": 10.025274276733398,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "09:50",
+              "lastSeal": "13:22",
+              "breakCount": 4,
+              "sealFund": 24716050
+            },
+            {
+              "code": "600815",
+              "name": "厦工股份",
+              "changePct": 9.929078102111816,
+              "industry": "工程机械",
+              "height": 1,
+              "firstTouch": "09:58",
+              "lastSeal": "14:54",
+              "breakCount": 3,
+              "sealFund": 19591380
+            },
+            {
+              "code": "603065",
+              "name": "宿迁联盛",
+              "changePct": 10.00676155090332,
+              "industry": "化学制品",
+              "height": 1,
+              "firstTouch": "09:58",
+              "lastSeal": "10:11",
+              "breakCount": 2,
+              "sealFund": 89086385
+            },
+            {
+              "code": "601218",
+              "name": "吉鑫科技",
+              "changePct": 10,
+              "industry": "风电设备",
+              "height": 1,
+              "firstTouch": "10:02",
+              "lastSeal": "10:04",
+              "breakCount": 1,
+              "sealFund": 37167900
+            },
+            {
+              "code": "002836",
+              "name": "新宏泽",
+              "changePct": 10.044842720031738,
+              "industry": "包装印刷",
+              "height": 1,
+              "firstTouch": "10:26",
+              "lastSeal": "10:26",
+              "breakCount": 0,
+              "sealFund": 28292166
+            },
+            {
+              "code": "600189",
+              "name": "泉阳泉",
+              "changePct": 10.036275863647461,
+              "industry": "饮料乳品",
+              "height": 1,
+              "firstTouch": "10:35",
+              "lastSeal": "11:07",
+              "breakCount": 1,
+              "sealFund": 40469674
+            },
+            {
+              "code": "603042",
+              "name": "华脉科技",
+              "changePct": 9.982383728027344,
+              "industry": "通信设备",
+              "height": 1,
+              "firstTouch": "10:43",
+              "lastSeal": "10:45",
+              "breakCount": 1,
+              "sealFund": 36482855
+            },
+            {
+              "code": "301689",
+              "name": "电科思仪",
+              "changePct": 20,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "13:40",
+              "lastSeal": "15:00",
+              "breakCount": 2,
+              "sealFund": 1448355
+            },
+            {
+              "code": "603375",
+              "name": "盛景微",
+              "changePct": 10.006701469421387,
+              "industry": "半导体",
+              "height": 1,
+              "firstTouch": "13:42",
+              "lastSeal": "13:42",
+              "breakCount": 0,
+              "sealFund": 68472964
+            },
+            {
+              "code": "603970",
+              "name": "中农立华",
+              "changePct": 10.036166191101074,
+              "industry": "农化制品",
+              "height": 1,
+              "firstTouch": "13:56",
+              "lastSeal": "13:56",
+              "breakCount": 0,
+              "sealFund": 34516420
+            },
+            {
+              "code": "301311",
+              "name": "昆船智能",
+              "changePct": 20.026700973510742,
+              "industry": "通用设备",
+              "height": 1,
+              "firstTouch": "14:02",
+              "lastSeal": "14:28",
+              "breakCount": 1,
+              "sealFund": 6911206
+            },
+            {
+              "code": "002205",
+              "name": "国统股份",
+              "changePct": 9.9827880859375,
+              "industry": "水泥",
+              "height": 1,
+              "firstTouch": "14:17",
+              "lastSeal": "14:20",
+              "breakCount": 1,
+              "sealFund": 41144455
+            },
+            {
+              "code": "000592",
+              "name": "平潭发展",
+              "changePct": 10.025062561035156,
+              "industry": "林业Ⅱ",
+              "height": 1,
+              "firstTouch": "14:23",
+              "lastSeal": "14:23",
+              "breakCount": 0,
+              "sealFund": 356540944
+            },
+            {
+              "code": "300300",
+              "name": "海峡创新",
+              "changePct": 19.977802276611328,
+              "industry": "IT服务Ⅱ",
+              "height": 1,
+              "firstTouch": "14:24",
+              "lastSeal": "14:25",
+              "breakCount": 2,
+              "sealFund": 97693331
+            },
+            {
+              "code": "000905",
+              "name": "厦门港务",
+              "changePct": 9.977578163146973,
+              "industry": "航运港口",
+              "height": 1,
+              "firstTouch": "14:39",
+              "lastSeal": "14:39",
+              "breakCount": 0,
+              "sealFund": 118476753
+            },
+            {
+              "code": "000753",
+              "name": "漳州发展",
+              "changePct": 10.082304000854492,
+              "industry": "综合Ⅱ",
+              "height": 1,
+              "firstTouch": "14:39",
+              "lastSeal": "14:39",
+              "breakCount": 0,
+              "sealFund": 79515980
+            },
+            {
+              "code": "920748",
+              "name": "路桥信息",
+              "changePct": 29.985755920410156,
+              "industry": "IT服务Ⅱ",
+              "height": 1,
+              "firstTouch": "14:45",
+              "lastSeal": "14:47",
+              "breakCount": 1,
+              "sealFund": 11936850
+            },
+            {
+              "code": "002679",
+              "name": "福建金森",
+              "changePct": 9.97150993347168,
+              "industry": "林业Ⅱ",
+              "height": 1,
+              "firstTouch": "14:45",
+              "lastSeal": "14:45",
+              "breakCount": 0,
+              "sealFund": 65311200
+            },
+            {
+              "code": "603122",
+              "name": "合富中国",
+              "changePct": 10.022107124328613,
+              "industry": "医疗服务",
+              "height": 1,
+              "firstTouch": "14:48",
+              "lastSeal": "14:48",
+              "breakCount": 1,
+              "sealFund": 23349027
+            },
+            {
+              "code": "002264",
+              "name": "新华都",
+              "changePct": 10.013531684875488,
+              "industry": "广告营销",
+              "height": 1,
+              "firstTouch": "14:50",
+              "lastSeal": "14:50",
+              "breakCount": 0,
+              "sealFund": 68454591
+            }
+          ]
+        }
+      ],
+      "failedStocks": [
+        {
+          "code": "000910",
+          "name": "大亚圣象",
+          "changePct": 0.26385223865509033,
+          "industry": "家居用品",
+          "height": 1,
+          "firstTouch": "09:30",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "603937",
+          "name": "丽岛新材",
+          "changePct": 4.471858024597168,
+          "industry": "工业金属",
+          "height": 1,
+          "firstTouch": "10:53",
+          "lastSeal": null,
+          "breakCount": 2,
+          "sealFund": null
+        },
+        {
+          "code": "002181",
+          "name": "粤传媒",
+          "changePct": 5.043859958648682,
+          "industry": "出版",
+          "height": 1,
+          "firstTouch": "09:33",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "600699",
+          "name": "均胜电子",
+          "changePct": 5.0627031326293945,
+          "industry": "汽车零部",
+          "height": 1,
+          "firstTouch": "10:36",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "600831",
+          "name": "广电网络",
+          "changePct": 5.089820384979248,
+          "industry": "电视广播",
+          "height": 1,
+          "firstTouch": "09:35",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "000504",
+          "name": "南华生物",
+          "changePct": 7.60188102722168,
+          "industry": "医疗服务",
+          "height": 1,
+          "firstTouch": "10:23",
+          "lastSeal": null,
+          "breakCount": 4,
+          "sealFund": null
+        },
+        {
+          "code": "600641",
+          "name": "先导基电",
+          "changePct": 7.866108417510986,
+          "industry": "半导体",
+          "height": 1,
+          "firstTouch": "09:48",
+          "lastSeal": null,
+          "breakCount": 6,
+          "sealFund": null
+        },
+        {
+          "code": "600156",
+          "name": "华升股份",
+          "changePct": 9.036860466003418,
+          "industry": "纺织制造",
+          "height": 1,
+          "firstTouch": "09:31",
+          "lastSeal": null,
+          "breakCount": 4,
+          "sealFund": null
+        },
+        {
+          "code": "001317",
+          "name": "三羊马",
+          "changePct": 10.006738662719727,
+          "industry": "铁路公路",
+          "height": 1,
+          "firstTouch": "10:16",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        },
+        {
+          "code": "301560",
+          "name": "众捷股份",
+          "changePct": 10.976073265075684,
+          "industry": "汽车零部",
+          "height": 1,
+          "firstTouch": "10:23",
+          "lastSeal": null,
+          "breakCount": 1,
+          "sealFund": null
+        }
+      ],
+      "limitDownStocks": [
+        {
+          "code": "920025",
+          "name": "凯达重工",
+          "changePct": -30.000001907348633,
+          "industry": "专用设备",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "14:12",
+          "breakCount": 0,
+          "sealFund": 33568080
+        },
+        {
+          "code": "920229",
+          "name": "世纪数码",
+          "changePct": -30.000001907348633,
+          "industry": "专用设备",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "14:11",
+          "breakCount": 0,
+          "sealFund": 18185687
+        },
+        {
+          "code": "000607",
+          "name": "华媒控股",
+          "changePct": -10.044642448425293,
+          "industry": "广告营销",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "15:00",
+          "breakCount": 0,
+          "sealFund": 1981083
+        },
+        {
+          "code": "000978",
+          "name": "桂林旅游",
+          "changePct": -10.01137638092041,
+          "industry": "旅游及景",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "10:37",
+          "breakCount": 0,
+          "sealFund": 64390018
+        },
+        {
+          "code": "603823",
+          "name": "百合花",
+          "changePct": -10.00594425201416,
+          "industry": "化学制品",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "14:56",
+          "breakCount": 0,
+          "sealFund": 6999222
+        },
+        {
+          "code": "000593",
+          "name": "德龙汇能",
+          "changePct": -10.004134178161621,
+          "industry": "燃气Ⅱ",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "14:21",
+          "breakCount": 0,
+          "sealFund": 11264059
+        },
+        {
+          "code": "605179",
+          "name": "一鸣食品",
+          "changePct": -10.003690719604492,
+          "industry": "饮料乳品",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "15:00",
+          "breakCount": 0,
+          "sealFund": 2913410
+        },
+        {
+          "code": "000823",
+          "name": "超声电子",
+          "changePct": -10,
+          "industry": "元件",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "13:09",
+          "breakCount": 0,
+          "sealFund": 348555640
+        },
+        {
+          "code": "002106",
+          "name": "莱宝高科",
+          "changePct": -10,
+          "industry": "光学光电",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "14:39",
+          "breakCount": 0,
+          "sealFund": 40794972
+        },
+        {
+          "code": "601091",
+          "name": "沈鼓集团",
+          "changePct": -10,
+          "industry": "专用设备",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "10:16",
+          "breakCount": 0,
+          "sealFund": 373188384
+        },
+        {
+          "code": "601086",
+          "name": "国芳集团",
+          "changePct": -9.988248825073242,
+          "industry": "一般零售",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "13:02",
+          "breakCount": 0,
+          "sealFund": 78793824
+        },
+        {
+          "code": "600664",
+          "name": "哈药股份",
+          "changePct": -9.955751419067383,
+          "industry": "化学制药",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "13:00",
+          "breakCount": 0,
+          "sealFund": 171037680
+        },
+        {
+          "code": "600503",
+          "name": "华丽家族",
+          "changePct": -9.863945960998535,
+          "industry": "房地产开",
+          "height": 1,
+          "firstTouch": null,
+          "lastSeal": "09:55",
+          "breakCount": 0,
+          "sealFund": 81877580
+        }
+      ],
+      "coverage": {
+        "reported": 5536,
+        "available": 5530
       }
     }
   ]
