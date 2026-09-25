@@ -202,7 +202,17 @@ export function archivedCloseSpeed(tradeDate: string) {
 export function archivedIntradayEvidence(
   tradeDate: string,
 ): IntradayMinuteEvidence | null {
-  return DERIVED.dates[digits(tradeDate)]?.intraday ?? null;
+  const evidence = DERIVED.dates[digits(tradeDate)]?.intraday;
+  if (!evidence) return null;
+  return {
+    status: evidence.status,
+    resolution: evidence.resolution,
+    minuteSnapshots: evidence.minuteSnapshots,
+    candidateCount: evidence.candidateCount,
+    candidateWithObservations: evidence.candidateWithObservations,
+    eventCounts: evidence.eventCounts,
+    reason: evidence.reason,
+  };
 }
 
 export function archivedAuctionEvidence(
