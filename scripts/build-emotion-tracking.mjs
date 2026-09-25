@@ -10,15 +10,51 @@ const root = path.resolve(process.cwd(), '..');
 const history = JSON.parse(
   fs.readFileSync('lib/close-history.generated.json', 'utf8'),
 ).snapshots;
-const wanted = new Set(
-  history.flatMap((d) =>
-    [
-      ...d.ladders.flatMap((l) => l.stocks),
-      ...d.failedStocks,
-      ...d.limitDownStocks,
-    ].map((x) => x.code),
-  ),
-);
+const stocksOf = (day) => day?.ladders.flatMap((ladder) => ladder.stocks) ?? [];
+const uniqueCount = (rows) => new Set(rows.map((row) => row.code)).size;
+const complete = (day) =>
+  Boolean(
+    day &&
+      day.status === 'READY' &&
+      day.cutoff === '15:00' &&
+      uniqueCount(stocksOf(day)) === day.limitUp &&
+      uniqueCount(day.failedStocks) === day.failed &&
+      uniqueCount(day.limitDownStocks) === day.limitDown,
+  );
+
+// The API supports at most a 20-session lookback.  Keep only the identities
+// that one of those windows can actually request on each evidence date.  The
+// old implementation embedded every historical high/failed/limit-down name on
+// every date (about 1,400 quotes per day), even though most names could never
+// enter that day's old-leader, failed-repair, rebound or lead/lag result.  That
+// inflated the Worker bundle enough to cause cold-start memory failures.
+const wantedByDate = new Map(history.map((day) => [day.date, new Set()]));
+for (let targetIndex = 0; targetIndex < history.length; targetIndex++) {
+  const target = history[targetIndex];
+  const prior = history
+    .slice(0, targetIndex)
+    .filter((day) => day.date < target.date)
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(-20);
+  const leaders = new Map();
+  for (const day of prior.filter(complete))
+    for (const stock of stocksOf(day).filter(
+      (item) => item.height === day.highestBoard && item.height >= 3,
+    )) {
+      const previous = leaders.get(stock.code);
+      if (!previous || stock.height >= previous.height)
+        leaders.set(stock.code, { height: stock.height, peakDate: day.date });
+    }
+  for (const [code, leader] of leaders)
+    for (const day of history)
+      if (day.date >= leader.peakDate && day.date <= target.date)
+        wantedByDate.get(day.date)?.add(code);
+  const previous = prior.at(-1);
+  if (previous)
+    for (const stock of [...stocksOf(previous), ...previous.failedStocks])
+      wantedByDate.get(target.date)?.add(stock.code);
+}
+const wantedFor = (date) => wantedByDate.get(date) ?? new Set();
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 const read = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const dashed = (d) => `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`;
@@ -91,6 +127,7 @@ for (const date of fs
   const quotes = {},
     trends = {},
     noTrade = {};
+  const wanted = wantedFor(day);
   for (const row of breadth.values())
     if (wanted.has(row.code) && Number.isFinite(row.changePct))
       quotes[row.code] = {
@@ -239,6 +276,7 @@ if (fs.existsSync(archivesRoot))
         noTrade = {},
         source =
           '已校验周归档CLOSE报价 · 包声明15:00（不含全量分钟路径）';
+      const wanted = wantedFor(day);
       for (const row of structure.breadth?.rows ?? [])
         if (wanted.has(row.code) && Number.isFinite(row.changePct))
           quotes[row.code] = {
@@ -341,6 +379,7 @@ if (fs.existsSync(supplementsRoot))
       throw Error(`Minute supplement row count mismatch ${date}`);
     let oneMinute = 0,
       fiveMinute = 0;
+    const wanted = wantedFor(day);
     for (const row of rows) {
       if (
         row.tradeDate !== date ||
