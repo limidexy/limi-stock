@@ -6,6 +6,11 @@ const projectRoot = process.cwd();
 const workspaceRoot = path.resolve(projectRoot, '..');
 const outputsRoot = path.join(workspaceRoot, 'outputs');
 const marketRoot = path.join(workspaceRoot, 'data', 'market');
+const fullMarketMinuteRoot = path.join(
+  workspaceRoot,
+  'data',
+  'full_market_minute_supplements_v253',
+);
 const outputPath = path.join(
   projectRoot,
   'lib',
@@ -122,6 +127,76 @@ function readIndexCloses(date) {
     }
   }
   return result;
+}
+
+function readFullMarketCloseQuotes(date, wantedCodes) {
+  const directory = path.join(fullMarketMinuteRoot, date);
+  const manifestPath = path.join(directory, 'manifest.json');
+  const artifactPath = path.join(directory, 'minute_paths.jsonl.gz');
+  if (!fs.existsSync(manifestPath) || !fs.existsSync(artifactPath)) return {};
+  const manifest = readJson(manifestPath);
+  if (
+    manifest.status !== 'READY' ||
+    manifest.tradeDate !== date ||
+    !Number.isFinite(manifest.requested) ||
+    manifest.requested <= 0 ||
+    manifest.available !== manifest.requested ||
+    manifest.intervalCounts?.['1'] !== manifest.requested
+  )
+    return {};
+  const lines = zlib
+    .gunzipSync(fs.readFileSync(artifactPath))
+    .toString('utf8')
+    .trim()
+    .split('\n');
+  const wanted = new Set(wantedCodes);
+  const quotes = {};
+  let validRows = 0;
+  for (const line of lines) {
+    const row = JSON.parse(line);
+    if (
+      row.tradeDate !== date ||
+      Number(row.intervalMinutes) !== 1 ||
+      !Array.isArray(row.rows) ||
+      row.rows.length !== 241 ||
+      row.rows.at(-1)?.time !== '15:00' ||
+      !Number.isFinite(row.preClose) ||
+      row.preClose <= 0 ||
+      !Number.isFinite(row.rows.at(-1)?.close)
+    )
+      continue;
+    validRows += 1;
+    if (wanted.has(String(row.code)))
+      quotes[String(row.code)] = {
+        changePct: (row.rows.at(-1).close / row.preClose - 1) * 100,
+        quoteTime: `${formatDate(date)}T15:00:00+08:00`,
+        source: `${row.provider ?? '精确日期分钟源'} 1分钟全市场归档（241点）`,
+      };
+  }
+  return validRows === manifest.requested ? quotes : {};
+}
+
+function readClosePackageQuotes(structure, date, wantedCodes) {
+  const wanted = new Set(wantedCodes);
+  const quotes = {};
+  for (const row of structure?.breadth?.rows ?? []) {
+    const code = String(row.code ?? '').padStart(6, '0');
+    if (!wanted.has(code)) continue;
+    const changePct = Number.isFinite(row.changePct)
+      ? Number(row.changePct)
+      : Number.isFinite(row.price) &&
+          Number.isFinite(row.previousClose) &&
+          row.previousClose > 0
+        ? (row.price / row.previousClose - 1) * 100
+        : null;
+    if (!Number.isFinite(changePct)) continue;
+    quotes[code] = {
+      changePct,
+      quoteTime: `${formatDate(date)}T15:00:00+08:00`,
+      source: '精确交易日READY CLOSE全市场15:00收盘包',
+    };
+  }
+  return quotes;
 }
 
 const dates = new Set();
@@ -257,6 +332,13 @@ for (const date of sortedDates) {
   const previousDate = /^\d{8}$/.test(declaredPreviousDate)
     ? declaredPreviousDate
     : undefined;
+  const previousSnapshot = previousDate
+    ? snapshots.find((snapshot) => snapshot.date === formatDate(previousDate))
+    : undefined;
+  const previousPoolCodes =
+    previousSnapshot?.ladders.flatMap((level) =>
+      level.stocks.map((stock) => stock.code),
+    ) ?? [];
   const currentCloses = indexCloseByDate.get(date) ?? {};
   const previousCloses = previousDate
     ? (indexCloseByDate.get(previousDate) ?? {})
@@ -289,6 +371,10 @@ for (const date of sortedDates) {
     source: structure
       ? `CLOSE收盘包 ${structure.version ?? manifest?.version ?? ''}`.trim()
       : '收盘结构摘要',
+    closeQuotes: {
+      ...readClosePackageQuotes(structure, date, previousPoolCodes),
+      ...readFullMarketCloseQuotes(date, previousPoolCodes),
+    },
     limitUp,
     failed,
     limitDown,
