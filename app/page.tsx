@@ -126,6 +126,18 @@ type FlowData = {
   basis?: string;
   reason?: string;
   coverage?: { requested: number; available: number };
+  dataAvailableThrough?: string | null;
+  gap?: {
+    gapId: string;
+    tradeDate: string;
+    granularity: 'DAILY_CLOSE' | 'ONE_MINUTE';
+    status: string;
+    classification: string;
+    retryable: boolean;
+    lastProbeAt: string | null;
+    nextProbeAt: string | null;
+    reason: string;
+  } | null;
   series: SectorFlowSeries[];
   allRows?: SectorFlowSeries[];
   split: {
@@ -706,6 +718,20 @@ function SectorFlowChart({ data }: { data: FlowData }) {
         </CardAction>
       </CardHeader>
       <CardContent className="space-y-3">
+        {data.gap ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-xs leading-5 text-muted-foreground">
+            <span className="font-medium text-foreground">
+              缺口队列：{data.gap.status}
+            </span>
+            {' · '}
+            {data.gap.classification.startsWith('UPSTREAM_')
+              ? '上游响应不稳定，连续两轮多数探测恢复后才启动全量回补'
+              : data.gap.reason}
+            {data.dataAvailableThrough
+              ? ` · 当前完整收盘数据截至${data.dataAvailableThrough}`
+              : ''}
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex gap-1">
             {(

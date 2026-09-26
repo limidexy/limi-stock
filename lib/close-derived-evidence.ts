@@ -62,6 +62,18 @@ type DerivedDay = {
     curveRequested?: number;
     curveAvailable?: number;
     curveResolution?: string | null;
+    dataAvailableThrough?: string | null;
+    gap?: {
+      gapId: string;
+      tradeDate: string;
+      granularity: 'DAILY_CLOSE' | 'ONE_MINUTE';
+      status: string;
+      classification: string;
+      retryable: boolean;
+      lastProbeAt: string | null;
+      nextProbeAt: string | null;
+      reason: string;
+    } | null;
     rows: DerivedFlowRow[];
   } | null;
   speed?: {
@@ -177,6 +189,8 @@ export function archivedCloseFlow(
       requested: day.flow.curveRequested ?? day.flow.reported,
       available: day.flow.curveAvailable ?? 0,
     },
+    gap: day.flow.gap ?? null,
+    dataAvailableThrough: day.flow.dataAvailableThrough ?? null,
     series,
     allRows,
     split: {

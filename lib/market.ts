@@ -109,6 +109,18 @@ export type FlowSnapshot = {
   sessionState?: 'LIVE' | 'CLOSED';
   basis: string;
   coverage: { requested: number; available: number };
+  gap?: {
+    gapId: string;
+    tradeDate: string;
+    granularity: 'DAILY_CLOSE' | 'ONE_MINUTE';
+    status: string;
+    classification: string;
+    retryable: boolean;
+    lastProbeAt: string | null;
+    nextProbeAt: string | null;
+    reason: string;
+  } | null;
+  dataAvailableThrough?: string | null;
   series: SectorFlowSeries[];
   split: {
     inflow: SectorFlowSeries[];
