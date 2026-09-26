@@ -502,18 +502,26 @@ export async function fetchStockMetadata(code: string): Promise<StockMetadata> {
   const cached = metadataCache.get(code);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
   const fields = 'f57,f58,f127,f128,f129';
-  const payload = await fetchJson(
-    `https://push2delay.eastmoney.com/api/qt/stock/get?secid=${secid(code)}&fields=${fields}`,
-  );
-  const data = (payload.data ?? {}) as Record<string, unknown>;
+  let data: Record<string, unknown> = {};
+  try {
+    const payload = await fetchJson(
+      `https://push2delay.eastmoney.com/api/qt/stock/get?secid=${secid(code)}&fields=${fields}`,
+    );
+    data = (payload.data ?? {}) as Record<string, unknown>;
+  } catch {
+    // The quote-detail host often returns an HTML gateway page while the F10
+    // classification endpoint remains healthy.  Concept recovery is an
+    // independent evidence lane and must still be attempted.
+  }
   const primaryConcepts = splitConcepts(data.f129);
+  const fallbackConcepts = primaryConcepts.length
+    ? []
+    : await fetchF10Concepts(code).catch(() => []);
   const value: StockMetadata = {
     code: String(data.f57 ?? code),
     name: String(data.f58 ?? ''),
     industry: data.f127 && data.f127 !== '-' ? String(data.f127) : null,
-    concepts: primaryConcepts.length
-      ? primaryConcepts
-      : await fetchF10Concepts(code).catch(() => []),
+    concepts: primaryConcepts.length ? primaryConcepts : fallbackConcepts,
   };
   metadataCache.set(code, {
     expiresAt: Date.now() + 6 * 60 * 60 * 1000,

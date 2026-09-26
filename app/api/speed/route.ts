@@ -28,7 +28,9 @@ export async function GET() {
           ? {
               ...row,
               concepts: metadata.concepts,
-              metadataState: 'READY' as const,
+              // A concept fetched after the archived session is useful for
+              // display, but is not exact-date metadata.
+              metadataState: 'DEGRADED' as const,
             }
           : row;
       }),
@@ -72,9 +74,12 @@ export async function GET() {
           ...row,
           industry: metadata?.industry ?? row.industry,
           concepts: metadata?.concepts ?? row.concepts,
-          metadataState: metadata?.concepts.length
-            ? ('READY' as const)
-            : row.metadataState,
+          metadataState:
+            row.metadataState === 'READY'
+              ? ('READY' as const)
+              : metadata?.concepts.length
+                ? ('DEGRADED' as const)
+                : row.metadataState,
           recentLimitCount: history?.count ?? row.recentLimitCount,
           recentLimitSessions: history?.sessions ?? row.recentLimitSessions,
           recentLimitState: history?.status ?? row.recentLimitState,

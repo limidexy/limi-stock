@@ -285,9 +285,11 @@ export function unifiedMarketReading(
   const relationEvidenceReady = Boolean(
     minuteEvidenceReady &&
     intradayEvidence &&
-    intradayEvidence.candidateCount > 0 &&
+    (intradayEvidence.candidateRelationEligible ??
+      intradayEvidence.candidateCount) > 0 &&
     intradayEvidence.candidateWithObservations ===
-      intradayEvidence.candidateCount,
+      (intradayEvidence.candidateRelationEligible ??
+        intradayEvidence.candidateCount),
   );
   const relationEventCount = Object.values(
     intradayEvidence?.eventCounts ?? {},
@@ -568,7 +570,9 @@ export function unifiedMarketReading(
       conclusion: windowEvents.length
         ? `已识别${windowEvents.length}个真实短窗异动，完整传导链仍未确认`
         : relationEvidenceReady
-          ? '完整1分钟路径与候选关系已校验，当日未识别到达阈值的传导事件'
+          ? relationEventCount > 0
+            ? `完整1分钟路径已校验，识别${relationEventCount}个启动、扩散、分歧或修复转折`
+            : '完整1分钟路径与候选关系已校验，当日未识别到达阈值的传导事件'
           : minuteEvidenceReady
             ? '精确1分钟路径完整，但候选关系观察未覆盖，不判断带动与承接'
             : '缺少连续分钟传导证据，不能判断真实承接',
@@ -597,12 +601,12 @@ export function unifiedMarketReading(
         : relationEvidenceReady
           ? [
               `精确1分钟快照${intradayEvidence!.minuteSnapshots}个，分辨率${intradayEvidence!.resolution}`,
-              `动态事件${relationEventCount}个；零事件表示未达规则阈值，不是数据缺失`,
+              `动态事件${relationEventCount}个；事件是阈值转折证据，不直接等同龙头带动`,
             ]
           : minuteEvidenceReady
             ? [
                 `精确1分钟快照${intradayEvidence!.minuteSnapshots}个，价格路径READY`,
-                `关系候选观察${intradayEvidence!.candidateWithObservations}/${intradayEvidence!.candidateCount}，不用零事件冒充“当日无传导”`,
+                `关系候选观察${intradayEvidence!.candidateWithObservations}/${intradayEvidence!.candidateRelationEligible ?? intradayEvidence!.candidateCount}；排除${intradayEvidence!.candidateExclusions?.length ?? 0}只不具备可比同行组`,
               ]
             : ['当前仅有日内快照，未形成可复核的连续分钟路径'],
       boundary:

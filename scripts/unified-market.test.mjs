@@ -21,6 +21,15 @@ test('archived 15:00 flow and five-minute speed are exact-date evidence, not fak
   assert.equal(day.speed.windowEnd, '15:00');
   assert.equal(day.speed.rows.length, 30);
   assert.ok(day.speed.rows.every((row) => Number.isFinite(row.speedPct)));
+  assert.equal(day.speed.metadataAvailable, 30);
+  assert.equal(day.intraday.candidatePriceCovered, 88);
+  assert.equal(day.intraday.candidateRelationEligible, 87);
+  assert.equal(day.intraday.candidateWithObservations, 87);
+  assert.equal(day.intraday.candidateExclusions.length, 1);
+  assert.equal(
+    day.intraday.candidateExclusions[0].reason,
+    'SECTOR_PEER_GROUP_LT_3_OR_UNMAPPED',
+  );
 });
 
 test('same-date gates reject stale, missing and cross-date evidence', () => {
