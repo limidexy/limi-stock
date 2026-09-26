@@ -11,6 +11,11 @@ const fullMarketMinuteRoot = path.join(
   'data',
   'full_market_minute_supplements_v253',
 );
+const ladderCandidateMinuteRoot = path.join(
+  workspaceRoot,
+  'data',
+  'ladder_candidate_minute_v256',
+);
 const outputPath = path.join(
   projectRoot,
   'lib',
@@ -129,8 +134,8 @@ function readIndexCloses(date) {
   return result;
 }
 
-function readFullMarketCloseQuotes(date, wantedCodes) {
-  const directory = path.join(fullMarketMinuteRoot, date);
+function readMinuteArchiveCloseQuotes(root, date, wantedCodes) {
+  const directory = path.join(root, date);
   const manifestPath = path.join(directory, 'manifest.json');
   const artifactPath = path.join(directory, 'minute_paths.jsonl.gz');
   if (!fs.existsSync(manifestPath) || !fs.existsSync(artifactPath)) return {};
@@ -166,12 +171,19 @@ function readFullMarketCloseQuotes(date, wantedCodes) {
     )
       continue;
     validRows += 1;
-    if (wanted.has(String(row.code)))
+    if (wanted.has(String(row.code))) {
+      const last = row.rows.at(-1);
+      const speedBase = row.rows.find((point) => point.time === '14:55');
       quotes[String(row.code)] = {
         changePct: (row.rows.at(-1).close / row.preClose - 1) * 100,
+        speedPct:
+          Number.isFinite(speedBase?.close) && speedBase.close > 0
+            ? (last.close / speedBase.close - 1) * 100
+            : null,
         quoteTime: `${formatDate(date)}T15:00:00+08:00`,
         source: `${row.provider ?? '精确日期分钟源'} 1分钟全市场归档（241点）`,
       };
+    }
   }
   return validRows === manifest.requested ? quotes : {};
 }
@@ -373,7 +385,16 @@ for (const date of sortedDates) {
       : '收盘结构摘要',
     closeQuotes: {
       ...readClosePackageQuotes(structure, date, previousPoolCodes),
-      ...readFullMarketCloseQuotes(date, previousPoolCodes),
+      ...readMinuteArchiveCloseQuotes(
+        fullMarketMinuteRoot,
+        date,
+        previousPoolCodes,
+      ),
+      ...readMinuteArchiveCloseQuotes(
+        ladderCandidateMinuteRoot,
+        date,
+        previousPoolCodes,
+      ),
     },
     limitUp,
     failed,

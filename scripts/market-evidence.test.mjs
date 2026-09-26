@@ -34,14 +34,14 @@ const archivedFacts = (date) => ({
 const sep4 = () => archivedFacts('2026-09-04');
 const sep3 = () => archivedFacts('2026-09-03');
 
-test('historical emotion matches exact-date pools, never invents missing ordinary-stock returns', () => {
+test('historical emotion uses complete exact-date close quotes without inventing returns', () => {
   const result = shortEmotionReading(sep4(), sep3());
   assert.equal(result.cohort.consecutive.advanced, 1);
   assert.equal(result.cohort.consecutive.count, 9);
-  assert.equal(result.cohort.all.priceReady, 16);
+  assert.equal(result.cohort.all.priceReady, 44);
   assert.equal(result.cohort.all.count, 44);
-  assert.equal(result.median, null);
-  assert.equal(result.status, 'DEGRADED');
+  assert.ok(result.median < 0);
+  assert.equal(result.status, 'READY');
   assert.match(result.transition, /不是全面修复/);
 });
 
@@ -83,18 +83,26 @@ test('all real close prices make the current-day sentiment ready without claimin
   assert.ok(result.median < 0);
 });
 
-test('supplied prior date, identity, state and capture time must match the exact verified cohort', () => {
+test('invalid supplied ladders never replace the exact adjacent-close cohort', () => {
+  for (const mutate of [
+    (row) => (row.fromHeight = 8),
+    (row) => (row.state = 'SEALED'),
+  ]) {
+    const ladder = exactCloseLadder();
+    mutate(ladder.competitors[0]);
+    const result = shortEmotionReading(sep4(), sep3(), ladder);
+    assert.equal(result.status, 'DEGRADED');
+    assert.equal(result.cohortSource, '相邻收盘涨停名单逐股对照');
+  }
   for (const mutate of [
     (row) => (row.previousTradeDate = '20260812'),
-    (row) => (row.competitors[0].fromHeight = 8),
     (row) => (row.competitors[0].code = '999999'),
-    (row) => (row.competitors[0].state = 'SEALED'),
     (row) => (row.retrievedAt = '2026-09-04T14:00:00+08:00'),
   ]) {
     const ladder = exactCloseLadder();
     mutate(ladder);
     const result = shortEmotionReading(sep4(), sep3(), ladder);
-    assert.notEqual(result.status, 'READY');
+    assert.equal(result.status, 'READY');
     assert.notEqual(result.cohortSource, '同日完整昨日涨停跟踪');
   }
 });

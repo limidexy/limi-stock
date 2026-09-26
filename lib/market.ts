@@ -2323,6 +2323,11 @@ export async function repairArchivedLadder(
       close.date.replaceAll('-', '') === snapshot.tradeDate &&
       close.cutoff === '15:00',
   );
+  const bundledCurrentClose = CLOSE_HISTORY.snapshots.find(
+    (close) =>
+      close.date.replaceAll('-', '') === snapshot.tradeDate &&
+      close.cutoff === '15:00',
+  );
   const missing = snapshot.competitors.filter(
     (row) => !quoteComplete(row) || row.quoteState !== 'READY',
   );
@@ -2341,10 +2346,15 @@ export async function repairArchivedLadder(
         snapshot.sessionState === 'CLOSED'
           ? archivedQuote(marketSymbol(row.code), snapshot.tradeDate)
           : null;
-      const exactCloseFromHistory = currentClose?.closeQuotes?.[row.code];
+      const persistedExactClose = currentClose?.closeQuotes?.[row.code];
+      const bundledExactClose = bundledCurrentClose?.closeQuotes?.[row.code];
+      const exactCloseFromHistory = bundledExactClose
+        ? { ...persistedExactClose, ...bundledExactClose }
+        : persistedExactClose;
       const exactClose = exactCloseFromHistory
         ? {
             changePct: exactCloseFromHistory.changePct,
+            speedPct: exactCloseFromHistory.speedPct ?? null,
             quoteTime: exactCloseFromHistory.quoteTime,
             quoteSource: exactCloseFromHistory.source,
           }
@@ -2362,7 +2372,7 @@ export async function repairArchivedLadder(
           exactClose?.quoteTime ?? quote?.quoteTime ?? row.quoteTime,
         priceQuoteSource:
           exactClose?.quoteSource ?? quote?.quoteSource ?? row.quoteSource,
-        speedPct: quote?.speedPct ?? row.speedPct,
+        speedPct: exactClose?.speedPct ?? quote?.speedPct ?? row.speedPct,
         amount: quote?.amount ?? row.amount,
         quoteTime: quote?.quoteTime ?? row.quoteTime,
         quoteSource: quote?.quoteSource ?? row.quoteSource,

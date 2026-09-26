@@ -21,7 +21,12 @@ export type CloseSnapshot = {
   previousDate?: string;
   closeQuotes?: Record<
     string,
-    { changePct: number; quoteTime: string; source: string }
+    {
+      changePct: number;
+      speedPct?: number | null;
+      quoteTime: string;
+      source: string;
+    }
   >;
   cutoff: '15:00';
   status: 'READY';

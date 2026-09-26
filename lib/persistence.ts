@@ -115,9 +115,27 @@ export async function loadCloseHistory(): Promise<CloseSnapshot[]> {
   const result = await database
     .prepare('SELECT payload_json FROM close_snapshots ORDER BY trade_date ASC')
     .all<PersistedRow>();
-  return result.results.map(
-    (row) => JSON.parse(row.payload_json) as CloseSnapshot,
+  const seedByDate = new Map(
+    (seedDocument as CloseHistoryDocument).snapshots.map((snapshot) => [
+      snapshot.date,
+      snapshot,
+    ]),
   );
+  return result.results.map((row) => {
+    const persisted = JSON.parse(row.payload_json) as CloseSnapshot;
+    const seed = seedByDate.get(persisted.date);
+    if (!seed?.closeQuotes) return persisted;
+    return {
+      ...persisted,
+      // D1 keeps prior closes with INSERT OR IGNORE.  Merge newer immutable
+      // exact-date quote evidence at read time so a deployment can repair
+      // historical coverage without overwriting the archived market facts.
+      closeQuotes: {
+        ...(persisted.closeQuotes ?? {}),
+        ...seed.closeQuotes,
+      },
+    };
+  });
 }
 
 export async function saveModuleSnapshot(

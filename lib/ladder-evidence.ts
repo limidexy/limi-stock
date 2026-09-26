@@ -41,13 +41,21 @@ export function buildArchivedLadderSnapshot(
   const exactQuote = (code: string) => {
     const archived = current.closeQuotes?.[code];
     if (archived && compactDate(archived.quoteTime.slice(0, 10)) === tradeDate)
-      return { changePct: archived.changePct, source: archived.source };
+      return {
+        changePct: archived.changePct,
+        speedPct: archived.speedPct ?? null,
+        source: archived.source,
+      };
     const quote = quotes.get(code);
     if (
       quote?.changePct != null &&
       compactDate(quote.quoteTime?.slice(0, 10) ?? '') === tradeDate
     )
-      return { changePct: quote.changePct, source: quote.quoteSource };
+      return {
+        changePct: quote.changePct,
+        speedPct: quote.speedPct,
+        source: quote.quoteSource,
+      };
     return null;
   };
 
@@ -67,7 +75,7 @@ export function buildArchivedLadderSnapshot(
         toHeight: prior.height + 1,
         state: sealed ? 'SEALED' : failed ? 'FAILED' : 'DROPPED',
         changePct,
-        speedPct: quote?.speedPct ?? null,
+        speedPct: exact?.speedPct ?? quote?.speedPct ?? null,
         amount: quote?.amount ?? null,
         firstTouch: currentStock?.firstTouch ?? null,
         lastSeal: sealed?.lastSeal ?? null,

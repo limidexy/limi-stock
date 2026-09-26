@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-09-26T08:56:44.421Z",
+  "generatedAt": "2026-09-26T09:03:11.109Z",
   "methodology": {
     "facts": "涨停、炸板、跌停、市场宽度、连板高度和个股均来自当日15:00收盘包。",
     "labels": "指数情绪、短线情绪与周期节点由固定阈值规则判定，属于解释标签，不是原始行情字段。"
@@ -36076,191 +36076,229 @@
       "closeQuotes": {
         "300243": {
           "changePct": 6.901763224181345,
+          "speedPct": -0.04710315591145431,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "300464": {
           "changePct": -1.2974051896207484,
+          "speedPct": -0.10101010101010166,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "300656": {
           "changePct": -3.3479878254988216,
+          "speedPct": -0.13976240391335715,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "300992": {
           "changePct": 5.872011251758091,
+          "speedPct": -0.16578249336870465,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "301251": {
           "changePct": -7.899241868427498,
+          "speedPct": 0.039845929074222575,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "301486": {
           "changePct": 0.8444527386395562,
+          "speedPct": -0.10629448192993607,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600059": {
           "changePct": 0.8188331627430934,
+          "speedPct": -0.30364372469636747,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600103": {
           "changePct": -3.7940379403794022,
+          "speedPct": -0.2808988764045006,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600105": {
           "changePct": -0.17691287041131654,
+          "speedPct": -0.044286979627983225,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600135": {
           "changePct": -3.584672435105063,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600206": {
           "changePct": -2.091807088901809,
+          "speedPct": 0.2379535990481907,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600371": {
           "changePct": 9.985935302391002,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600500": {
           "changePct": -3.316749585406309,
+          "speedPct": -0.34188034188032956,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600545": {
           "changePct": -3.177966101694907,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600616": {
           "changePct": -4.303278688524593,
+          "speedPct": -0.638297872340432,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600644": {
           "changePct": -5.491329479768792,
+          "speedPct": -0.304878048780477,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600793": {
           "changePct": 0.4889975550122383,
+          "speedPct": -0.24271844660194164,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601208": {
           "changePct": -3.700975879211943,
+          "speedPct": -0.03822629969419955,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601579": {
           "changePct": 5.365337098482192,
+          "speedPct": -0.3671562082776969,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603023": {
           "changePct": -3.9906103286384997,
+          "speedPct": -0.24390243902439046,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603042": {
           "changePct": 3.088578088578098,
+          "speedPct": 0.11318619128466434,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603052": {
           "changePct": -1.5936254980079667,
+          "speedPct": 0.10131712259371373,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603082": {
           "changePct": -3.416383540958845,
+          "speedPct": 0.03910068426198343,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603122": {
           "changePct": -4.688700999231354,
+          "speedPct": -0.8792965627497984,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603155": {
           "changePct": -2.9870129870129936,
+          "speedPct": 0.13404825737264314,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603230": {
           "changePct": 9.964093357271086,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603248": {
           "changePct": 9.995076317085182,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603255": {
           "changePct": 1.4999999999999902,
+          "speedPct": 0.30883261272387497,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603276": {
           "changePct": -0.9518477043672924,
+          "speedPct": 0.11318619128466434,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603328": {
           "changePct": -5.660377358490565,
+          "speedPct": 0.14836795252224366,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603607": {
           "changePct": 2.417042195821395,
+          "speedPct": -0.03998400639744215,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603900": {
           "changePct": -5.774647887323936,
+          "speedPct": -0.14925373134327957,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603956": {
           "changePct": -2.288984263233196,
+          "speedPct": 0.2936857562408246,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605058": {
           "changePct": 9.99323257387774,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605100": {
           "changePct": -0.8215962441314617,
+          "speedPct": 0.059206631142671995,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605358": {
           "changePct": 0.8914642299977737,
+          "speedPct": 0.06631299734747298,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605378": {
           "changePct": -3.6793692509855536,
+          "speedPct": -0.2721088435374108,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605566": {
           "changePct": -2.538071065989844,
+          "speedPct": -0.07434944237918462,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
@@ -36281,241 +36319,289 @@
         },
         "000055": {
           "changePct": -3.6649214659685736,
+          "speedPct": -0.8086253369272156,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000592": {
           "changePct": -3.9035591274397374,
+          "speedPct": -0.23837902264601807,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000670": {
           "changePct": -4.02010050251257,
+          "speedPct": 0.2624671916010346,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000720": {
           "changePct": -4.55635491606714,
+          "speedPct": -0.25062656641604564,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000731": {
           "changePct": -0.7509386733416834,
+          "speedPct": 0.37974683544304,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000753": {
           "changePct": -6.000000000000005,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000993": {
           "changePct": -2.759740259740273,
+          "speedPct": 0.055679287305121505,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001209": {
           "changePct": 0.15600624024960652,
+          "speedPct": -0.2072538860103612,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001216": {
           "changePct": 10.016602102933025,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001326": {
           "changePct": 8.372365339578437,
+          "speedPct": 0.021614611477360768,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001378": {
           "changePct": 1.419068736141904,
+          "speedPct": 0.4391743522178304,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002068": {
           "changePct": -0.9861932938856177,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002095": {
           "changePct": 1.406727828746157,
+          "speedPct": -0.1204819277108582,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002137": {
           "changePct": 4.268292682926855,
+          "speedPct": 0.11709601873537423,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002161": {
           "changePct": -8.08926080892608,
+          "speedPct": -0.302571860816947,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002281": {
           "changePct": 3.244965174666592,
+          "speedPct": 0.0575584741771662,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002285": {
           "changePct": 10.041841004184082,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002300": {
           "changePct": -5.966587112171851,
+          "speedPct": -0.25316455696202667,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002303": {
           "changePct": -3.9723661485319584,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002383": {
           "changePct": -3.676470588235292,
+          "speedPct": 0.1273885350318471,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002388": {
           "changePct": 3.687315634218291,
+          "speedPct": -0.14204545454544748,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002396": {
           "changePct": -1.6224568632500547,
+          "speedPct": 0.31512605042018915,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002442": {
           "changePct": 1.0563380281690238,
+          "speedPct": 1.0563380281690238,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002489": {
           "changePct": 0,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002491": {
           "changePct": -3.1901840490797473,
+          "speedPct": 0.04226542688081647,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002577": {
           "changePct": 4.725992961287062,
+          "speedPct": -0.14381591562799834,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002584": {
           "changePct": -0.3141361256544628,
+          "speedPct": 0.8474576271186418,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002617": {
           "changePct": -1.7094017094017033,
+          "speedPct": -0.14471780028942893,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002631": {
           "changePct": 7.1237756010685604,
+          "speedPct": -0.5785123966942196,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002655": {
           "changePct": 10.010793308148958,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002679": {
           "changePct": -5.053191489361685,
+          "speedPct": -1.2903225806451535,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002724": {
           "changePct": -6.052269601100402,
+          "speedPct": 0.2936857562408246,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002730": {
           "changePct": 2.773109243697469,
+          "speedPct": 0.08183306055646877,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002780": {
           "changePct": -4.985754985754987,
+          "speedPct": -0.07490636704119424,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002787": {
           "changePct": -0.7086614173228312,
+          "speedPct": 0.07936507936507908,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002806": {
           "changePct": -5.121638924455818,
+          "speedPct": -0.40322580645161255,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002824": {
           "changePct": 5.660377358490565,
+          "speedPct": 0.10118043844857816,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002846": {
           "changePct": -6.117647058823527,
+          "speedPct": -0.5813953488371992,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002903": {
           "changePct": 6.286701208981005,
+          "speedPct": 0.16276041666667407,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002913": {
           "changePct": -1.1550956563590398,
+          "speedPct": 0.08528265107212718,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002956": {
           "changePct": 3.285543608124253,
+          "speedPct": -0.173210161662829,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002957": {
           "changePct": -1.9226260257913297,
+          "speedPct": 0.047835446065525034,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002961": {
           "changePct": -1.2398664759179723,
+          "speedPct": -0.5760921747479442,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002963": {
           "changePct": -3.911154031868669,
+          "speedPct": -0.25062656641604564,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002976": {
           "changePct": 0.4562737642585635,
+          "speedPct": -0.18889308651302006,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "003001": {
           "changePct": 10.016242555495403,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "003026": {
           "changePct": 9.98810939357908,
+          "speedPct": 0,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "003031": {
           "changePct": -0.23235550392098903,
+          "speedPct": 0.35789934993792905,
           "quoteTime": "2026-09-17T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         }
@@ -37371,236 +37457,283 @@
       "closeQuotes": {
         "300434": {
           "changePct": -1.9215372297838318,
+          "speedPct": 0.4098360655737654,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "300741": {
           "changePct": -7.43467059256534,
+          "speedPct": 0.35913806863527853,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "301390": {
           "changePct": 19.999999999999996,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600127": {
           "changePct": 9.984639016897079,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600293": {
           "changePct": -1.764705882352946,
+          "speedPct": 0.9063444108761365,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600354": {
           "changePct": 4.923076923076919,
+          "speedPct": -0.09765625,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600356": {
           "changePct": 1.1776251226693013,
+          "speedPct": -0.19361084220715918,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600371": {
           "changePct": -1.534526854219953,
+          "speedPct": -0.19442644199610948,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600448": {
           "changePct": 9.937888198757761,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600593": {
           "changePct": 1.9395058877857307,
+          "speedPct": -0.022644927536230597,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600609": {
           "changePct": 0.27932960893854997,
+          "speedPct": -0.2777777777777879,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600630": {
           "changePct": 9.946949602122013,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600641": {
           "changePct": 1.3586956521739024,
+          "speedPct": 0.02681684097611825,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600699": {
           "changePct": 1.3588324106693417,
+          "speedPct": 0.09940357852882276,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600721": {
           "changePct": 0.6739679865206405,
+          "speedPct": 0.251677852348986,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600792": {
           "changePct": -0.7490636704119868,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600822": {
           "changePct": 0.2132196162046851,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600929": {
           "changePct": 2.6936026936026813,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601218": {
           "changePct": -3.310104529616731,
+          "speedPct": -1.245551601423489,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601872": {
           "changePct": 2.3340961098398116,
+          "speedPct": 0.13434841021049415,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603009": {
           "changePct": 4.053198226725785,
+          "speedPct": 0.08121827411167182,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603230": {
           "changePct": 10.04081632653062,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603248": {
           "changePct": 9.982094897045668,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603626": {
           "changePct": 10.004697040864263,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603960": {
           "changePct": 0.7058823529411784,
+          "speedPct": 0.05844535359440517,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605058": {
           "changePct": -2.789171452009842,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605088": {
           "changePct": 0.12412081092261218,
+          "speedPct": -0.2473206924979432,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605162": {
           "changePct": 1.2295081967213184,
+          "speedPct": -0.24232633279483995,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605288": {
           "changePct": 2.8550185873605916,
+          "speedPct": 0.28998115122518264,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605577": {
           "changePct": 4.800000000000004,
+          "speedPct": 0.1273885350318471,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000504": {
           "changePct": 10.000000000000009,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000868": {
           "changePct": -1.724137931034464,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000920": {
           "changePct": 4.196357878068091,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000980": {
           "changePct": -3.3755274261603407,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000981": {
           "changePct": -0.33222591362125353,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001216": {
           "changePct": 10.010060362173046,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001365": {
           "changePct": 2.159424153559053,
+          "speedPct": 0.05221932114882755,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002285": {
           "changePct": 9.88593155893538,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002321": {
           "changePct": -4.128440366972486,
+          "speedPct": -0.4761904761904856,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002339": {
           "changePct": -2.3086269744836074,
+          "speedPct": 0.24937655860348684,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002453": {
           "changePct": 10.103092783505163,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002640": {
           "changePct": -1.8567639257294433,
+          "speedPct": -0.26954177897573484,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002655": {
           "changePct": 0.31886190826586613,
+          "speedPct": -0.146484375,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002796": {
           "changePct": -2.366318377381682,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002836": {
           "changePct": 9.963099630996307,
+          "speedPct": 0,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "003001": {
           "changePct": -1.5748031496062964,
+          "speedPct": 1.781170483460559,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "003026": {
           "changePct": 0.5405405405405572,
+          "speedPct": -0.7735396105628123,
           "quoteTime": "2026-09-18T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         }
@@ -38841,201 +38974,241 @@
       "closeQuotes": {
         "301390": {
           "changePct": -6.685185185185183,
+          "speedPct": 0.6391052526462992,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "301583": {
           "changePct": -1.6554433221099951,
+          "speedPct": 0.6027554535017021,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "301689": {
           "changePct": -0.4761904761904745,
+          "speedPct": 1.9015114578254444,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600127": {
           "changePct": 9.986033519553072,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600261": {
           "changePct": -1.1396011396011319,
+          "speedPct": 0.28901734104047616,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600343": {
           "changePct": -2.9072450392247484,
+          "speedPct": 0.19047619047618536,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600448": {
           "changePct": 9.887005649717517,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600577": {
           "changePct": 2.9816513761467878,
+          "speedPct": 0.11148272017837968,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600606": {
           "changePct": 10.344827586206895,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600621": {
           "changePct": 0.9929078014184523,
+          "speedPct": 0.07027406886859211,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600630": {
           "changePct": 10.012062726176119,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600640": {
           "changePct": 3.980099502487544,
+          "speedPct": -0.07968127490041166,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600719": {
           "changePct": -2.9691211401425166,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600838": {
           "changePct": 1.396973224679865,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600847": {
           "changePct": -1.2212643678160884,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600881": {
           "changePct": -1.5544041450777257,
+          "speedPct": -0.5235602094240788,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601026": {
           "changePct": -2.1943573667711602,
+          "speedPct": 0.12836970474967568,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601086": {
           "changePct": 10.024906600249084,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601123": {
           "changePct": 10.011248593925748,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601133": {
           "changePct": -0.6165703275529899,
+          "speedPct": 0.11645962732917958,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601579": {
           "changePct": 9.987819732034087,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601811": {
           "changePct": 9.999999999999986,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603001": {
           "changePct": 9.971236816874418,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603016": {
           "changePct": 6.856955380577423,
+          "speedPct": 0.09219422249540088,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603068": {
           "changePct": 9.997488068324522,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603118": {
           "changePct": 1.1937059142702156,
+          "speedPct": 0.16111707841028888,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603120": {
           "changePct": 4.695152845803086,
+          "speedPct": 0.22635408245756938,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603122": {
           "changePct": 2.4926686217008776,
+          "speedPct": 0.14326647564468775,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603138": {
           "changePct": 1.0918432883750828,
+          "speedPct": 0.12722646310432406,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603230": {
           "changePct": 10.014836795252213,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603232": {
           "changePct": -1.1036174126302867,
+          "speedPct": 0.06203473945407545,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603248": {
           "changePct": -1.3024013024013015,
+          "speedPct": 0.7059800664451998,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603316": {
           "changePct": 10.005991611743536,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603353": {
           "changePct": -4.449021627188454,
+          "speedPct": -0.8336896109448544,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603375": {
           "changePct": 4.082027471464489,
+          "speedPct": 0.05579319323041343,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603402": {
           "changePct": 0.5452562704471253,
+          "speedPct": 0.2952602952603245,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603626": {
           "changePct": -0.2988898377455196,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603686": {
           "changePct": -1.616031027795739,
+          "speedPct": -0.5228758169934622,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603725": {
           "changePct": 0.8510638297872353,
+          "speedPct": 0.3386960203217493,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605188": {
           "changePct": 1.5243902439024515,
+          "speedPct": 0.07513148009015147,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
@@ -39056,176 +39229,211 @@
         },
         "000002": {
           "changePct": 9.93975903614459,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000410": {
           "changePct": -2.333931777378817,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000504": {
           "changePct": 9.990009990009984,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000509": {
           "changePct": 0.7957559681697646,
+          "speedPct": -0.5235602094240788,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000532": {
           "changePct": 10.030864197530853,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000910": {
           "changePct": 10.017574692442865,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001211": {
           "changePct": 1.4296754250386456,
+          "speedPct": 0.1908396946564972,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001212": {
           "changePct": 0.8688783570300229,
+          "speedPct": 0.026109660574435978,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001216": {
           "changePct": 10.013717421124824,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001229": {
           "changePct": -1.1002750687672092,
+          "speedPct": 0.2789046653143945,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001233": {
           "changePct": 7.437472575691095,
+          "speedPct": 0.41008816895631295,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001238": {
           "changePct": 2.166476624857472,
+          "speedPct": 0.11173184357540222,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001317": {
           "changePct": 9.998165474224919,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001332": {
           "changePct": -0.27681660899653293,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001376": {
           "changePct": 10.031595576619278,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001399": {
           "changePct": 4.53172205438066,
+          "speedPct": 0.08264462809917106,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002005": {
           "changePct": -0.7518796992481258,
+          "speedPct": -0.37735849056602655,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002029": {
           "changePct": 1.7777777777777892,
+          "speedPct": -0.10905125408942062,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002134": {
           "changePct": -1.4022140221402357,
+          "speedPct": 0.1874765654293009,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002161": {
           "changePct": -1.2413793103448256,
+          "speedPct": -0.278551532033422,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002185": {
           "changePct": 2.8840820854131977,
+          "speedPct": 0.05393743257822159,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002285": {
           "changePct": 10.034602076124566,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002298": {
           "changePct": 2.2222222222222143,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002300": {
           "changePct": 0.5767012687428075,
+          "speedPct": 0.5767012687428075,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002453": {
           "changePct": 9.925093632958815,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002471": {
           "changePct": -0.1677852348993203,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002589": {
           "changePct": 10.091743119266061,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002623": {
           "changePct": 7.073434125269973,
+          "speedPct": -0.1007556675063137,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002713": {
           "changePct": 1.1904761904762085,
+          "speedPct": -0.27075812274367506,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002836": {
           "changePct": 0.5033557046979942,
+          "speedPct": 4.08340573414423,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002849": {
           "changePct": 1.8208661417322913,
+          "speedPct": 0.2422480620155154,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002965": {
           "changePct": 6.975249116039861,
+          "speedPct": 0,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002971": {
           "changePct": -2.858481724461104,
+          "speedPct": 0.3874092009685359,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002980": {
           "changePct": -7.482621260642031,
+          "speedPct": 0.05067995607737075,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "003041": {
           "changePct": 2.9033793431699095,
+          "speedPct": -0.09242144177449285,
           "quoteTime": "2026-09-21T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         }
@@ -40768,256 +40976,307 @@
       "closeQuotes": {
         "300110": {
           "changePct": 20.06079027355623,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "300642": {
           "changePct": 3.292383292383283,
+          "speedPct": 0.6223073240785082,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "300691": {
           "changePct": 8.671171171171155,
+          "speedPct": -0.30991735537189147,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "300829": {
           "changePct": 7.309486780715413,
+          "speedPct": 0.363636363636366,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600127": {
           "changePct": 4.57142857142856,
+          "speedPct": 0.3045066991473666,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600218": {
           "changePct": -2.9020556227327687,
+          "speedPct": 0.12468827930174342,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600281": {
           "changePct": -2.208835341365467,
+          "speedPct": 0.8281573498964745,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600301": {
           "changePct": -2.201320792475492,
+          "speedPct": 0.30788177339902134,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600325": {
           "changePct": 3.296703296703285,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600448": {
           "changePct": -7.969151670951158,
+          "speedPct": 0.8450704225352101,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600503": {
           "changePct": 9.876543209876543,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600587": {
           "changePct": 0.29850746268655914,
+          "speedPct": -0.3706449221645758,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600593": {
           "changePct": -2.985381922997743,
+          "speedPct": -0.9459743535842002,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600606": {
           "changePct": -4.375000000000007,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600613": {
           "changePct": 1.9459459459459483,
+          "speedPct": 0.2125398512220933,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600630": {
           "changePct": 3.947368421052655,
+          "speedPct": 0.10559662090812161,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600664": {
           "changePct": 10.060606060606059,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600712": {
           "changePct": -2.5466893039049143,
+          "speedPct": -0.692041522491349,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600714": {
           "changePct": -0.9350649350649332,
+          "speedPct": -0.05241090146749228,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600721": {
           "changePct": 10.038022813688219,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600743": {
           "changePct": 9.871244635193133,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600785": {
           "changePct": -1.057268722466953,
+          "speedPct": 0.4472271914132353,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600812": {
           "changePct": 0.3937007874015741,
+          "speedPct": -0.3906250000000111,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600825": {
           "changePct": 9.931506849315074,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600857": {
           "changePct": 3.5454933788978904,
+          "speedPct": 0.16528925619834212,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600894": {
           "changePct": -3.0303030303030276,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600992": {
           "changePct": -2.7436140018921584,
+          "speedPct": 0.19493177387914784,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601086": {
           "changePct": 2.773061686474243,
+          "speedPct": 0.5537098560354448,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601123": {
           "changePct": -4.907975460122682,
+          "speedPct": -0.9584664536741228,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601579": {
           "changePct": 3.709856035437431,
+          "speedPct": 0.13365410318098014,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601811": {
           "changePct": 10.006540222367576,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603001": {
           "changePct": 1.3077593722754965,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603020": {
           "changePct": 10.023866348448696,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603042": {
           "changePct": -6.988964792433006,
+          "speedPct": -0.28169014084507005,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603068": {
           "changePct": 10.002283626398722,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603093": {
           "changePct": -1.644031451036454,
+          "speedPct": 0.07272727272726875,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603151": {
           "changePct": -1.3623978201634857,
+          "speedPct": 0.05527915975678255,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603175": {
           "changePct": 2.6413724244349623,
+          "speedPct": 0.9913369652585491,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603230": {
           "changePct": 9.97977073499663,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603258": {
           "changePct": 4.087385482734329,
+          "speedPct": 0.1355932203389809,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603289": {
           "changePct": 5.137963843958149,
+          "speedPct": -0.0904159132007254,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603316": {
           "changePct": -0.7625272331154731,
+          "speedPct": -0.816548720740351,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603319": {
           "changePct": -1.3051584835301333,
+          "speedPct": -0.03147623544222933,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603395": {
           "changePct": -1.9900497512437942,
+          "speedPct": -0.14482259232441175,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603580": {
           "changePct": 9.995805955543148,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603636": {
           "changePct": 10.027472527472515,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603663": {
           "changePct": -3.3319951826575767,
+          "speedPct": 0.2706641682281852,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603819": {
           "changePct": -4.32775533756492,
+          "speedPct": 0.06035003017499374,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603958": {
           "changePct": 0.8709853021230174,
+          "speedPct": 0.05399568034558655,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605196": {
           "changePct": 2.5707683419988525,
+          "speedPct": -0.056290458767249696,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605566": {
           "changePct": 4.007884362680669,
+          "speedPct": -0.12618296529968154,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
@@ -41043,226 +41302,271 @@
         },
         "000020": {
           "changePct": -1.5427769985974837,
+          "speedPct": 0.21413276231263545,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000402": {
           "changePct": 0.3610108303248927,
+          "speedPct": -0.35842293906810374,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000504": {
           "changePct": 9.990917347865569,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000532": {
           "changePct": -4.558204768583451,
+          "speedPct": -0.2930402930403031,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000560": {
           "changePct": 10.03134796238243,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000566": {
           "changePct": -1.7751479289940808,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000607": {
           "changePct": 9.933774834437092,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000756": {
           "changePct": 10.020449897750506,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000829": {
           "changePct": -3.991811668372558,
+          "speedPct": -0.10649627263045192,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000910": {
           "changePct": 10.063897763578279,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000995": {
           "changePct": -1.5100671140939603,
+          "speedPct": -0.3395585738539819,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001201": {
           "changePct": 1.3681592039801238,
+          "speedPct": 0.12285012285011554,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001216": {
           "changePct": 10.016625103906907,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001234": {
           "changePct": 10.003760812335472,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001317": {
           "changePct": 10.006671114076049,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001373": {
           "changePct": -4.069050554870524,
+          "speedPct": 0.5167958656330685,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001376": {
           "changePct": -7.250538406317297,
+          "speedPct": 0.5447470817120603,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001389": {
           "changePct": 6.841284354326893,
+          "speedPct": 0.12096164507837681,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002022": {
           "changePct": 0.32414910858995505,
+          "speedPct": -0.1612903225806428,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002042": {
           "changePct": -4.265402843601884,
+          "speedPct": 0.7481296758104827,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002080": {
           "changePct": -5.64613526570048,
+          "speedPct": -0.1437929381690406,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002084": {
           "changePct": 4.575163398692816,
+          "speedPct": -0.4665629860031051,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002172": {
           "changePct": -3.6144578313253017,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002178": {
           "changePct": 10.039370078740163,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002246": {
           "changePct": 4.035020936429379,
+          "speedPct": -0.10964912280702066,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002259": {
           "changePct": 9.95575221238938,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002285": {
           "changePct": 0.6289308176100628,
+          "speedPct": 0.31347962382446415,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002303": {
           "changePct": 10.047846889952172,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002321": {
           "changePct": -3.4782608695651973,
+          "speedPct": -0.8928571428571397,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002349": {
           "changePct": 0.344431687715252,
+          "speedPct": 0.11454753722794919,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002367": {
           "changePct": -3.66242038216561,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002388": {
           "changePct": 0,
+          "speedPct": -0.3759398496240629,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002453": {
           "changePct": -9.540034071550263,
+          "speedPct": -0.747663551401867,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002585": {
           "changePct": -6.372934697088906,
+          "speedPct": 0.0841042893187538,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002589": {
           "changePct": -0.2777777777777879,
+          "speedPct": 0.5602240896358524,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002614": {
           "changePct": 10.08,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002622": {
           "changePct": -3.676470588235292,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002724": {
           "changePct": -3.57142857142857,
+          "speedPct": -0.26385224274406704,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002755": {
           "changePct": 7.55020080321287,
+          "speedPct": 0.07473841554559435,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002792": {
           "changePct": 1.2449334105385068,
+          "speedPct": 0.05722460658081907,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002795": {
           "changePct": -0.3731343283582045,
+          "speedPct": -0.3731343283582045,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002869": {
           "changePct": 2.1126760563380254,
+          "speedPct": 0,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002900": {
           "changePct": 0.15337423312884457,
+          "speedPct": 0.4615384615384688,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002907": {
           "changePct": -0.983606557377048,
+          "speedPct": 0.13262599469496816,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002963": {
           "changePct": 4.067197170645431,
+          "speedPct": -0.042462845010626804,
           "quoteTime": "2026-09-22T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         }
@@ -42304,161 +42608,193 @@
       "closeQuotes": {
         "300110": {
           "changePct": -7.594936708860766,
+          "speedPct": -0.2732240437158584,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "300324": {
           "changePct": -4.589371980676315,
+          "speedPct": 0.2538071065989911,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "301234": {
           "changePct": -12.695005009302996,
+          "speedPct": -0.41629254754714795,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600403": {
           "changePct": -4.73684210526315,
+          "speedPct": 0.27700831024930483,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600418": {
           "changePct": 9.9906191369606,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600479": {
           "changePct": -2.800294767870304,
+          "speedPct": -0.6028636021100264,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600503": {
           "changePct": 10.1123595505618,
+          "speedPct": 2.4390243902439046,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600641": {
           "changePct": 9.28212162780062,
+          "speedPct": -0.20876826722338038,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600664": {
           "changePct": -0.440528634361248,
+          "speedPct": -0.3307607497243792,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600721": {
           "changePct": -8.154803040774027,
+          "speedPct": -0.672645739910327,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600743": {
           "changePct": 10.15625,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600770": {
           "changePct": -1.8099547511312264,
+          "speedPct": -0.7621951219512146,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600815": {
           "changePct": 0.9546539379474916,
+          "speedPct": 0.7142857142857117,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600825": {
           "changePct": 9.968847352024923,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601811": {
           "changePct": 9.98810939357908,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601949": {
           "changePct": -7.552870090634444,
+          "speedPct": 0.16366612111291534,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603020": {
           "changePct": -3.543022415039765,
+          "speedPct": 0.15015015015014122,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603039": {
           "changePct": -4.6347607052896755,
+          "speedPct": -0.10554089709762238,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603068": {
           "changePct": -4.774756072244147,
+          "speedPct": 0.1747106355099337,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603216": {
           "changePct": 3.4285714285714253,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603221": {
           "changePct": -2.5633383010432165,
+          "speedPct": -0.9093664746893104,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603230": {
           "changePct": 2.942979767014098,
+          "speedPct": -0.5331753554502328,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603580": {
           "changePct": -1.4234875444839923,
+          "speedPct": -0.11590470057952773,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603598": {
           "changePct": 0.8438818565400741,
+          "speedPct": -0.36477331943720603,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603636": {
           "changePct": 9.987515605493137,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603903": {
           "changePct": -0.9823182711198419,
+          "speedPct": 0.33178500331785266,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605058": {
           "changePct": 10.005631687629046,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605178": {
           "changePct": -1.1899986629228532,
+          "speedPct": 0.380331431676173,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605179": {
           "changePct": -9.820239680426102,
+          "speedPct": -0.11061946902655162,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605218": {
           "changePct": -6.524466750313673,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605258": {
           "changePct": 3.5341555977229655,
+          "speedPct": 0.11467889908256534,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605398": {
           "changePct": -4.104951333051199,
+          "speedPct": 0.044150110375285045,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
@@ -42469,146 +42805,175 @@
         },
         "000504": {
           "changePct": 5.367464905037167,
+          "speedPct": 2.2435897435897356,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000560": {
           "changePct": 9.971509971509974,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000595": {
           "changePct": -4.102564102564088,
+          "speedPct": 0.17857142857145014,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000607": {
           "changePct": -10.040160642570283,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000676": {
           "changePct": -2.684563758389269,
+          "speedPct": -0.4120879120879106,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000756": {
           "changePct": -9.975216852540282,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000910": {
           "changePct": 10.0145137880987,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001216": {
           "changePct": 6.951265583679644,
+          "speedPct": -0.77111812127586,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001234": {
           "changePct": 10.017094017094008,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001260": {
           "changePct": -4.930966469428011,
+          "speedPct": 0.36439354502864063,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001266": {
           "changePct": -0.34437086092715674,
+          "speedPct": 0.15974440894568342,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001268": {
           "changePct": 2.2581859239744206,
+          "speedPct": 0.33234859675037587,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001317": {
           "changePct": -10.006064281382654,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001322": {
           "changePct": -3.453237410071941,
+          "speedPct": -0.14880952380952328,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002141": {
           "changePct": -4.4414535666218,
+          "speedPct": -0.14064697609001975,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002178": {
           "changePct": -8.765652951699465,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002238": {
           "changePct": 10.057471264367823,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002259": {
           "changePct": -3.822937625754519,
+          "speedPct": -0.20876826722338038,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002290": {
           "changePct": -4.110468850353232,
+          "speedPct": -0.4002668445630353,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002301": {
           "changePct": -5.501618122977348,
+          "speedPct": 0.5740528128587608,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002303": {
           "changePct": -2.898550724637683,
+          "speedPct": -0.7407407407407418,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002313": {
           "changePct": 0.10752688172042113,
+          "speedPct": 0.10752688172042113,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002467": {
           "changePct": -4.518664047151266,
+          "speedPct": -0.2053388090349051,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002564": {
           "changePct": 0.7339449541284404,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002614": {
           "changePct": 10.029069767441868,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002672": {
           "changePct": -3.47394540942928,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002757": {
           "changePct": 2.114803625377659,
+          "speedPct": -0.3439803439803435,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002768": {
           "changePct": 5.557039807640929,
+          "speedPct": -0.41587901701323204,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002912": {
           "changePct": -3.6770280515541987,
+          "speedPct": 0,
           "quoteTime": "2026-09-23T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         }
@@ -43707,256 +44072,307 @@
       "closeQuotes": {
         "300931": {
           "changePct": -9.10983862571577,
+          "speedPct": -0.9642654566080489,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "301150": {
           "changePct": -6.504065040650408,
+          "speedPct": -0.19527012367108743,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600230": {
           "changePct": -3.238866396761142,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600293": {
           "changePct": 2.1621621621621623,
+          "speedPct": -0.26385224274406704,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600371": {
           "changePct": -8.275462962962976,
+          "speedPct": -0.5021971123666091,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600418": {
           "changePct": -2.2174840085287806,
+          "speedPct": 0.13100436681223737,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600503": {
           "changePct": -9.863945578231291,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600605": {
           "changePct": -4.302435937994309,
+          "speedPct": -0.49342105263157077,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600653": {
           "changePct": -5.882352941176472,
+          "speedPct": 0.5714285714285783,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600743": {
           "changePct": -9.21985815602836,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600802": {
           "changePct": 9.966777408637872,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600825": {
           "changePct": 10.056657223796028,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "600843": {
           "changePct": 9.98685939553219,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "601811": {
           "changePct": 10.000000000000009,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603067": {
           "changePct": 2.5840441545408988,
+          "speedPct": 0.024461839530331986,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603124": {
           "changePct": -9.089655172413803,
+          "speedPct": 0.015174506828508072,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603222": {
           "changePct": -7.494407158836691,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603328": {
           "changePct": -6.1842105263157805,
+          "speedPct": 0.1404494382022392,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603373": {
           "changePct": 5.92160133444537,
+          "speedPct": 0.1379854129706315,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603396": {
           "changePct": 10.000000000000009,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603636": {
           "changePct": -9.875141884222472,
+          "speedPct": -0.6257822277847325,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603773": {
           "changePct": -4.682926829268286,
+          "speedPct": -0.09203395030167316,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603803": {
           "changePct": -4.118104118104116,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603937": {
           "changePct": 4.471858134155737,
+          "speedPct": 0.07385524372232055,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603949": {
           "changePct": 10.026041666666652,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "603991": {
           "changePct": -5.2163604030823985,
+          "speedPct": -0.10223206679161878,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "605058": {
           "changePct": 2.7303754266211566,
+          "speedPct": 0.11641443538998875,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "688056": {
           "changePct": 10.052910052910047,
+          "speedPct": 1.2869565217391354,
           "quoteTime": "2026-09-24T15:00:00+08:00",
-          "source": "精确交易日READY CLOSE全市场15:00收盘包"
+          "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "688337": {
           "changePct": 2.5008744316194376,
+          "speedPct": -0.3231292517006712,
           "quoteTime": "2026-09-24T15:00:00+08:00",
-          "source": "精确交易日READY CLOSE全市场15:00收盘包"
+          "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "688512": {
           "changePct": 1.501154734411081,
+          "speedPct": 0.3424657534246478,
           "quoteTime": "2026-09-24T15:00:00+08:00",
-          "source": "精确交易日READY CLOSE全市场15:00收盘包"
+          "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "688628": {
           "changePct": -3.1020622160083833,
+          "speedPct": 0.2803400253210464,
           "quoteTime": "2026-09-24T15:00:00+08:00",
-          "source": "精确交易日READY CLOSE全市场15:00收盘包"
+          "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "688656": {
           "changePct": -6.303176403857047,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
-          "source": "精确交易日READY CLOSE全市场15:00收盘包"
+          "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000560": {
           "changePct": -5.181347150259064,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000850": {
           "changePct": 10.10752688172043,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "000910": {
           "changePct": 0.26385224274405594,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "001234": {
           "changePct": 10.006215040397759,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002119": {
           "changePct": 9.992570579494785,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002238": {
           "changePct": 10.052219321148815,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002286": {
           "changePct": -3.314285714285703,
+          "speedPct": 0.3558718861210064,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002426": {
           "changePct": -5.405405405405405,
+          "speedPct": -0.3558718861210064,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002541": {
           "changePct": -7.2625698324022325,
+          "speedPct": -0.054734537493150714,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002614": {
           "changePct": 10.039630118890353,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002633": {
           "changePct": -0.0630119722747291,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002635": {
           "changePct": -5.836807623585461,
+          "speedPct": 0.1266624445851905,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002638": {
           "changePct": 4.008438818565385,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002819": {
           "changePct": 9.983498349834985,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002849": {
           "changePct": 7.608695652173902,
+          "speedPct": 0.6506710044733577,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002909": {
           "changePct": 9.946949602122013,
+          "speedPct": 0,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002935": {
           "changePct": 3.1963470319634535,
+          "speedPct": -0.05527915975678255,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002937": {
           "changePct": 0.3982741453700589,
+          "speedPct": 0.09927200529451508,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         },
         "002989": {
           "changePct": -7.618025751072965,
+          "speedPct": -0.2317497103128674,
           "quoteTime": "2026-09-24T15:00:00+08:00",
           "source": "tencent_ifzq_day_query 1分钟全市场归档（241点）"
         }
