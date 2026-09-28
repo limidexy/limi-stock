@@ -1,0 +1,311 @@
+{
+  "capturedAt": "2026-09-28T08:19:39.060Z",
+  "source": "Frozen before-repair output, paired with independently written docs/2026-09-28-independent-reading-baseline.md",
+  "result": [
+    {
+      "scenario": {
+        "id": "0918-0940-peer-divergence",
+        "date": "2026-09-18",
+        "cutoff": "09:40",
+        "focus": ["001216", "603248", "003026", "605058"]
+      },
+      "sourceHash": "dbb145da150d31df9845db5eefd6b1e353398622b5c1626ee6e7fb8fcf7eb784",
+      "scope": 74,
+      "actual": {
+        "summary": "华瓷股份为空间竞争观察（未认证龙头）、当前4板；中晶科技为空间竞争观察（未认证龙头）、当前4板；内蒙新华为空间竞争观察（未认证龙头）、当前3板。历史及当期候选27只，已知深水0只、已知跌停/极端0只，当前报价覆盖16/27。缺失价格、概念或分钟证据不计作无风险；候选不等于已确认龙头。",
+        "focus": [
+          {
+            "code": "001216",
+            "currentRole": "空间竞争观察（未认证龙头）",
+            "state": "同身位竞争",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-18T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充40只（1分钟40，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "603248",
+            "currentRole": "断板空间股/老高标跟踪",
+            "state": "修复/断板",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-18T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充40只（1分钟40，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "003026",
+            "currentRole": "空间竞争观察（未认证龙头）",
+            "state": "同身位竞争",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-18T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充40只（1分钟40，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "605058",
+            "currentRole": "断板空间股/老高标跟踪",
+            "state": "修复/断板",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-18T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充40只（1分钟40，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario": {
+        "id": "0918-1000-repair-separation",
+        "date": "2026-09-18",
+        "cutoff": "10:00",
+        "focus": ["001216", "603248", "003026", "605058"]
+      },
+      "sourceHash": "dbb145da150d31df9845db5eefd6b1e353398622b5c1626ee6e7fb8fcf7eb784",
+      "scope": 74,
+      "actual": {
+        "summary": "华瓷股份为空间竞争观察（未认证龙头）、当前4板；锡华科技为空间竞争观察（未认证龙头）、当前4板；内蒙新华为空间竞争观察（未认证龙头）、当前3板。历史及当期候选27只，已知深水0只、已知跌停/极端0只，当前报价覆盖16/27。缺失价格、概念或分钟证据不计作无风险；候选不等于已确认龙头。",
+        "focus": [
+          {
+            "code": "001216",
+            "currentRole": "空间竞争观察（未认证龙头）",
+            "state": "同身位竞争",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-18T10:00:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充40只（1分钟40，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "603248",
+            "currentRole": "空间竞争观察（未认证龙头）",
+            "state": "同身位竞争",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-18T10:00:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充40只（1分钟40，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "003026",
+            "currentRole": "断板空间股/老高标跟踪",
+            "state": "修复/断板",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-18T10:00:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充40只（1分钟40，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "605058",
+            "currentRole": "断板空间股/老高标跟踪",
+            "state": "修复/断板",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-18T10:00:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充40只（1分钟40，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario": {
+        "id": "0924-0940-middle-warning",
+        "date": "2026-09-24",
+        "cutoff": "09:40",
+        "focus": [
+          "601811",
+          "000910",
+          "600825",
+          "001234",
+          "002614",
+          "600743",
+          "600503",
+          "603636"
+        ]
+      },
+      "sourceHash": "dbb145da150d31df9845db5eefd6b1e353398622b5c1626ee6e7fb8fcf7eb784",
+      "scope": 83,
+      "actual": {
+        "summary": "新华文轩为空间竞争观察（未认证龙头）、当前5板；泰慕士为空间竞争观察（未认证龙头）、当前4板；奥佳华为空间竞争观察（未认证龙头）、当前4板。历史及当期候选34只，已知深水4只、已知跌停/极端1只，当前报价覆盖17/34。仍有核心存活也不能判生态健康；负反馈先后扩散需看独立分钟证据。",
+        "focus": [
+          {
+            "code": "601811",
+            "currentRole": "空间竞争观察（未认证龙头）",
+            "state": "同身位竞争",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-24T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充43只（1分钟43，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "000910",
+            "currentRole": "断板空间股/老高标跟踪",
+            "state": "修复/断板",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-24T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充43只（1分钟43，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "600825",
+            "currentRole": "空间竞争观察（未认证龙头）",
+            "state": "同身位竞争",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-24T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充43只（1分钟43，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "001234",
+            "currentRole": "空间竞争观察（未认证龙头）",
+            "state": "同身位竞争",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-24T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充43只（1分钟43，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "002614",
+            "currentRole": "空间竞争观察（未认证龙头）",
+            "state": "同身位竞争",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-24T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充43只（1分钟43，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "600743",
+            "currentRole": "同身位被动跟随观察",
+            "state": "修复/断板",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "本股09:38随后响应；不能继承先动者主动性",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-24T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充43只（1分钟43，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "600503",
+            "currentRole": "断板空间股/老高标跟踪",
+            "state": "修复/断板",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-24T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充43只（1分钟43，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          },
+          {
+            "code": "603636",
+            "currentRole": "断板空间股/老高标跟踪",
+            "state": "修复/断板",
+            "dimensions": {
+              "initiative": {
+                "state": "MISSING",
+                "fact": "主动先后缺少分钟证据",
+                "basis": "自身反弹或涨速单值不足以证明先于板块和竞争者发动",
+                "observedAt": "2026-09-24T09:40:00+08:00",
+                "source": "已校验CLOSE包全市场报价 · 包声明15:00（非逐股交易所时间戳） · 历史分钟补充43只（1分钟43，5分钟0） · event-time retrospective replay, not historical receipt proof"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario": {
+        "id": "0924-0940-outside-core-attacker",
+        "date": "2026-09-24",
+        "cutoff": "09:40",
+        "focus": ["600641", "002119", "688512"]
+      },
+      "sourceHash": "dbb145da150d31df9845db5eefd6b1e353398622b5c1626ee6e7fb8fcf7eb784",
+      "scope": 83,
+      "actual": {
+        "summary": "新华文轩为空间竞争观察（未认证龙头）、当前5板；泰慕士为空间竞争观察（未认证龙头）、当前4板；奥佳华为空间竞争观察（未认证龙头）、当前4板。历史及当期候选34只，已知深水4只、已知跌停/极端1只，当前报价覆盖17/34。仍有核心存活也不能判生态健康；负反馈先后扩散需看独立分钟证据。",
+        "focus": [
+          {
+            "code": "600641",
+            "notRecalled": true
+          },
+          {
+            "code": "002119",
+            "notRecalled": true
+          },
+          {
+            "code": "688512",
+            "notRecalled": true
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -31,7 +31,10 @@ function stamp(date: string, value?: string | null): number | null {
 const dateAt = (t: number) =>
   new Date(t + 8 * 3600000).toISOString().slice(0, 10).replaceAll('-', '');
 const clockAt = (t: number) =>
-  new Date(t + 8 * 3600000).toISOString().slice(11, 19);
+  new Date(t + 8 * 3600000)
+    .toISOString()
+    .slice(11, 23)
+    .replace(/\.000$/, '');
 const stocksOf = (f?: EmotionFacts | null) =>
   f?.ladders?.flatMap((x) => x.stocks) ?? [];
 const unique = <T extends { code: string }>(xs: T[]) => [
@@ -93,16 +96,33 @@ export function readEmotionCores(
   const date = day(facts.date);
   const cutoffStamp = stamp(date, facts.cutoff) ?? 0;
   const captured = stamp(date, facts.retrievedAt);
-  const target =
+  const snapshotTarget =
     facts.cutoff !== '15:00' &&
     captured !== null &&
     dateAt(captured) === date &&
     clockAt(captured).slice(0, 5) === facts.cutoff
       ? captured
       : cutoffStamp;
+  // LIVE is a new decision after receipts arrive, not a rewrite of a prior
+  // snapshot. FIXED replay never advances its historical cutoff.
+  const requestedDecision = stamp(date, evidence?.decisionAt);
+  const target =
+    evidence?.decisionMode === 'LIVE' &&
+    facts.cutoff !== '15:00' &&
+    requestedDecision !== null &&
+    dateAt(requestedDecision) === date &&
+    requestedDecision >= snapshotTarget &&
+    requestedDecision <= (stamp(date, '15:00') ?? 0)
+      ? requestedDecision
+      : evidence?.decisionMode === 'FIXED' &&
+          requestedDecision !== null &&
+          dateAt(requestedDecision) === date
+        ? Math.min(snapshotTarget, requestedDecision)
+        : snapshotTarget;
   const targetTime = target
     ? `${dashed(date)}T${clockAt(target)}+08:00`
     : `${facts.date}T${facts.cutoff}:00+08:00`;
+  const lastKnown = Boolean(facts.stale) && evidence?.decisionMode !== 'LIVE';
   const atOrBefore = (time?: string | null, d = date) => {
     const n = stamp(d, time);
     return n !== null && n <= target;
@@ -134,7 +154,9 @@ export function readEmotionCores(
       (facts.cutoff === '15:00' &&
         evidence?.sourceState === 'ARCHIVED' &&
         envelopeAvailable <= (stamp(date, '16:00') ?? 0)));
-  const tracking = evidenceAligned ? evidence?.tracking : undefined;
+  // One late module must not discard an independent earlier module. The
+  // tracking receipt and its own event cutoff are checked separately below.
+  const tracking = envelopeDate === date ? evidence?.tracking : undefined;
   const trackingDateOK =
     tracking && day(tracking.date ?? evidence?.date) === date;
   const trackingStamp = stamp(date, tracking?.cutoff);
@@ -166,6 +188,41 @@ export function readEmotionCores(
     evidence?.sourceState !== 'STALE' &&
     ((facts.cutoff === '15:00' && t?.cutoff === '15:00') ||
       (trackingAvailable !== null && target - trackingAvailable <= 60_000));
+  const rawTape = t?.tape;
+  const tape =
+    rawTape &&
+    day(rawTape.date) === date &&
+    atOrBefore(rawTape.observedAt) &&
+    sameDayBefore(rawTape.cutoff) &&
+    (!rawTape.sourceAvailableAt || atOrBefore(rawTape.sourceAvailableAt))
+      ? {
+          ...rawTape,
+          rows: rawTape.rows.filter((row) => {
+            const eventTimes = [
+              row.firstTime,
+              row.lastTime,
+              row.firstLimitTime,
+              row.openedAt,
+              row.resealedAt,
+              row.stableSince,
+              ...row.upEvents.flatMap((event) => [event.from, event.at]),
+              ...row.downEvents.flatMap((event) => [event.from, event.at]),
+            ].filter((value): value is string => Boolean(value));
+            return (
+              row.lastTime !== null &&
+              sameDayBefore(row.lastTime) &&
+              row.lastTime <= rawTape.cutoff &&
+              (!row.quoteTime || sameDayBefore(row.quoteTime)) &&
+              eventTimes.every(
+                (time) => time <= rawTape.cutoff && sameDayBefore(time),
+              )
+            );
+          }),
+        }
+      : null;
+  const tapeByCode = new Map(
+    (tape?.rows ?? []).map((row) => [codeOf(row.code), row]),
+  );
   const source = evidenceAligned
     ? (evidence?.source ?? t?.source ?? '分字段市场证据')
     : '涨停梯队与已知历史收盘';
@@ -190,7 +247,9 @@ export function readEmotionCores(
   );
   const rows = unique(suppliedRows);
   const rowByCode = new Map(rows.map((r) => [r.code, r]));
-  const sealedStocks = unique(suppliedStocks);
+  const snapshotVisible =
+    captured === null || captured <= target || facts.cutoff === '15:00';
+  const sealedStocks = unique(snapshotVisible ? suppliedStocks : []);
   const sealedByCode = new Map(sealedStocks.map((s) => [s.code, s]));
   const boardsReady =
     (facts.coreStructureReady ?? (!facts.stale && facts.poolsReady)) &&
@@ -317,8 +376,16 @@ export function readEmotionCores(
   };
   const validRebound = (r?: Rebound) => {
     const e = r?.event;
+    const localEventReady =
+      r?.status === 'DEGRADED' &&
+      r.eventState === 'READY' &&
+      r.eventWindow?.complete === true &&
+      r.eventWindow.intervalMinutes === 1 &&
+      r.eventWindow.samples >= 4 &&
+      r.eventWindow.start === e?.lowTime &&
+      r.eventWindow.end === e?.time;
     if (
-      r?.status !== 'READY' ||
+      (r?.status !== 'READY' && !localEventReady) ||
       !e ||
       !sameDayBefore(e.time) ||
       !sameDayBefore(e.lowTime) ||
@@ -649,6 +716,9 @@ export function readEmotionCores(
       repair = repairByCode.get(c),
       speed = speedByCode.get(c);
     add(row?.changePct, row?.priceQuoteTime ?? row?.quoteTime, '梯队逐股报价');
+    const path = tapeByCode.get(c);
+    // The actual minute quote time, never the response receipt time.
+    add(path?.changePct, path?.quoteTime, path?.source);
     const q = facts.closeQuotes?.[c];
     add(q?.changePct, q?.quoteTime, q?.source, Boolean(facts.stale));
     add(
@@ -755,7 +825,8 @@ export function readEmotionCores(
         s = sealedByCode.get(c),
         meta = allMeta.get(c),
         speed = speedByCode.get(c),
-        q = quoteFor(c);
+        q = quoteFor(c),
+        pricePath = tapeByCode.get(c);
       const own = upPairs.filter((p) => p.core === c),
         related = own.filter((p) => p.concept);
       const peerPairs = own.filter(
@@ -767,6 +838,35 @@ export function readEmotionCores(
         r.brokenDate && r.brokenDate < date && s && boardsReady,
       );
       const broken = Boolean(r.brokenDate && !s);
+      const trackedToday =
+        Boolean(row && row.fromHeight >= 2) ||
+        Boolean(prior?.failedStocks?.some((item) => codeOf(item.code) === c)) ||
+        Boolean(
+          prior?.limitDownStocks?.some((item) => codeOf(item.code) === c),
+        );
+      const observedToday =
+        Boolean(s) ||
+        own.length > 0 ||
+        downPairs.some((pair) => pair.core === c) ||
+        Boolean(rebound) ||
+        (downReady && downByCode.has(c)) ||
+        Boolean(
+          pricePath &&
+          (pricePath.support === 'RESEALED' ||
+            pricePath.support === 'OPENED' ||
+            pricePath.limitState === 'LIMIT_DOWN' ||
+            pricePath.initiative.result === 'OBSERVED'),
+        );
+      const scope: NonNullable<CoreCandidate['scope']> = observedToday
+        ? 'ACTIVE'
+        : trackedToday
+          ? 'COMPETITOR'
+          : 'HISTORY';
+      const scopeReason = observedToday
+        ? '当日已有封板、局部价格事件或真实响应证据，列入活跃观察；不等于认证龙头'
+        : trackedToday
+          ? '前一交易日仍承担竞争或负反馈角色，今日继续核验，不因暂缺报价移除'
+          : '保留历史身份；当前无足够活跃证据，不混入当前群体统计，也不视为影响衰减退出';
       const seenSealed = boardsReady
         ? Boolean(s)
         : row
@@ -780,7 +880,7 @@ export function readEmotionCores(
           : `当前未确认连板高度；历史峰值${r.peak}板${row ? `，昨日${row.fromHeight}板、当前${row.state}` : ''}`,
         '板位与空间竞争是召回证据，不是龙头身份；断板不显示未完成的“昨板+1”',
       );
-      const initiative = own.length
+      let initiative = own.length
         ? dimension(
             minuteCurrent ? 'READY' : 'DEGRADED',
             `${own[0].onset}先动；${own.length}个已核验成员其后响应${peerPairs.length ? `，含${peerPairs.length}个同身位` : ''}`,
@@ -798,7 +898,7 @@ export function readEmotionCores(
                 : '主动先后缺少分钟证据',
             '自身反弹或涨速单值不足以证明先于板块和竞争者发动',
           );
-      const leadership = related.length
+      let leadership = related.length
         ? dimension(
             minuteCurrent ? 'READY' : 'DEGRADED',
             `${related.map((p) => `${p.member}@${p.time}(+${p.lag}分钟)`).join('、')}；关系${related[0].concept}`,
@@ -821,7 +921,7 @@ export function readEmotionCores(
         (facts.coreContextReady ?? !facts.stale) &&
         facts.breadthReady &&
         finite(facts.breadth.medianChangePct);
-      const antiFall = dimension(
+      let antiFall = dimension(
         comparable ? 'READY' : q.value !== null ? 'DEGRADED' : 'MISSING',
         `个股${pct(q.value)}（${q.time ?? '时刻缺失'}）；市场中位${pct(facts.breadth.medianChangePct)}`,
         comparable
@@ -830,6 +930,39 @@ export function readEmotionCores(
         q.time ?? targetTime,
         q.source ?? source,
       );
+      // Availability and conclusion are orthogonal. A complete comparison with
+      // no new attack/response is a known negative observation, not missing data.
+      if (pricePath && tape) {
+        const observedDimension = (
+          item: typeof pricePath.initiative,
+          boundary: string,
+        ): CoreDimension => ({
+          state: item.state,
+          result: item.result,
+          fact: [item.label, ...item.facts].join('；'),
+          basis: `${boundary}；比较${item.comparedCodes.join('、') || '对象不足'}；${tape.scope}`,
+          observedAt: tape.observedAt,
+          source: pricePath.source,
+        });
+        if (pricePath.initiative.state !== 'MISSING')
+          initiative = observedDimension(
+            pricePath.initiative,
+            '只说明该可见窗口的相对先动；无需等待别人响应才记录先动',
+          );
+        if (
+          pricePath.response.state !== 'MISSING' &&
+          leadership.state !== 'READY'
+        )
+          leadership = observedDimension(
+            pricePath.response,
+            '这是可见成员价格响应观察；行业不等于概念，不能认证全市场龙头或因果带动',
+          );
+        if (pricePath.resilience.state !== 'MISSING')
+          antiFall = observedDimension(
+            pricePath.resilience,
+            '抗分歧仅在同身位已比较样本中成立；市场/指数参照另行核验',
+          );
+      }
       const identity = dimension(
         r.peak >= 2 ? 'DEGRADED' : related.length ? 'READY' : 'MISSING',
         r.peak >= 2
@@ -997,17 +1130,40 @@ export function readEmotionCores(
             q.state === 'READY' && pq.state === 'READY' && q.value! > pq.value!
           );
         });
+      const relativeSupport =
+        pricePath?.resilience.result === 'OBSERVED' &&
+        pricePath.peerRelations.some(
+          (peer) =>
+            peer.relation === 'MORE_STABLE' ||
+            peer.relation === 'REPAIR_SEPARATION',
+        );
       const confirmed =
         minuteCurrent &&
-        related.length >= 2 &&
-        influenceDays.length >= 2 &&
-        q.state === 'READY';
+        related.length > 0 &&
+        q.state === 'READY' &&
+        q.value! > 0 &&
+        (influenceDays.length > 0 ||
+          Boolean(
+            relativeSupport && pricePath?.initiative.result === 'OBSERVED',
+          ));
+      const repairSeparation =
+        pricePath?.support === 'RESEALED' &&
+        q.state === 'READY' &&
+        pricePath.peerRelations.some(
+          (peer) => peer.relation === 'REPAIR_SEPARATION',
+        );
       if (exited) move('影响衰减退出', targetTime, persistence.basis);
       else if (repaired)
         move(
           '反包或二波',
           targetTime,
           '已知断板后再次进入当前涨停池；此状态不等于反核或群体修复确认',
+        );
+      else if (repairSeparation)
+        move(
+          '分离/卡位',
+          targetTime,
+          `可见分钟${pricePath!.resealedAt}回到涨停价，并相对同身位形成修复分离；这是价格承接差异，不直接确认龙头`,
         );
       else if (peerLeading)
         move(
@@ -1019,7 +1175,7 @@ export function readEmotionCores(
         move(
           '明牌核心',
           targetTime,
-          '当前多成员概念响应与至少两日持续影响均获证据支持',
+          '当前同概念成员响应及相对承接或此前影响记录相互支持；不以固定两日记录作为冷启动门槛',
         );
       else if (minuteCurrent && related.length > 0 && own.length > 0)
         move(
@@ -1029,15 +1185,19 @@ export function readEmotionCores(
         );
       else if (
         r.brokenDate === date ||
+        pricePath?.support === 'OPENED' ||
+        pricePath?.support === 'RESEALED' ||
         (failedReady && failedByCode.has(c)) ||
         rebound
       )
         move(
           '修复/断板',
           targetTime,
-          rebound
-            ? '自身深水回拉属于修复尝试，尚不等于群体扩散'
-            : '当前未继续封板或出现炸板；保留空间/历史跟踪',
+          pricePath?.support === 'OPENED' || pricePath?.support === 'RESEALED'
+            ? pricePath.supportLabel + '；分钟采样事实，不把开板称为爆量'
+            : rebound
+              ? '自身深水回拉属于修复尝试，尚不等于群体扩散'
+              : '当前未继续封板或出现炸板；保留空间/历史跟踪',
         );
       else if (peers.length || following.length)
         move(
@@ -1075,23 +1235,31 @@ export function readEmotionCores(
       };
       const currentRole = exited
         ? '影响衰减退出'
-        : confirmed
-          ? '已确认持续核心'
-          : following.length && !own.length
-            ? '同身位被动跟随观察'
-            : peerLeading
-              ? '主动分离候选'
-              : r.roles.has('趋势容量核心候选')
-                ? `${boardFamily(c)}趋势容量候选`
-                : related.length
-                  ? minuteCurrent
-                    ? '板块先动候选'
-                    : '曾先动候选（旧分钟观察）'
-                  : influenceDays.length && !s
-                    ? '历史板块/容量核心跟踪'
-                    : broken
-                      ? '断板空间股/老高标跟踪'
-                      : '空间竞争观察（未认证龙头）';
+        : pricePath?.support === 'OPENED'
+          ? '同身位打开回落 · 承接分歧'
+          : pricePath?.support === 'STABLE_SEAL' && relativeSupport
+            ? '空间承接角色 · 同身位较稳定'
+            : repairSeparation
+              ? '修复回封 · 同身位相对分离'
+              : pricePath?.support === 'RESEALED'
+                ? '局部修复回封观察'
+                : confirmed
+                  ? '局部核心作用已核验'
+                  : following.length && !own.length
+                    ? '同身位被动跟随观察'
+                    : peerLeading
+                      ? '主动分离候选'
+                      : r.roles.has('趋势容量核心候选')
+                        ? `${boardFamily(c)}趋势容量候选`
+                        : related.length
+                          ? minuteCurrent
+                            ? '板块先动候选'
+                            : '曾先动候选（旧分钟观察）'
+                          : influenceDays.length && !s
+                            ? '历史板块/容量核心跟踪'
+                            : broken
+                              ? '断板空间股/老高标跟踪'
+                              : '空间竞争观察（未认证龙头）';
       info.set(c, {
         sealed: seenSealed,
         broken,
@@ -1106,6 +1274,9 @@ export function readEmotionCores(
         name: r.name,
         roles: [...r.roles],
         currentRole,
+        scope,
+        scopeReason,
+        pricePath,
         historicalHeight: r.peak || null,
         state,
         provisional: !confirmed,
@@ -1124,7 +1295,14 @@ export function readEmotionCores(
           concepts.get(c)?.state !== 'MISSING'
             ? (concepts.get(c)?.names ?? [])
             : [],
-        reasons: [...new Set(r.reasons)],
+        reasons: [
+          ...new Set([
+            ...r.reasons,
+            ...(pricePath && scope !== 'HISTORY'
+              ? [pricePath.supportLabel]
+              : []),
+          ]),
+        ],
         confirmedEvidence: Object.values(dimensions)
           .filter((d) => d.state === 'READY')
           .map((d) => d.fact),
@@ -1160,6 +1338,29 @@ export function readEmotionCores(
         a.code.localeCompare(b.code),
     );
   const byCode = new Map(candidates.map((c) => [c.code, c]));
+  const activeCandidates = candidates.filter(
+    (candidate) =>
+      candidate.scope !== 'HISTORY' && candidate.state !== '影响衰减退出',
+  );
+  const historicalCandidates = candidates.filter(
+    (candidate) =>
+      candidate.scope === 'HISTORY' || candidate.state === '影响衰减退出',
+  );
+  const attackerObservations = (tape?.rows ?? [])
+    .filter(
+      (row) =>
+        !byCode.has(codeOf(row.code)) &&
+        row.upEvents.some((event) => event.toPct > 0) &&
+        row.changePct !== null &&
+        row.changePct >= 0 &&
+        (row.initiative.state === 'READY' || row.response.state === 'READY'),
+    )
+    .sort(
+      (a, b) =>
+        (a.upEvents[0]?.at ?? '99:99').localeCompare(
+          b.upEvents[0]?.at ?? '99:99',
+        ) || a.code.localeCompare(b.code),
+    );
   const relayRows = rows.filter((r) => r.fromHeight >= 2);
   const middleReasons = new Map<string, string[]>();
   const midAdd = (c: string, why: string) =>
@@ -1208,6 +1409,25 @@ export function readEmotionCores(
   const middleRows = relayRows.filter((r) => middleReasons.has(r.code));
   const middleCodes = [...middleReasons.keys()];
   const middleQuotes = new Map(middleCodes.map((c) => [c, quoteFor(c)]));
+  const middleTiers = [...new Set(middleRows.map((row) => row.fromHeight))]
+    .sort((a, b) => b - a)
+    .map((height) => {
+      const members = middleRows.filter((row) => row.fromHeight === height);
+      return {
+        fromHeight: height,
+        toHeight: height + 1,
+        denominator: members.length,
+        promoted: members.filter((row) => row.state === 'SEALED').length,
+        deepKnown: members.filter((row) => {
+          const q = middleQuotes.get(row.code);
+          return q?.state === 'READY' && q.value! <= -5;
+        }).length,
+        priceCovered: members.filter(
+          (row) => middleQuotes.get(row.code)?.state === 'READY',
+        ).length,
+        members: members.map((row) => row.code),
+      };
+    });
   const middleQuoteReady = middleCodes.filter(
     (c) => middleQuotes.get(c)!.state === 'READY',
   );
@@ -1238,7 +1458,9 @@ export function readEmotionCores(
       memberQuote.value! < 0
     );
   });
-  const upwardNegative = midDown.filter((p) => byCode.has(p.member));
+  const upwardNegative = midDown.filter((p) =>
+    activeCandidates.some((candidate) => candidate.code === p.member),
+  );
   const lowerNegative = midDown.filter(
     (p) => rowByCode.get(p.member)?.fromHeight === 1,
   );
@@ -1266,15 +1488,15 @@ export function readEmotionCores(
     };
   };
   const highFeedback = {
-    state: candidates.length
-      ? candidates.every((c) => c.quoteState === 'READY')
+    state: activeCandidates.length
+      ? activeCandidates.every((c) => c.quoteState === 'READY')
         ? ('READY' as const)
         : ('DEGRADED' as const)
       : ('MISSING' as const),
-    denominator: candidates.length || null,
-    covered: candidates.filter((c) => c.quoteState === 'READY').length,
+    denominator: activeCandidates.length || null,
+    covered: activeCandidates.filter((c) => c.quoteState === 'READY').length,
     strong: metric(
-      candidates.map((c) =>
+      activeCandidates.map((c) =>
         info.get(c.code)!.sealed === true
           ? true
           : c.quoteState === 'READY'
@@ -1284,7 +1506,7 @@ export function readEmotionCores(
       '当前封板或已核验响应伴随强势报价；不把“被召回”直接算走强',
     ),
     disagreement: metric(
-      candidates.map((c) =>
+      activeCandidates.map((c) =>
         failedReady && failedByCode.has(c.code)
           ? true
           : c.quoteState === 'READY'
@@ -1294,23 +1516,23 @@ export function readEmotionCores(
       '分歧/负向报价与确认爆量分别保留依据',
     ),
     brokenImpact: metric(
-      candidates.map((c) =>
+      activeCandidates.map((c) =>
         !info.get(c.code)!.broken
           ? false
           : info.get(c.code)!.up.length
             ? true
             : null,
       ),
-      `断板跟踪${candidates.filter((c) => info.get(c.code)!.broken).length}只；当期影响与仅保留身份分开`,
+      `断板跟踪${activeCandidates.filter((c) => info.get(c.code)!.broken).length}只；当期影响与仅保留身份分开`,
     ),
     deepWater: metric(
-      candidates.map((c) =>
+      activeCandidates.map((c) =>
         c.quoteState === 'READY' ? c.changePct! <= -5 : null,
       ),
       '仅当前可用报价统计深水',
     ),
     extreme: metric(
-      candidates.map((c) =>
+      activeCandidates.map((c) =>
         extremePaths.get(c.code)?.skyFloor === true
           ? true
           : downReady
@@ -1320,7 +1542,7 @@ export function readEmotionCores(
       '当前精确跌停池或完整分钟涨停后跌停序列；不按统一百分比猜天地板',
     ),
     antiAttempt: metric(
-      candidates.map((c) =>
+      activeCandidates.map((c) =>
         info.get(c.code)!.rebound
           ? true
           : rebounds.get(c.code)?.status === 'READY'
@@ -1330,7 +1552,7 @@ export function readEmotionCores(
       '逐股有效分钟路径的反核尝试；无路径不计零',
     ),
     repairSpread: metric(
-      candidates.map((c) => {
+      activeCandidates.map((c) => {
         const i = info.get(c.code)!,
           e = i.rebound;
         if (!e) return rebounds.get(c.code)?.status === 'READY' ? false : null;
@@ -1403,6 +1625,7 @@ export function readEmotionCores(
     detail: `昨日连板固定分母${relayRows.length}；报价覆盖${relayQuotes.filter((q) => q.state === 'READY').length}/${relayRows.length}；不与高标候选分母互换`,
   };
   const middle = {
+    tiers: middleTiers,
     state: middleCodes.length
       ? fullMidPrices
         ? ('READY' as const)
@@ -1463,15 +1686,16 @@ export function readEmotionCores(
     strongKnown > 0 &&
     ((middleCodes.length >= 2 &&
       midDeep.length >= Math.ceil(middleCodes.length / 2)) ||
-      twoNegative.length >= 2);
+      twoNegative.length >= 2 ||
+      middleTiers.some((tier) => tier.deepKnown >= 2));
   const negativeKnown = highFeedback.deepWater.knownCount ?? 0;
   const extremeKnown = highFeedback.extreme.knownCount ?? 0;
-  const leadingNames = candidates
+  const leadingNames = activeCandidates
     .filter((c) => info.get(c.code)!.sealed || info.get(c.code)!.up.length)
-    .slice(0, 3)
+    .slice(0, 4)
     .map(
       (c) =>
-        `${c.name}为${c.currentRole}${c.height ? `、当前${c.height}板` : ''}`,
+        `${c.name}${c.height ? `位于${c.height}板空间层` : `为${c.currentRole}`}，${c.pricePath?.supportLabel ?? (c.quoteState === 'READY' ? `报价${pct(c.changePct)}` : '以已标注快照观察')}`,
     )
     .join('；');
   const deepDescription = highFeedback.deepWater.covered
@@ -1480,44 +1704,101 @@ export function readEmotionCores(
   const extremeDescription = highFeedback.extreme.covered
     ? `已知跌停/极端${extremeKnown}只`
     : '跌停/极端计数证据缺失';
+  const supportDivergence = activeCandidates
+    .filter(
+      (candidate) =>
+        candidate.pricePath?.support === 'OPENED' ||
+        (candidate.quoteState === 'READY' &&
+          candidate.changePct !== null &&
+          (candidate.changePct < 0 ||
+            ((rowByCode.get(candidate.code)?.fromHeight ?? 0) >= 2 &&
+              rowByCode.get(candidate.code)?.state !== 'SEALED'))),
+    )
+    .sort(
+      (a, b) =>
+        (rowByCode.get(b.code)?.fromHeight ?? 0) -
+          (rowByCode.get(a.code)?.fromHeight ?? 0) ||
+        (a.changePct ?? Infinity) - (b.changePct ?? Infinity),
+    )
+    .slice(0, 4)
+    .map(
+      (candidate) =>
+        `${candidate.name}：${candidate.pricePath?.supportLabel ?? pct(candidate.changePct)}`,
+    )
+    .join('；');
+  const tierFacts = middleTiers
+    .filter((tier) => tier.fromHeight >= 3 || tier.deepKnown > 0)
+    .map(
+      (tier) =>
+        `${tier.fromHeight}进${tier.toHeight}有${tier.promoted}/${tier.denominator}处于封板，已知深水${tier.deepKnown}只（报价覆盖${tier.priceCovered}/${tier.denominator}）`,
+    )
+    .join('；');
   const summary =
-    `${leadingNames || '尚无可确认的当前走强核心'}。历史及当期候选${candidates.length}只，${deepDescription}、${extremeDescription}，当前报价覆盖${highFeedback.covered}/${candidates.length}。` +
+    (lastKnown ? `最近有效观察 ${targetTime}（非实时，未冒充收盘）：` : '') +
+    `${leadingNames || '目前无可核查的走强核心，但已知风险仍单独报告'}。` +
+    (supportDivergence ? `分歧端：${supportDivergence}。` : '') +
+    (tierFacts ? `传递层：${tierFacts}。` : '') +
+    `当前活跃/竞争观察${activeCandidates.length}只，${deepDescription}、${extremeDescription}，报价覆盖${highFeedback.covered}/${activeCandidates.length}；另${historicalCandidates.length}只保留历史身份，不混入该分母。` +
     (retreatWarning
       ? '核心仍强，但中位已经发出退潮预警。'
       : negativeKnown || extremeKnown
         ? '仍有核心存活也不能判生态健康；负反馈先后扩散需看独立分钟证据。'
         : '缺失价格、概念或分钟证据不计作无风险；候选不等于已确认龙头。');
   return {
-    version: 'emotion-core-v3',
+    version: 'emotion-core-v4',
+    observationMode: lastKnown
+      ? ('LAST_KNOWN' as const)
+      : facts.cutoff === '15:00'
+        ? ('CLOSE' as const)
+        : ('POINT_IN_TIME' as const),
+    decisionMode:
+      evidence?.decisionMode === 'LIVE' &&
+      facts.cutoff !== '15:00' &&
+      requestedDecision !== null &&
+      target === requestedDecision
+        ? ('LIVE' as const)
+        : ('FIXED' as const),
     evidenceAligned,
     evidenceDate: evidence?.date ?? t?.date ?? null,
     observedAt: targetTime,
     source,
     candidates,
+    activeCandidates,
+    historicalCandidates,
+    attackerObservations,
+    tape,
     summary,
     retreatWarning,
     tone:
       retreatWarning || negativeKnown >= 2 || extremeKnown > 0
         ? ('negative' as const)
-        : candidates.length
+        : activeCandidates.length
           ? ('mixed' as const)
           : ('unknown' as const),
     coverage: {
       candidateCount: candidates.length,
+      activeCount: activeCandidates.length,
+      historyCount: historicalCandidates.length,
       currentStructure: sealedStocks.length,
       minuteObservedAt,
       minuteCurrent,
       minuteReady:
         minuteCurrent &&
-        candidates.length > 0 &&
-        candidates.every((c) => rebounds.get(c.code)?.status === 'READY'),
-      minuteCandidates: candidates.filter(
-        (c) => rebounds.get(c.code)?.status === 'READY',
+        activeCandidates.length > 0 &&
+        activeCandidates.every(
+          (c) =>
+            c.pricePath?.latestWindowComplete ||
+            rebounds.get(c.code)?.status === 'READY',
+        ),
+      minuteCandidates: activeCandidates.filter(
+        (c) =>
+          c.pricePath?.lastTime === tape?.cutoff ||
+          rebounds.get(c.code)?.status === 'READY',
       ).length,
-      conceptReady: candidates.filter(
+      conceptReady: activeCandidates.filter(
         (c) => concepts.get(c.code)?.state === 'READY',
       ).length,
-      conceptCandidates: candidates.length,
+      conceptCandidates: activeCandidates.length,
       historyDays: history.length,
     },
     feedback,
@@ -1529,6 +1810,7 @@ export function readEmotionCores(
       '各字段独立验证日期、截止时点和原始证据；无分钟不得确认主动或先后。',
       '只确认已覆盖成员的响应；行业不等于概念、单股反核不等于整体修复。',
       '高标群体、中位观察样本、可晋级中位与昨日接力各自保留分母。',
+      '原始分钟观察先于核心分类；局部先动、稳定承接、回封和未见响应各自描述，NOT_OBSERVED不是MISSING。',
     ],
   };
 }

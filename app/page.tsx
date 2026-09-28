@@ -331,12 +331,14 @@ type PollState<T> = {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  receivedAt: number | null;
 };
 
 function usePolling<T>(url: string, intervalMs: number): PollState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [receivedAt, setReceivedAt] = useState<number | null>(null);
   const inFlight = useRef(false);
   const requestSerial = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
@@ -359,6 +361,7 @@ function usePolling<T>(url: string, intervalMs: number): PollState<T> {
         throw new Error(payload.reason || `HTTP ${response.status}`);
       if (serial === requestSerial.current && !controller.signal.aborted) {
         setData(payload);
+        setReceivedAt(Date.now());
         setError(null);
       }
     } catch (reason) {
@@ -387,7 +390,7 @@ function usePolling<T>(url: string, intervalMs: number): PollState<T> {
     };
   }, [intervalMs, refresh]);
 
-  return { data, loading, error, refresh };
+  return { data, loading, error, refresh, receivedAt };
 }
 
 function useWindowedRadar(data: RadarData | null, failed: boolean) {
@@ -1870,6 +1873,39 @@ export default function Home() {
   const previousEmotionClose = history.snapshots
     .filter((snapshot) => snapshot.date.replaceAll('-', '') < emotionDate)
     .at(-1);
+  const coreDecisionMode =
+    intradayEmotion.data?.cutoff === '15:00'
+      ? ('FIXED' as const)
+      : ('LIVE' as const);
+  const coreDecisionNow = useMemo(() => {
+    if (coreDecisionMode !== 'LIVE') return undefined;
+    // New decisions use actual client receipts, not claimed provider event
+    // times. Individual source observation times remain unchanged in evidence.
+    const receipts = [
+      [coreTracking.data?.date, coreTracking.receivedAt],
+      [speed.data?.tradeDate, speed.receivedAt],
+      [intradayEmotion.data?.tradeDate, intradayEmotion.receivedAt],
+      [ladder.data?.tradeDate, ladder.receivedAt],
+    ].flatMap(([date, at]) =>
+      typeof date === 'string' &&
+      date.replaceAll('-', '') === emotionDate &&
+      typeof at === 'number'
+        ? [at]
+        : [],
+    );
+    return receipts.length ? Math.max(...receipts) : undefined;
+  }, [
+    coreTracking.data,
+    coreTracking.receivedAt,
+    coreDecisionMode,
+    intradayEmotion.data,
+    intradayEmotion.receivedAt,
+    ladder.data,
+    ladder.receivedAt,
+    speed.data,
+    speed.receivedAt,
+    emotionDate,
+  ]);
   const coreEvidence = useMemo(
     () =>
       intradayEmotion.data
@@ -1880,10 +1916,29 @@ export default function Home() {
             radarEvents,
             flowRows: flow.data?.allRows ?? flow.data?.series ?? [],
             history: history.snapshots,
+            decisionMode: coreDecisionMode,
+            now: coreDecisionNow,
+            sessionEvidence:
+              ladder.data?.tradeDate &&
+              ladder.data.tradeDate.replaceAll('-', '') === emotionDate
+                ? {
+                    date: ladder.data.tradeDate,
+                    sourceState: ladder.data.sourceState,
+                    sessionState: ladder.data.sessionState,
+                  }
+                : {
+                    date: intradayEmotion.data.tradeDate,
+                    sourceState: intradayEmotion.data.sourceState,
+                    sessionState: intradayEmotion.data.sessionState,
+                  },
           })
         : null,
     [
       coreTracking.data,
+      coreDecisionMode,
+      coreDecisionNow,
+      ladder.data,
+      emotionDate,
       flow.data,
       history.snapshots,
       intradayEmotion.data,

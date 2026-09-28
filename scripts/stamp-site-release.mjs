@@ -40,7 +40,7 @@ if (!pageAssets.length || !buildId)
   throw new Error('A complete vinext production build is required.');
 const release = {
   schema: 'limi-site-release-v1',
-  version: 'emotion-core-v3',
+  version: 'emotion-core-v4',
   projectId: hosting.project_id,
   commitSha,
   dirty,

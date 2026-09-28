@@ -18,6 +18,7 @@ import {
   type ReadingCompetitor,
   type ReadingLadder,
 } from '@/lib/market-reading';
+import type { TapeStock } from '@/lib/tape-observation';
 
 export const emotionToneClass = (tone: EmotionTone) =>
   ({
@@ -190,21 +191,35 @@ function DimensionGrid({
     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
       {dimensionLabels.map(([key, label]) => {
         const item: CoreDimension = dimensions[key];
+        const resultLabel =
+          item.result === 'OBSERVED'
+            ? '已观察'
+            : item.result === 'NOT_OBSERVED'
+              ? '本窗口未见'
+              : item.result === 'UNRESOLVED'
+                ? '未能解析'
+                : null;
         return (
           <div key={key} className="rounded-md border bg-background/60 p-2">
             <div className="flex items-center justify-between gap-2">
               <span className="font-medium">{label}</span>
-              <span
-                className={cn(
-                  'text-[10px]',
-                  item.state === 'READY'
-                    ? 'text-sky-600 dark:text-sky-400'
-                    : item.state === 'DEGRADED'
-                      ? 'text-amber-700 dark:text-amber-400'
-                      : 'text-muted-foreground',
-                )}
-              >
-                {item.state}
+              <span className="text-right text-[10px]">
+                <span
+                  className={cn(
+                    item.state === 'READY'
+                      ? 'text-sky-600 dark:text-sky-400'
+                      : item.state === 'DEGRADED'
+                        ? 'text-amber-700 dark:text-amber-400'
+                        : 'text-muted-foreground',
+                  )}
+                >
+                  {item.state}
+                </span>
+                {resultLabel ? (
+                  <span className="ml-1 text-muted-foreground">
+                    · {resultLabel}
+                  </span>
+                ) : null}
               </span>
             </div>
             <p className="mt-1 text-xs leading-5">{item.fact}</p>
@@ -218,13 +233,53 @@ function DimensionGrid({
   );
 }
 
-function CoreCandidateCard({ candidate }: { candidate: CoreCandidate }) {
+function PricePathFacts({ path }: { path: TapeStock | undefined }) {
+  if (!path)
+    return (
+      <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+        分钟价格路径：当前证据未接入；不把此处缺口改写成“空间观察”或“本窗口未见”。
+      </p>
+    );
+  const facts = [
+    ...path.initiative.facts,
+    ...path.response.facts,
+    ...path.resilience.facts,
+  ].filter(Boolean);
+  return (
+    <div className="mt-2 rounded-md border border-sky-500/20 bg-sky-500/[0.035] p-2 text-[11px] leading-5">
+      <p>
+        分钟路径：{path.supportLabel} · 承接：{path.resilience.label}{' '}
+        <span className="text-muted-foreground">
+          （{path.resilience.state} · {path.resilience.result}）
+        </span>
+      </p>
+      <p className="text-muted-foreground">
+        可见窗口 {path.firstTime ?? '—'}—{path.lastTime ?? '—'} · 价格变化{' '}
+        {pct(path.changePct)} · 报价时刻 {path.quoteTime ?? '—'} · {path.source}
+      </p>
+      {facts.length ? (
+        <p className="text-muted-foreground">
+          关键分钟事实：{[...new Set(facts)].slice(0, 4).join('；')}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function CoreCandidateCard({
+  candidate,
+  pricePath,
+}: {
+  candidate: CoreCandidate;
+  pricePath?: TapeStock;
+}) {
   const extended = candidate as CoreCandidate & {
     peakHeight?: number | null;
     historicalHeight?: number | null;
     currentRole?: string;
   };
   const historicalPeak = extended.peakHeight ?? extended.historicalHeight;
+  const path = candidate.pricePath ?? pricePath;
   return (
     <article className="rounded-lg border bg-background/70 p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -249,6 +304,7 @@ function CoreCandidateCard({ candidate }: { candidate: CoreCandidate }) {
           {candidate.provisional ? ' · 待验证候选' : ' · 持续影响已确认'}
         </Badge>
       </div>
+      <PricePathFacts path={path} />
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
         <span
           className={
@@ -279,6 +335,11 @@ function CoreCandidateCard({ candidate }: { candidate: CoreCandidate }) {
         影响：板块 {candidate.impact.sector} · 接力 {candidate.impact.relay} ·
         整体 {candidate.impact.group}
       </p>
+      {candidate.scopeReason ? (
+        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+          当前范围：{candidate.scope ?? '未标注'} · {candidate.scopeReason}
+        </p>
+      ) : null}
       <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
         状态依据：{candidate.statusBasis}
         {candidate.transitionTrace.length
@@ -306,6 +367,87 @@ function CoreCandidateCard({ candidate }: { candidate: CoreCandidate }) {
         </div>
       </details>
     </article>
+  );
+}
+
+type ExtendedCoreReading = NonNullable<
+  ReturnType<typeof shortEmotionReading>['core']
+> & {
+  activeCandidates?: CoreCandidate[];
+  historicalCandidates?: CoreCandidate[];
+  attackerObservations?: TapeStock[];
+  tape?: { rows: TapeStock[] } | null;
+};
+
+function coreView(
+  core: ReturnType<typeof shortEmotionReading>['core'],
+): ExtendedCoreReading | null {
+  return core ? (core as ExtendedCoreReading) : null;
+}
+
+function AttackerObservations({ rows }: { rows: TapeStock[] }) {
+  return (
+    <section className="rounded-lg border border-violet-500/25 bg-violet-500/[0.035] p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h4 className="text-sm font-semibold">盘中新进攻观察</h4>
+          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+            原始分钟价格观察，不是确认证券龙头；普通首板不自动进入核心名单，行业比较也不等于概念因果。
+          </p>
+        </div>
+        <Badge variant="outline">{rows.length}只可见样本</Badge>
+      </div>
+      {rows.length ? (
+        <div className="mt-3 grid gap-2 lg:grid-cols-2">
+          {rows.map((row) => (
+            <article
+              key={row.code}
+              className="rounded-md border bg-background/60 p-2 text-xs"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">
+                  {row.name}{' '}
+                  <span className="font-mono text-muted-foreground">
+                    {row.code}
+                  </span>
+                </span>
+                <span
+                  className={
+                    row.changePct !== null && row.changePct >= 0
+                      ? 'market-up'
+                      : 'market-down'
+                  }
+                >
+                  {pct(row.changePct)}
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                窗口 {row.firstTime ?? '—'}—{row.lastTime ?? '—'} · 报价{' '}
+                {row.quoteTime ?? '—'} · {row.supportLabel}
+              </p>
+              <p className="mt-1 leading-5">
+                相对发动：{row.initiative.label}。
+                {row.initiative.facts.join('；')}
+              </p>
+              <p className="mt-1 leading-5">
+                之前已强：
+                {row.initiative.facts
+                  .filter((fact) => fact.includes('此前已强'))
+                  .join('；') || '未见已知先强者'}
+              </p>
+              <p className="leading-5">
+                随后响应：
+                {row.response.facts.join('；') || '本比较窗口未见随后响应'}
+              </p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">
+          当前没有可读的程序核心名单之外进攻窗口。
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -424,7 +566,22 @@ export function ShortEmotionPanel({
   coreEvidence?: EmotionCoreEvidence | null;
 }) {
   const reading = shortEmotionReading(facts, previous, ladder, coreEvidence);
-  const coreCandidates = reading.core?.candidates ?? [];
+  const core = coreView(reading.core);
+  const allCandidates = core?.candidates ?? [];
+  const activeCandidates =
+    core?.activeCandidates ??
+    allCandidates.filter((candidate) => candidate.scope !== 'HISTORY');
+  const historicalCandidates =
+    core?.historicalCandidates ??
+    allCandidates.filter((candidate) => candidate.scope === 'HISTORY');
+  const tapeRows = core?.tape?.rows ?? coreEvidence?.tracking?.tape?.rows ?? [];
+  const tapeByCode = new Map(tapeRows.map((row) => [row.code, row]));
+  const coreCodes = new Set(allCandidates.map((candidate) => candidate.code));
+  const attackerObservations =
+    core?.attackerObservations ??
+    tapeRows.filter(
+      (row) => !coreCodes.has(row.code) && row.upEvents.length > 0,
+    );
   const knownNegative = new Set(reading.negative.map((stock) => stock.code));
   const down = reading.structureReady
     ? [
@@ -448,7 +605,9 @@ export function ShortEmotionPanel({
           <p className="mt-1 text-xs text-muted-foreground">
             情绪池：{date(facts.date)} {facts.cutoff}
             {facts.stale ? '（同日旧快照）' : ''} · 核心判断：
-            {reading.core.observedAt} · 报价以逐股时刻为准
+            {reading.core.observedAt} ·{' '}
+            {reading.core.decisionMode === 'LIVE' ? '实时新判断' : '固定时点'} ·
+            报价以逐股时刻为准
           </p>
         </div>
         <Badge variant="outline">
@@ -456,13 +615,25 @@ export function ShortEmotionPanel({
         </Badge>
       </div>
 
+      {core ? (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.045] p-3">
+          <h3 className="text-sm font-semibold">主要判断</h3>
+          <p className="mt-1 text-sm leading-6">{core.summary}</p>
+          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+            高标反馈按当前活跃与竞争观察计数；历史身份保留在单独展开区，不混当前分母，也不能据此当作已退出。
+          </p>
+        </div>
+      ) : null}
+
+      <CoreFeedback reading={reading} />
+
       <div className="grid gap-4 xl:grid-cols-2">
         <JudgmentCard
           kind="高标生态"
           label={reading.highBoard.label}
           tone={reading.highBoard.tone}
           summary={reading.highBoard.summary}
-          badge={`情绪核心候选 ${coreCandidates.length}只`}
+          badge={`情绪核心候选 ${activeCandidates.length}只`}
           evidence={reading.highBoard.evidence}
         />
         <JudgmentCard
@@ -479,16 +650,19 @@ export function ShortEmotionPanel({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">当前情绪核心逐股证据</h3>
           <span className="text-xs text-muted-foreground">
-            {coreCandidates.length
-              ? `${coreCandidates.length}只；普通首板/孤立高板不自动确认`
+            {activeCandidates.length
+              ? `${activeCandidates.length}只活跃／竞争观察；普通首板、孤立高板不自动确认`
               : '候选缺失，不以0伪装'}
           </span>
         </div>
-        <CoreFeedback reading={reading} />
-        {coreCandidates.length ? (
+        {activeCandidates.length ? (
           <div className="grid gap-3 xl:grid-cols-2">
-            {coreCandidates.map((candidate) => (
-              <CoreCandidateCard key={candidate.code} candidate={candidate} />
+            {activeCandidates.map((candidate) => (
+              <CoreCandidateCard
+                key={candidate.code}
+                candidate={candidate}
+                pricePath={tapeByCode.get(candidate.code)}
+              />
             ))}
           </div>
         ) : (
@@ -498,6 +672,29 @@ export function ShortEmotionPanel({
           </p>
         )}
       </section>
+
+      {historicalCandidates.length ? (
+        <details className="rounded-lg border bg-background/60 p-3 text-xs">
+          <summary className="cursor-pointer font-semibold">
+            历史身份跟踪 · {historicalCandidates.length}
+            只（保留身份，不混当前分母）
+          </summary>
+          <p className="mt-2 leading-5 text-muted-foreground">
+            此处保留可追溯的历史身份；当前影响是否仍在，需要新的价格、响应和衰减证据核验，不能把它们当作已退出。
+          </p>
+          <div className="mt-3 grid gap-3 xl:grid-cols-2">
+            {historicalCandidates.map((candidate) => (
+              <CoreCandidateCard
+                key={candidate.code}
+                candidate={candidate}
+                pricePath={tapeByCode.get(candidate.code)}
+              />
+            ))}
+          </div>
+        </details>
+      ) : null}
+
+      <AttackerObservations rows={attackerObservations} />
 
       <div className="rounded-lg border bg-background/65 px-3 py-2 text-xs leading-5">
         <p className="font-semibold">市场边际线索：{reading.transition}</p>

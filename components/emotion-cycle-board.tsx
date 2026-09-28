@@ -531,13 +531,16 @@ export function EmotionCycleBoard({
         if (!response.ok) return;
         const payload = (await response.json()) as CoreTrackingPayload;
         if (controller.signal.aborted || payload.date !== selectedDate) return;
-        const target = snapshots.find((snapshot) => snapshot.date === selectedDate);
+        const target = snapshots.find(
+          (snapshot) => snapshot.date === selectedDate,
+        );
         if (!target) return;
         setSelectedCoreEvidence(
           buildCoreEvidence({
             facts: toEmotionFacts(target),
             tracking: payload,
             history: snapshots,
+            decisionMode: 'FIXED',
           }),
         );
       } catch {
@@ -629,7 +632,7 @@ export function EmotionCycleBoard({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-        <EmotionEvidencePanel
+          <EmotionEvidencePanel
             snapshot={selected}
             previous={previous}
             ladder={ladder}

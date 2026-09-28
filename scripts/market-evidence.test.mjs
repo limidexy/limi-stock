@@ -235,7 +235,8 @@ test('highest tiers are recall evidence, not a final core threshold or confirmed
     archivedFacts('2026-09-17'),
   );
   assert.equal(result.highBoard.poolFloor, null);
-  assert.equal(result.highBoard.rows, result.core.candidates);
+  assert.equal(result.highBoard.rows, result.core.activeCandidates);
+  assert.equal(result.core.candidates.length, result.core.activeCandidates.length + result.core.historicalCandidates.length);
   assert.ok(result.core.candidates.some((row) => row.historicalHeight === 5));
   assert.ok(result.core.candidates.some((row) => row.roles.includes('当前最高竞争者')));
   assert.ok(result.core.candidates.every((row) => row.provisional));

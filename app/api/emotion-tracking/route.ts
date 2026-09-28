@@ -6,6 +6,7 @@ import {
 import calendar from '@/lib/trading-calendar.generated.json';
 import type { getSpeedSnapshot } from '@/lib/market';
 import { updateInfluenceHistory } from '@/lib/core-influence-history';
+import { resolveTrackingCutoff } from '@/lib/tracking-cutoff';
 import {
   buildEmotionTracking,
   trackingCandidates,
@@ -35,6 +36,18 @@ const pending = new Map<string, Promise<unknown>>();
 const dashed = (d: string) =>
   d.includes('-') ? d : `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`;
 
+function preserveConceptTiming(day: TrackingDay | undefined) {
+  if (!day?.concepts || !Object.keys(day.concepts).length) return day;
+  const closeAt = Date.parse(`${dashed(day.date)}T15:00:00+08:00`);
+  const lateAt = [day.conceptsAvailableAt, day.capturedAt]
+    .map((value) => Date.parse(value ?? ''))
+    .filter(Number.isFinite)
+    .some((value) => value > closeAt);
+  return lateAt && day.conceptsState === 'READY'
+    ? { ...day, conceptsState: 'RECOVERED_LATE' as const }
+    : day;
+}
+
 async function capture(requested: string, lookback: number) {
   let storageReason: string | null = null;
   const history = enrichEmotionCloses(
@@ -43,10 +56,36 @@ async function capture(requested: string, lookback: number) {
       return CLOSE_HISTORY.snapshots;
     }),
   );
-  const context = requested === 'latest' ? await getMarketDateContext() : null;
-  const date = context ? dashed(context.tradeDate) : requested;
+  const context =
+    requested === 'latest'
+      ? await getMarketDateContext().catch(() => {
+          storageReason =
+            '行情交易日接口暂不可用；仅展示已保存且明确日期的观察';
+          return null;
+        })
+      : null;
+  const requestedDay = context
+    ? dashed(context.requestedDate)
+    : new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10);
+  const sameDaySaved =
+    requested === 'latest'
+      ? await loadExactModuleSnapshot<TrackingDay>(
+          'emotion-tracking-evidence',
+          requestedDay,
+        ).catch(() => null)
+      : null;
+  const date =
+    requested === 'latest'
+      ? sameDaySaved?.date === requestedDay
+        ? requestedDay
+        : context
+          ? dashed(context.tradeDate)
+          : (history.at(-1)?.date ?? requestedDay)
+      : requested;
   const live =
-    context?.sessionState === 'LIVE' && context.sourceState === 'LIVE';
+    context?.sessionState === 'LIVE' &&
+    context.sourceState === 'LIVE' &&
+    dashed(context.tradeDate) === date;
   let cutoff = '15:00';
   const evidence: TrackingHistory = { ...TRACKING_HISTORY };
   for (const day of history)
@@ -67,10 +106,13 @@ async function capture(requested: string, lookback: number) {
         conceptsState: evidence[day.date]?.conceptsState,
         noTrade: evidence[day.date]?.noTrade,
       };
-  const saved = await loadExactModuleSnapshot<TrackingDay>(
-    'emotion-tracking-evidence',
-    date,
-  ).catch(() => null);
+  const saved =
+    sameDaySaved?.date === date
+      ? sameDaySaved
+      : await loadExactModuleSnapshot<TrackingDay>(
+          'emotion-tracking-evidence',
+          date,
+        ).catch(() => null);
   if (saved?.date === date)
     evidence[date] = {
       ...saved,
@@ -79,34 +121,44 @@ async function capture(requested: string, lookback: number) {
       trends: { ...saved.trends, ...evidence[date]?.trends },
       noTrade: { ...saved.noTrade, ...evidence[date]?.noTrade },
     };
+  const existingEvidence = evidence[date];
+  if (existingEvidence)
+    evidence[date] = preserveConceptTiming(existingEvidence)!;
   if (live) {
     const candidates = trackingCandidates(history, date, lookback);
     const speed = await loadExactModuleSnapshot<
       Awaited<ReturnType<typeof getSpeedSnapshot>>
     >('speed', date).catch(() => null);
+    const speedReceivedAt = Date.now();
     const visibleSpeed =
       speed?.tradeDate === context.tradeDate && speed.sourceState === 'LIVE'
         ? speed.rows.filter((row) => {
             const q = Date.parse(row.quoteTime ?? '');
+            const quoteDate = Number.isFinite(q)
+              ? new Date(q + 8 * 3_600_000)
+                  .toISOString()
+                  .slice(0, 10)
+                  .replaceAll('-', '')
+              : '';
             return (
               Number.isFinite(q) &&
-              q <= Date.now() &&
-              Date.now() - q <= 120_000 &&
-              row.metadataState === 'READY' &&
-              Boolean(row.metadataAsOf) &&
-              Date.parse(row.metadataAsOf!) <= Date.now() &&
-              row.concepts.length > 0
+              quoteDate === context.tradeDate &&
+              q <= speedReceivedAt &&
+              speedReceivedAt - q <= 120_000 &&
+              row.changePct !== null &&
+              row.speedPct !== null
             );
           })
         : [];
     const styleRows = [...visibleSpeed]
-      .filter((row) => (row.amount ?? 0) >= 1e9 && (row.changePct ?? 0) > 0)
-      .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
-      .slice(0, 3);
-    const styleConcepts = new Set(styleRows.flatMap((row) => row.concepts));
-    const memberRows = visibleSpeed
-      .filter((row) => row.concepts.some((name) => styleConcepts.has(name)))
+      .filter((row) => (row.changePct ?? 0) > 0)
+      .sort(
+        (a, b) =>
+          (b.speedPct ?? -Infinity) - (a.speedPct ?? -Infinity) ||
+          (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity),
+      )
       .slice(0, 12);
+    const memberRows = visibleSpeed.slice(0, 12);
     const toStyleStock = (row: (typeof visibleSpeed)[number]): CloseStock => ({
       code: row.code,
       name: row.name,
@@ -121,6 +173,7 @@ async function capture(requested: string, lookback: number) {
     const codes = [
       ...new Set(
         [
+          ...visibleSpeed,
           ...styleRows,
           ...memberRows,
           ...candidates.leaders,
@@ -194,14 +247,19 @@ async function capture(requested: string, lookback: number) {
         ...saved?.concepts,
         ...evidence[date]?.concepts,
         ...Object.fromEntries(
-          memberRows.map((row) => [row.code, row.concepts]),
+          memberRows
+            .filter((row) => row.concepts.length > 0)
+            .map((row) => [row.code, row.concepts]),
         ),
       },
       conceptStates: {
         ...saved?.conceptStates,
         ...evidence[date]?.conceptStates,
         ...Object.fromEntries(
-          memberRows.map((row) => [row.code, 'READY' as const]),
+          memberRows.map((row) => [
+            row.code,
+            row.concepts.length > 0 ? ('READY' as const) : ('MISSING' as const),
+          ]),
         ),
       },
       conceptsAvailableAt: memberRows.length
@@ -211,18 +269,23 @@ async function capture(requested: string, lookback: number) {
             .at(-1)
         : (saved?.conceptsAvailableAt ?? evidence[date]?.conceptsAvailableAt),
       conceptsState: memberRows.length
-        ? 'DEGRADED'
+        ? memberRows.some((row) => row.concepts.length > 0)
+          ? 'DEGRADED'
+          : 'MISSING'
         : (saved?.conceptsState ?? evidence[date]?.conceptsState ?? 'MISSING'),
       styleCandidates: styleRows.map(toStyleStock),
       styleMembers: memberRows.map(toStyleStock),
       source:
-        '当日独立分钟/逐股报价请求；非连板容量候选复用已保存涨速样本，仅触发观察，不授予龙头身份',
+        '当日独立分钟/逐股报价请求；复用当日有准确quoteTime的涨速样本（最多12只）作为styleCandidates/styleMembers观察，不授予龙头身份',
     };
-    evidence[date] = day;
-    if (JSON.stringify(day).length < 1_800_000)
-      await saveModuleSnapshot('emotion-tracking-evidence', day).catch(() => {
-        storageReason = '本次可显示，保存失败；跨日跟踪可能有缺口';
-      });
+    const persistedDay = preserveConceptTiming(day)!;
+    evidence[date] = persistedDay;
+    if (JSON.stringify(persistedDay).length < 1_800_000)
+      await saveModuleSnapshot('emotion-tracking-evidence', persistedDay).catch(
+        () => {
+          storageReason = '本次可显示，保存失败；跨日跟踪可能有缺口';
+        },
+      );
     else storageReason = '分钟包超过单次归档大小限制，本次未持久化';
   } else if (
     context &&
@@ -259,11 +322,14 @@ async function capture(requested: string, lookback: number) {
         saved?.conceptsState ?? evidence[date]?.conceptsState ?? 'MISSING',
       source: '当日15:00收盘报价与同日分钟路径',
     };
-    evidence[date] = day;
-    if (JSON.stringify(day).length < 1_800_000)
-      await saveModuleSnapshot('emotion-tracking-evidence', day).catch(() => {
-        storageReason = '收盘分钟保存失败，已明确保留缺口';
-      });
+    const persistedDay = preserveConceptTiming(day)!;
+    evidence[date] = persistedDay;
+    if (JSON.stringify(persistedDay).length < 1_800_000)
+      await saveModuleSnapshot('emotion-tracking-evidence', persistedDay).catch(
+        () => {
+          storageReason = '收盘分钟保存失败，已明确保留缺口';
+        },
+      );
     else storageReason = '收盘分钟包超过单次归档大小限制，本次未持久化';
   }
   if (!history.some((x) => x.date === date) && !evidence[date])
@@ -273,12 +339,31 @@ async function capture(requested: string, lookback: number) {
       cutoff,
       reason: '该日期没有可核验快照，未改用其他交易日',
     };
-  // A saved intraday capture may contribute paths, never midday prices to a close view.
+  const fixedWindow = resolveTrackingCutoff(
+    date,
+    evidence[date],
+    history.some(
+      (snapshot) =>
+        snapshot.date === date &&
+        snapshot.cutoff === '15:00' &&
+        snapshot.status === 'READY',
+    ),
+  );
+  if (!live && fixedWindow.lastKnown) {
+    cutoff = fixedWindow.cutoff;
+    storageReason = [storageReason, fixedWindow.reason]
+      .filter(Boolean)
+      .join('；');
+  }
+  // A saved intraday capture is never relabelled as a completed close. Preserve
+  // its actual cutoff when this date's close has not been archived.
   if (!live && evidence[date])
     evidence[date] = {
       ...evidence[date],
       sessionState: 'CLOSED',
-      asOf: undefined,
+      asOf: fixedWindow.lastKnown
+        ? (evidence[date].asOf ?? evidence[date].availableAt)
+        : undefined,
     };
   const result = buildEmotionTracking(
     history,
@@ -318,6 +403,10 @@ async function capture(requested: string, lookback: number) {
   }
   return {
     ...result,
+    observationMode:
+      fixedWindow.lastKnown && !live ? 'LAST_KNOWN' : live ? 'LIVE' : 'CLOSE',
+    observationReason:
+      fixedWindow.lastKnown && !live ? fixedWindow.reason : null,
     influenceHistory,
     sourceState: live ? 'LIVE' : 'ARCHIVED',
     retrievedAt: new Date().toISOString(),

@@ -5,6 +5,7 @@ import {
   shortEmotionReading,
   type EmotionFacts,
   type EmotionCoreEvidence,
+  type CoreCandidate,
   type ReadingLadder,
 } from '@/lib/market-reading';
 import type { CloseSnapshot } from '@/lib/close-history';
@@ -115,6 +116,13 @@ export type UnifiedMarketReading = {
   readyCount: number;
   degradedCount: number;
   missingCount: number;
+};
+
+type UnifiedCoreReading = NonNullable<
+  ReturnType<typeof shortEmotionReading>['core']
+> & {
+  activeCandidates?: CoreCandidate[];
+  historicalCandidates?: CoreCandidate[];
 };
 
 const date = (value?: string) => (value ?? '').replaceAll('-', '');
@@ -242,7 +250,11 @@ export function unifiedMarketReading(
         )
         .sort((a, b) => a.changePct! - b.changePct!)
     : [];
-  const coreCandidates = short.core?.candidates ?? [];
+  const core = short.core as UnifiedCoreReading | null;
+  const allCoreCandidates = core?.candidates ?? [];
+  const coreCandidates =
+    core?.activeCandidates ??
+    allCoreCandidates.filter((candidate) => candidate.scope !== 'HISTORY');
   const topStocks = coreCandidates.filter(
     (candidate) =>
       candidate.roles.includes('当前最高竞争者') ||
@@ -310,6 +322,17 @@ export function unifiedMarketReading(
     coreCandidates.some((candidate) => candidate.confirmedEvidence.length > 0)
       ? 'READY'
       : 'DEGRADED';
+  const highFeedbackState = core?.highFeedback.state ?? 'MISSING';
+  const highBoardState: KnowledgeState = coreCandidates.length
+    ? highFeedbackState === 'READY'
+      ? 'READY'
+      : 'DEGRADED'
+    : highFeedbackState === 'MISSING'
+      ? 'MISSING'
+      : 'DEGRADED';
+  const leaderPositionReady = topStocks.some(
+    (candidate) => candidate.dimensions.position.state === 'READY',
+  );
 
   const modules: KnowledgeModule[] = [
     {
@@ -445,13 +468,9 @@ export function unifiedMarketReading(
       name: '高标',
       question: '风险偏好上限是否稳定？',
       conclusion: short.highBoard.label,
-      state:
-        short.core.highFeedback.state === 'READY' &&
-        coreCandidates.some((candidate) => !candidate.provisional)
-          ? 'READY'
-          : 'DEGRADED',
+      state: highBoardState,
       judgment:
-        short.core.highFeedback.state === 'READY' &&
+        highBoardState === 'READY' &&
         coreCandidates.some((candidate) => !candidate.provisional)
           ? 'CONFIRMED'
           : 'OBSERVE',
@@ -491,14 +510,13 @@ export function unifiedMarketReading(
         ? `${topStocks.length === 1 ? '高位候选观察' : '高位角色竞争'}：${topStocks.map((stock) => `${stock.name}（${stock.state}）`).join('、')}`
         : '高位核心候选尚未形成',
       state:
-        topStocks.length &&
-        coreCandidates.some(
-          (candidate) => candidate.confirmedEvidence.length > 0,
-        )
+        topStocks.length && leaderPositionReady
           ? 'READY'
           : topStocks.length
             ? 'DEGRADED'
-            : 'MISSING',
+            : coreCandidates.length
+              ? 'DEGRADED'
+              : 'MISSING',
       judgment: topStocks.length ? 'OBSERVE' : 'UNCONFIRMED',
       tone: topStocks.length === 1 ? 'mixed' : 'neutral',
       evidence: [

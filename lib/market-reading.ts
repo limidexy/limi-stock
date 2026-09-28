@@ -1,4 +1,9 @@
 import { readEmotionCores } from './emotion-core-engine.ts';
+import type {
+  ObservationResult,
+  TapeSnapshot,
+  TapeStock,
+} from './tape-observation';
 
 // Descriptive observations, not a trading signal or a calibrated prediction.
 export type ReadingCompetitor = {
@@ -203,6 +208,7 @@ export type CoreDimension = {
   basis: string;
   observedAt: string;
   source: string;
+  result?: ObservationResult;
 };
 
 export type CoreCandidate = {
@@ -214,6 +220,9 @@ export type CoreCandidate = {
   height: number | null;
   historicalHeight?: number | null;
   currentRole?: string;
+  scope?: 'ACTIVE' | 'COMPETITOR' | 'HISTORY';
+  scopeReason?: string;
+  pricePath?: TapeStock;
   trend: '20cm' | '主板' | '北交所' | null;
   changePct: number | null;
   quoteTime: string | null;
@@ -285,6 +294,14 @@ type CoreReboundRow = {
   code: string;
   name: string;
   status?: EvidenceState | 'NO_TRADE';
+  eventState?: EvidenceState;
+  eventWindow?: {
+    start: string;
+    end: string;
+    samples: number;
+    complete: boolean;
+    intervalMinutes: number;
+  } | null;
   label?: string;
   points?: number;
   lowPct?: number;
@@ -328,6 +345,8 @@ type CoreLeadLagGroup = {
 };
 
 export type EmotionCoreEvidence = {
+  decisionAt?: string;
+  decisionMode?: 'LIVE' | 'FIXED';
   history?: EmotionFacts[];
   decayObservations?: Array<{
     code: string;
@@ -368,6 +387,7 @@ export type EmotionCoreEvidence = {
   availableAt?: string;
   source?: string;
   tracking?: {
+    tape?: TapeSnapshot;
     status?: EvidenceState;
     date?: string;
     cutoff?: string;
@@ -897,11 +917,38 @@ export function shortEmotionReading(
         coreNegativePoolsAt: facts.retrievedAt,
       }
     : facts;
+  const lastKnownWindow = facts.stale && !useSupplied && factsStructureComplete;
+  const retainedPriorDate =
+    coreFacts.previousDate ?? coreEvidence?.tracking?.previousDate;
+  const retainedRows: ReadingCompetitor[] =
+    lastKnownWindow &&
+    previous &&
+    completeStructure(previous) &&
+    compactDate(retainedPriorDate ?? undefined) === compactDate(previous.date)
+      ? priorStocks.map((stock) => {
+          const sealed = factsStocks.some((item) => item.code === stock.code);
+          const failed = facts.failedStocks?.some(
+            (item) => item.code === stock.code,
+          );
+          return {
+            code: stock.code,
+            name: stock.name,
+            industry: stock.industry,
+            fromHeight: stock.height,
+            toHeight: stock.height + 1,
+            state: sealed ? 'SEALED' : failed ? 'FAILED' : 'DROPPED',
+            changePct: null,
+            speedPct: null,
+          };
+        })
+      : [];
   const core = emotionCoreReading(
-    coreFacts,
+    lastKnownWindow
+      ? { ...coreFacts, previousDate: retainedPriorDate ?? undefined }
+      : coreFacts,
     previous,
-    rows,
-    stocks,
+    retainedRows.length ? retainedRows : rows,
+    lastKnownWindow ? factsStocks : stocks,
     coreEvidence,
   );
   const highRows = rows.filter((row) => row.fromHeight >= 2);
@@ -949,10 +996,10 @@ export function shortEmotionReading(
   );
   // The complete retained registry is authoritative, including old and trend cores.
   // No intersection with yesterday's consecutive-board cohort is permitted here.
-  const highPoolRows = core.candidates;
+  const highPoolRows = core.activeCandidates;
   const highPoolFloor = null;
   const middleRows = core.middleRows;
-  const highCandidates = core.candidates;
+  const highCandidates = core.activeCandidates;
   const highPoolAdvanced = core.highFeedback.strong.knownCount ?? 0;
   const highPoolFailed = highCandidates.filter(
     (candidate) =>
@@ -1083,12 +1130,13 @@ export function shortEmotionReading(
           : '市场参照与逐股主动、带动证据分别判断';
   const negativeKnown = core.highFeedback.deepWater.knownCount ?? 0;
   const extremeKnown = core.highFeedback.extreme.knownCount ?? 0;
-  const confirmedCores = core.candidates.filter(
+  const confirmedCores = core.activeCandidates.filter(
     (candidate) => !candidate.provisional,
   );
   const healthyConfirmed =
     confirmedCores.length > 0 &&
     core.highFeedback.state === 'READY' &&
+    core.highFeedback.extreme.state === 'READY' &&
     negativeKnown === 0 &&
     extremeKnown === 0 &&
     core.middle.state === 'READY' &&
@@ -1096,7 +1144,7 @@ export function shortEmotionReading(
     core.middle.twoDayNegative === 0 &&
     (cohort.consecutive.rate ?? 0) >= 50 &&
     (cohort.consecutive.attemptRate ?? 0) >= 50;
-  const highLabel = !core.candidates.length
+  const highLabel = !core.activeCandidates.length
     ? '高标数据不足'
     : core.retreatWarning
       ? '核心存活 · 中位退潮预警'
@@ -1112,7 +1160,7 @@ export function shortEmotionReading(
       ? 'negative'
       : healthyConfirmed
         ? 'positive'
-        : core.candidates.length
+        : core.activeCandidates.length
           ? 'mixed'
           : 'unknown';
   const highSummary = core.summary;
@@ -1247,16 +1295,16 @@ export function shortEmotionReading(
       label: '当前情绪核心',
       value:
         '召回' +
-        core.candidates.length +
+        core.activeCandidates.length +
         '只 · 已确认持续核心' +
         confirmedCores.length +
         '只',
-      detail: core.candidates.length
-        ? core.candidates
+      detail: core.activeCandidates.length
+        ? core.activeCandidates
             .map((candidate) => candidate.name + '：' + candidate.currentRole)
             .join('；')
         : '缺可验证身份，不以普通首板补池。',
-      state: core.candidates.length ? 'READY' : 'MISSING',
+      state: core.activeCandidates.length ? 'READY' : 'MISSING',
     },
     {
       label: '高标群体反馈',
@@ -1271,7 +1319,7 @@ export function shortEmotionReading(
         '当前报价覆盖' +
         core.highFeedback.covered +
         '/' +
-        core.candidates.length +
+        core.activeCandidates.length +
         '；这些是已知计数，缺失不视为0，也不与接力分母互换。',
       state: core.highFeedback.state,
     },

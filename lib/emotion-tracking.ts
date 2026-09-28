@@ -1,6 +1,7 @@
 import type { CloseSnapshot, CloseStock } from './close-history';
 import type { PriceTrend } from './timeline-evidence';
 import { extremePathObservation } from './core-minute-evidence.ts';
+import { buildTapeObservation } from './tape-observation.ts';
 
 export type TrackingQuote = {
   changePct: number;
@@ -66,8 +67,23 @@ export function exactQuote(
   const quote = evidence?.date === date ? evidence.quotes[code] : undefined;
   const stamp = Date.parse(quote?.quoteTime ?? '');
   const isLive = evidence?.sessionState === 'LIVE';
+  const savedTime = evidence?.asOf ?? evidence?.availableAt;
+  const savedStamp = Date.parse(savedTime ?? '');
+  const savedLocal = Number.isFinite(savedStamp)
+    ? new Date(savedStamp + 8 * 3600000).toISOString()
+    : '';
+  const sameCaptureMinute =
+    evidence?.date === date &&
+    evidence.cutoff === cutoff &&
+    cutoff !== '15:00' &&
+    savedLocal.slice(0, 10) === date &&
+    savedLocal.slice(11, 16) === cutoff;
   const target = Date.parse(
-    isLive && evidence?.asOf ? evidence.asOf : `${date}T${cutoff}:00+08:00`,
+    sameCaptureMinute
+      ? savedTime!
+      : isLive && evidence?.asOf
+        ? evidence.asOf
+        : `${date}T${cutoff}:00+08:00`,
   );
   const quotedDate = Number.isFinite(stamp)
     ? new Date(stamp + 8 * 3600000).toISOString().slice(0, 10)
@@ -278,8 +294,27 @@ export function reboundObservation(
     endMinute !== null &&
     (cutoff === '15:00' ? last.time === '15:00' : endMinute - last.minute <= 1);
   const maintained = event ? last.pct - event.lowPct >= 3 : false;
+  const eventPoints = event
+    ? points.filter(
+        (point) => point.time >= event.lowTime && point.time <= event.time,
+      )
+    : [];
   return {
     status: full ? ('READY' as const) : ('DEGRADED' as const),
+    eventState: event
+      ? ('READY' as const)
+      : full
+        ? ('READY' as const)
+        : ('MISSING' as const),
+    eventWindow: event
+      ? {
+          start: event.lowTime,
+          end: event.time,
+          samples: eventPoints.length,
+          complete: consecutivePath(eventPoints),
+          intervalMinutes: 1,
+        }
+      : null,
     label: event
       ? maintained
         ? '深跌拉回 · 反核候选'
@@ -339,8 +374,13 @@ function negativeAcceleration(
 }
 
 function completeMinutePath(trend: PriceTrend | undefined, cutoff: string) {
-  const points = cleanPath(trend, cutoff);
+  if ((trend?.intervalMinutes ?? 1) !== 1) return false;
   const end = minuteIndex(cutoff);
+  // This predicate is used only for the recent negative-event decision window,
+  // not for a claim that the complete trading day has been observed.
+  const points = cleanPath(trend, cutoff).filter(
+    (point) => end !== null && point.minute >= end - 13,
+  );
   const regular = points.every(
     (point, index) =>
       !index ||
@@ -348,8 +388,7 @@ function completeMinutePath(trend: PriceTrend | undefined, cutoff: string) {
       (point.time === '15:00' && points[index - 1].time === '14:57'),
   );
   return Boolean(
-    points.length >= 5 &&
-    points[0].time <= '09:31' &&
+    points.length >= 4 &&
     end !== null &&
     points.at(-1)?.time === cutoff &&
     regular,
@@ -411,8 +450,9 @@ function negativeLeadLagObservation(
     industry: group.industry,
     onset,
     direction: 'down' as const,
+    pathScope: 'RECENT_CONTIGUOUS_WINDOW' as const,
     status:
-      corePathReady && onset && rows.every((row) => row.pathState === 'READY')
+      corePathReady && rows.every((row) => row.pathState === 'READY')
         ? ('READY' as const)
         : ('MISSING' as const),
     rows,
@@ -539,6 +579,21 @@ export function buildEmotionTracking(
   const candidates = trackingCandidates(ordered, date, lookback);
   const currentEvidence = evidence[date];
   const prev = candidates.previous;
+  const tape = buildTapeObservation({
+    date,
+    cutoff,
+    trends: currentEvidence?.trends ?? {},
+    previous: stocksOf(prev),
+    metadata: ordered
+      .filter((day) => day.date < date)
+      .flatMap((day) => [
+        ...stocksOf(day),
+        ...day.failedStocks,
+        ...day.limitDownStocks,
+      ]),
+    source: currentEvidence?.source ?? '该日分钟未采集',
+    availableAt: currentEvidence?.availableAt ?? currentEvidence?.asOf,
+  });
   const hasCurrent = complete(current);
   const adjacent = Boolean(
     currentEvidence &&
@@ -758,10 +813,13 @@ export function buildEmotionTracking(
     version: 1,
     date,
     cutoff,
+    tape,
     lookback,
     extremePaths: { rows: extremePaths },
     source: currentEvidence?.source ?? '该日跟踪证据未归档',
     sourceState: currentEvidence?.sourceState ?? 'ARCHIVED',
+    sessionState: currentEvidence?.sessionState,
+    capturedAt: currentEvidence?.capturedAt,
     availableAt:
       currentEvidence?.availableAt ??
       currentEvidence?.asOf ??

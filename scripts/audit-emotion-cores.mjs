@@ -16,7 +16,8 @@ const read = (key, fallback) => {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 };
 const emotion = read('emotion'),
-  ladder = read('ladder');
+  ladder = read('ladder'),
+  tracking = read('tracking');
 if (!emotion?.tradeDate || !ladder?.tradeDate)
   throw new Error('Exact-date emotion and ladder snapshots are required.');
 const document = read('history', 'lib/close-history.generated.json');
@@ -26,7 +27,15 @@ const dashed = (date) =>
 const facts = {
   ...emotion,
   date: dashed(emotion.tradeDate),
-  previousDate: dashed(ladder.previousTradeDate ?? ''),
+  previousDate: dashed(
+    ladder.tradeDate.replaceAll('-', '') ===
+      emotion.tradeDate.replaceAll('-', '')
+      ? (ladder.previousTradeDate ?? '')
+      : tracking?.date?.replaceAll('-', '') ===
+          emotion.tradeDate.replaceAll('-', '')
+        ? (tracking.previousDate ?? '')
+        : '',
+  ),
   stale: emotion.sourceState === 'STALE',
   poolsReady:
     emotion.coverage?.poolsReady > 0 &&
@@ -47,7 +56,7 @@ const before = previous
 const coreEvidence = buildCoreEvidence({
   facts,
   history,
-  tracking: read('tracking'),
+  tracking,
   speed: read('speed'),
 });
 const reading = shortEmotionReading(facts, before, ladder, coreEvidence);
