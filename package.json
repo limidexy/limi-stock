@@ -13,7 +13,7 @@
     "history:build": "node scripts/build-close-history.mjs",
     "seed:build": "node scripts/build-market-seed.mjs",
     "evidence:build": "node scripts/build-archive-evidence.mjs",
-    "test:evidence": "node --experimental-strip-types --test scripts/market-evidence.test.mjs scripts/radar-evidence.test.mjs scripts/emotion-tracking.test.mjs scripts/unified-market.test.mjs",
+    "test:evidence": "node --experimental-strip-types --test scripts/*.test.mjs",
     "tracking:build": "node scripts/build-emotion-tracking.mjs",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",

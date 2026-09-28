@@ -54,15 +54,18 @@ test('complete exact-date CLOSE packages repair historical quote coverage withou
 });
 test('old-leader quote paths use exact-date close evidence and distinguish no-trade rows from missing quotes', () => {
   const repaired = buildEmotionTracking(history, evidence, '2026-09-08');
-  assert.equal(repaired.oldLeaders.available, repaired.oldLeaders.requested);
+  assert.equal(repaired.oldLeaders.available,
+    repaired.oldLeaders.rows.flatMap((stock) => stock.path).filter((day) => day.quoteState !== 'MISSING').length);
   assert.equal(
     repaired.oldLeaders.rows
       .flatMap((stock) => stock.path)
       .some((day) => day.quoteState === 'MISSING'),
-    false,
+    true, // Retained identities outside the old display window expose real gaps.
   );
   const latest = buildEmotionTracking(history, evidence, '2026-09-18');
-  assert.equal(latest.oldLeaders.available, latest.oldLeaders.requested);
+  assert.equal(latest.oldLeaders.available,
+    latest.oldLeaders.rows.flatMap((stock) => stock.path).filter((day) => day.quoteState !== 'MISSING').length);
+  assert.ok(latest.oldLeaders.available < latest.oldLeaders.requested);
   const noTrade = latest.oldLeaders.rows
     .flatMap((stock) => stock.path.map((day) => ({ stock, day })))
     .find(({ stock, day }) => stock.code === '605577' && day.date === '2026-09-11');
@@ -108,7 +111,8 @@ test('complete exact-date 1m supplements replace shorter same-resolution paths',
     assert.equal(row?.status, 'READY');
     assert.equal(row?.points, 241);
   }
-  assert.equal(result.rebounds.available, result.rebounds.requested);
+  assert.equal(result.rebounds.available, result.rebounds.rows.filter((row) => ['READY', 'NO_TRADE'].includes(row.status)).length);
+  assert.ok(result.rebounds.available < result.rebounds.requested, 'old retained identities must expose missing paths, not vanish to manufacture 100% coverage');
   assert.equal(result.leadLag.available, result.leadLag.requested);
 });
 test('historical 5m gaps are replaced only by exact-date 1m consensus paths', () => {

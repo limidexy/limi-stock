@@ -45,8 +45,13 @@ import {
 import {
   emotionReading,
   shortEmotionReading,
+  type EmotionCoreEvidence,
   type ReadingLadder,
 } from '@/lib/market-reading';
+import {
+  buildCoreEvidence,
+  type CoreTrackingPayload,
+} from '@/lib/core-evidence';
 import { emotionToneClass } from '@/components/short-emotion-panel';
 
 function dateLabel(value: string, withWeekday = true) {
@@ -284,12 +289,14 @@ export function IntradayEmotionBoard({
   error,
   history,
   ladder,
+  coreEvidence,
 }: {
   snapshot: IntradayEmotionSnapshot | null;
   loading: boolean;
   error: string | null;
   history: CloseHistoryDocument;
   ladder?: ReadingLadder | null;
+  coreEvidence?: EmotionCoreEvidence | null;
 }) {
   const previousRef = useRef<IntradayEmotionSnapshot | null>(null);
   const [previous, setPrevious] = useState<IntradayEmotionSnapshot | null>(
@@ -395,6 +402,7 @@ export function IntradayEmotionBoard({
           snapshot={snapshot}
           previous={priorClose}
           ladder={ladder}
+          coreEvidence={coreEvidence}
         />
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           <div className="rounded-lg border bg-background/70 p-3">
@@ -493,11 +501,13 @@ export function EmotionCycleBoard({
   onDateChange,
   history,
   ladder,
+  coreEvidence,
 }: {
   selectedDate: string;
   onDateChange: (date: string) => void;
   history: CloseHistoryDocument;
   ladder?: ReadingLadder | null;
+  coreEvidence?: EmotionCoreEvidence | null;
 }) {
   const snapshots = history.snapshots;
   const requestedIndex = snapshots.findIndex(
@@ -507,6 +517,37 @@ export function EmotionCycleBoard({
     requestedIndex >= 0 ? requestedIndex : Math.max(0, snapshots.length - 1);
   const selected = snapshots[selectedIndex] ?? snapshots.at(-1);
   const matrixScrollRef = useRef<HTMLDivElement>(null);
+  const [selectedCoreEvidence, setSelectedCoreEvidence] =
+    useState<EmotionCoreEvidence | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const response = await fetch(
+          `/api/emotion-tracking?date=${selectedDate}&lookback=20`,
+          { signal: controller.signal, cache: 'no-store' },
+        );
+        if (!response.ok) return;
+        const payload = (await response.json()) as CoreTrackingPayload;
+        if (controller.signal.aborted || payload.date !== selectedDate) return;
+        const target = snapshots.find((snapshot) => snapshot.date === selectedDate);
+        if (!target) return;
+        setSelectedCoreEvidence(
+          buildCoreEvidence({
+            facts: toEmotionFacts(target),
+            tracking: payload,
+            history: snapshots,
+          }),
+        );
+      } catch {
+        // A missing historical tracking package is shown as a missing core
+        // evidence state; the close matrix remains available.
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [selectedDate, snapshots]);
 
   useEffect(() => {
     const scroller = matrixScrollRef.current;
@@ -540,6 +581,8 @@ export function EmotionCycleBoard({
         toEmotionFacts(snapshot),
         snapshots[index - 1] ? toEmotionFacts(snapshots[index - 1]) : null,
         ladder,
+        selectedCoreEvidence ??
+          (selected.date === coreEvidence?.date ? coreEvidence : null),
       ),
     ]),
   );
@@ -586,10 +629,17 @@ export function EmotionCycleBoard({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <EmotionEvidencePanel
+        <EmotionEvidencePanel
             snapshot={selected}
             previous={previous}
             ladder={ladder}
+            coreEvidence={
+              selectedCoreEvidence?.date === selected.date
+                ? selectedCoreEvidence
+                : selected.date === coreEvidence?.date
+                  ? coreEvidence
+                  : null
+            }
           />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             <div className="rounded-lg border bg-muted/30 p-3">

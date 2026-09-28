@@ -1,3 +1,5 @@
+import { readEmotionCores } from './emotion-core-engine.ts';
+
 // Descriptive observations, not a trading signal or a calibrated prediction.
 export type ReadingCompetitor = {
   code: string;
@@ -129,6 +131,10 @@ export type EmotionFacts = {
   cutoff: string;
   status: string;
   stale?: boolean;
+  coreStructureReady?: boolean;
+  coreNegativePoolsReady?: boolean;
+  coreNegativePoolsAt?: string;
+  coreContextReady?: boolean;
   poolsReady: boolean;
   breadthReady: boolean;
   limitUp: number;
@@ -160,6 +166,328 @@ export type EmotionStock = {
   lastSeal?: string | null;
   breakCount?: number;
   sealFund?: number | null;
+};
+
+export type EvidenceState = 'READY' | 'DEGRADED' | 'MISSING';
+
+export const EMOTION_CORE_STATES = [
+  '潜在核心',
+  '同身位竞争',
+  '分离/卡位',
+  '龙头候选',
+  '明牌核心',
+  '加速一致',
+  '爆量分歧',
+  '修复/断板',
+  '反包或二波',
+  '老高标跟踪',
+  '影响衰减退出',
+] as const;
+
+export type EmotionCoreState = (typeof EMOTION_CORE_STATES)[number];
+export type EmotionCoreRole =
+  | '当前最高竞争者'
+  | '当前次高竞争者'
+  | '最近交易日最高板/核心'
+  | '断板老高标'
+  | '极端负反馈代表'
+  | '反核/反包尝试'
+  | '主线先锋/候选/明牌'
+  | '20cm趋势容量核心'
+  | '趋势容量核心候选'
+  | '板块接力带动者';
+
+export type CoreDimension = {
+  state: EvidenceState;
+  fact: string;
+  basis: string;
+  observedAt: string;
+  source: string;
+};
+
+export type CoreCandidate = {
+  code: string;
+  name: string;
+  roles: EmotionCoreRole[];
+  state: EmotionCoreState;
+  provisional: boolean;
+  height: number | null;
+  historicalHeight?: number | null;
+  currentRole?: string;
+  trend: '20cm' | '主板' | '北交所' | null;
+  changePct: number | null;
+  quoteTime: string | null;
+  quoteSource: string | null;
+  quoteState: EvidenceState;
+  speedPct: number | null;
+  amount: number | null;
+  concepts: string[];
+  reasons: string[];
+  confirmedEvidence: string[];
+  missingEvidence: string[];
+  impact: {
+    sector: string;
+    relay: string;
+    group: string;
+  };
+  dimensions: {
+    position: CoreDimension;
+    initiative: CoreDimension;
+    leadership: CoreDimension;
+    antiFall: CoreDimension;
+    identity: CoreDimension;
+    expectation: CoreDimension;
+    chips: CoreDimension;
+    groupInfluence: CoreDimension;
+    persistence: CoreDimension;
+  };
+  statusBasis: string;
+  transitionTrace: Array<{
+    from: EmotionCoreState | null;
+    to: EmotionCoreState;
+    observedAt: string;
+    evidence: string;
+    source: string;
+  }>;
+};
+
+type CorePathRow = {
+  date?: string;
+  changePct?: number | null;
+  quoteState?: string;
+  quoteTime?: string | null;
+  quoteSource?: string | null;
+  availableAt?: string | null;
+  height?: number | null;
+};
+
+type CoreTrackingRow = {
+  code: string;
+  name: string;
+  industry?: string;
+  height?: number;
+  peakHeight?: number;
+  brokenDate?: string | null;
+  changePct?: number | null;
+  quoteState?: string;
+  label?: string;
+  yesterdayChangePct?: number | null;
+  quoteTime?: string | null;
+  quoteSource?: string | null;
+  availableAt?: string | null;
+  liquidityDecay?: boolean;
+  impactDecay?: boolean;
+  identityDecay?: boolean;
+  path?: CorePathRow[];
+};
+
+type CoreReboundRow = {
+  code: string;
+  name: string;
+  status?: EvidenceState | 'NO_TRADE';
+  label?: string;
+  points?: number;
+  lowPct?: number;
+  lastPct?: number;
+  event?: {
+    lowTime?: string;
+    lowPct?: number;
+    time?: string;
+    changePct?: number;
+    recoveryPp?: number;
+    observedAt?: string | null;
+    availableAt?: string | null;
+    source?: string | null;
+  } | null;
+  observedAt?: string | null;
+  availableAt?: string | null;
+  source?: string | null;
+};
+
+type CoreLeadLagGroup = {
+  core: { code: string; name: string; height?: number };
+  industry?: string;
+  status?: EvidenceState;
+  following?: number;
+  requested?: number;
+  available?: number;
+  label?: string;
+  availableAt?: string | null;
+  source?: string | null;
+  direction?: 'up' | 'down';
+  onset?: { time: string; minute?: number; pct?: number; gain?: number } | null;
+  rows?: Array<{
+    code: string;
+    name: string;
+    role?: string;
+    lag?: number | null;
+    time?: string | null;
+    availableAt?: string | null;
+    pathState?: string;
+  }>;
+};
+
+export type EmotionCoreEvidence = {
+  history?: EmotionFacts[];
+  decayObservations?: Array<{
+    code: string;
+    date: string;
+    observedAt: string;
+    source: string;
+    state: EvidenceState;
+    liquidityShare: number;
+    responseCount: number;
+    recognitionCount: number;
+    coverage: number;
+  }>;
+  influenceHistory?: Array<{
+    code: string;
+    name?: string;
+    date: string;
+    observedAt: string;
+    source: string;
+    state: EvidenceState;
+    respondingCodes: string[];
+    concept: string;
+  }>;
+  volumeEvidence?: Array<{
+    code: string;
+    observedAt: string;
+    source: string;
+    state: EvidenceState;
+    currentVolume: number;
+    baselineVolume: number;
+    intervalMinutes: number;
+    baselineIntervalMinutes: number;
+    turnoverPct?: number;
+  }>;
+  date?: string;
+  cutoff?: string;
+  sourceState?: 'LIVE' | 'ARCHIVED' | 'STALE';
+  retrievedAt?: string;
+  availableAt?: string;
+  source?: string;
+  tracking?: {
+    status?: EvidenceState;
+    date?: string;
+    cutoff?: string;
+    previousDate?: string | null;
+    availableAt?: string | null;
+    asOf?: string | null;
+    oldLeaders?: {
+      rows: CoreTrackingRow[];
+      available?: number;
+      requested?: number;
+    };
+    failedRepair?: {
+      rows: CoreTrackingRow[];
+      available?: number;
+      requested?: number;
+    };
+    rebounds?: {
+      rows: CoreReboundRow[];
+      available?: number;
+      requested?: number;
+    };
+    leadLag?: {
+      rows: CoreLeadLagGroup[];
+      available?: number;
+      requested?: number;
+    };
+    negativeLeadLag?: {
+      rows: CoreLeadLagGroup[];
+      available?: number;
+      requested?: number;
+    };
+    extremePaths?: {
+      rows: Array<{
+        code: string;
+        date: string;
+        observedAt: string;
+        source: string;
+        status: EvidenceState;
+        skyFloor: boolean | null;
+        upTime: string | null;
+        downTime: string | null;
+        reason: string;
+      }>;
+    };
+    concepts?: Record<string, string[]>;
+    conceptStates?: Record<string, EvidenceState | 'RECOVERED_LATE'>;
+    conceptsAsOf?: string;
+    conceptsAvailableAt?: string;
+    conceptsState?: EvidenceState | 'RECOVERED_LATE';
+    source?: string;
+  };
+  speedRows?: Array<{
+    code: string;
+    name: string;
+    changePct?: number | null;
+    speedPct?: number | null;
+    amount?: number | null;
+    industry?: string;
+    concepts?: string[];
+    metadataState?: EvidenceState | 'RECOVERED_LATE';
+    metadataAsOf?: string;
+    mainNetInflow?: number | null;
+    turnoverPct?: number | null;
+    availableAt?: string | null;
+    quoteTime?: string | null;
+    quoteSource?: string | null;
+  }>;
+  sectorEvents?: Array<{
+    name: string;
+    direction: 'up' | 'down';
+    driverCodes?: string[];
+    driverNames?: string[];
+    driverState?: EvidenceState;
+    windowReady?: boolean;
+    quoteTime?: string;
+  }>;
+  flowRows?: Array<{
+    code?: string;
+    name: string;
+    latestMainNetInflow?: number | null;
+    persistenceLabel?: string;
+  }>;
+};
+
+export type EmotionCoreFeedback = {
+  state: EvidenceState;
+  denominator: number | null;
+  attempted: number | null;
+  promoted: number | null;
+  sealed: number | null;
+  deepWater: number | null;
+  limitDown: number | null;
+  extreme: number | null;
+  failed: number | null;
+  consecutiveNegative: number | null;
+  detail: string;
+};
+
+export type CoreFeedbackMetric = {
+  state: EvidenceState;
+  value: number | null;
+  denominator: number | null;
+  detail: string;
+  knownCount?: number;
+  covered?: number;
+  unknown?: number;
+};
+
+export type EmotionCoreGroupFeedback = {
+  state: EvidenceState;
+  denominator: number | null;
+  covered: number;
+  strong: CoreFeedbackMetric;
+  disagreement: CoreFeedbackMetric;
+  brokenImpact: CoreFeedbackMetric;
+  deepWater: CoreFeedbackMetric;
+  extreme: CoreFeedbackMetric;
+  antiAttempt: CoreFeedbackMetric;
+  repairSpread: CoreFeedbackMetric;
+  exits: CoreFeedbackMetric;
 };
 
 export function emotionReading(facts: EmotionFacts) {
@@ -411,16 +739,27 @@ export function emotionBoardFamily(code: string) {
   return '主板';
 }
 
+export function emotionCoreReading(
+  facts: EmotionFacts,
+  previous: EmotionFacts | null | undefined,
+  rows: ReadingCompetitor[],
+  stocks: EmotionStock[],
+  evidence?: EmotionCoreEvidence | null,
+) {
+  return readEmotionCores(facts, previous, rows, stocks, evidence);
+}
+
 export type EmotionTone = 'positive' | 'negative' | 'mixed' | 'unknown';
 
 // High-board and relay are deliberately judged separately. Relay uses the fixed
-// previous consecutive-board cohort; high-board uses the top relative tiers and
-// their failure posture. Index/breadth are only a relative-strength context, never
+// previous consecutive-board cohort; high-board uses the independently retained
+// evidence registry. Index/breadth are only a relative-strength context, never
 // a substitute for the cohort. These are descriptive rules, not a prediction.
 export function shortEmotionReading(
   facts: EmotionFacts,
   previous?: EmotionFacts | null,
   suppliedLadder?: ReadingLadder | null,
+  coreEvidence?: EmotionCoreEvidence | null,
 ) {
   const observed = emotionReading(facts);
   const structureReady = completeStructure(facts);
@@ -483,28 +822,24 @@ export function shortEmotionReading(
     : [];
   const suppliedStateComplete = Boolean(
     suppliedLadder &&
-      suppliedLadder.counts?.todaySealed !== undefined &&
-      suppliedStateStocks.length === suppliedLadder.counts.todaySealed,
+    suppliedLadder.counts?.todaySealed !== undefined &&
+    suppliedStateStocks.length === suppliedLadder.counts.todaySealed,
   );
-  const stateStocks = suppliedStateComplete
-    ? suppliedStateStocks
-    : factsStocks;
-  const stateSource = suppliedStateComplete
-    ? '梯队接口同批涨停池'
-    : '情绪接口涨停池';
-  const stateMismatches = suppliedStateComplete || factsStructureComplete
-    ? supplied.rows.filter((row) => {
-        if (
-          !['SEALED', 'FAILED', 'DROPPED'].includes(row.state) ||
-          row.toHeight !== row.fromHeight + 1
-        )
-          return true;
-        const sealed = stateStocks.find((stock) => stock.code === row.code);
-        return sealed
-          ? row.state !== 'SEALED' || sealed.height !== row.fromHeight + 1
-          : row.state === 'SEALED';
-      })
-    : supplied.rows;
+  const stateStocks = suppliedStateComplete ? suppliedStateStocks : factsStocks;
+  const stateMismatches =
+    suppliedStateComplete || factsStructureComplete
+      ? supplied.rows.filter((row) => {
+          if (
+            !['SEALED', 'FAILED', 'DROPPED'].includes(row.state) ||
+            row.toHeight !== row.fromHeight + 1
+          )
+            return true;
+          const sealed = stateStocks.find((stock) => stock.code === row.code);
+          return sealed
+            ? row.state !== 'SEALED' || sealed.height !== row.fromHeight + 1
+            : row.state === 'SEALED';
+        })
+      : supplied.rows;
   const firstBoardCount = supplied.rows.filter(
     (row) => row.fromHeight === 1,
   ).length;
@@ -530,10 +865,7 @@ export function shortEmotionReading(
       ),
     );
   const useSupplied =
-    supplied.ready &&
-    timeAligned &&
-    stateAligned &&
-    priorAligned;
+    supplied.ready && timeAligned && stateAligned && priorAligned;
   const derived = historicalEmotionLadder(facts, previous);
   const ladder = useSupplied ? timedLadder : derived;
   const cohort = useSupplied ? supplied : ladderReading(derived, facts.date);
@@ -542,7 +874,36 @@ export function shortEmotionReading(
     cohort.all.count > 0 &&
     cohort.all.priceReady === cohort.all.count;
   const rows = cohort.ready && (useSupplied || !facts.stale) ? cohort.rows : [];
-  const stocks = useSupplied ? stateStocks : factsStocks;
+  const stocks = useSupplied ? stateStocks : facts.stale ? [] : factsStocks;
+  const coreAsOf =
+    useSupplied && facts.cutoff !== '15:00' ? sourceTime : closeTime;
+  const contextAligned =
+    !facts.stale &&
+    (facts.cutoff === '15:00' ||
+      (Number.isFinite(factsTime) && Math.abs(factsTime - coreAsOf) <= 60_000));
+  const coreFacts: EmotionFacts = useSupplied
+    ? {
+        ...facts,
+        cutoff:
+          facts.cutoff === '15:00'
+            ? '15:00'
+            : new Date(coreAsOf + 8 * 3_600_000).toISOString().slice(11, 16),
+        retrievedAt: new Date(coreAsOf).toISOString(),
+        previousDate: suppliedLadder?.previousTradeDate ?? facts.previousDate,
+        limitUp: stateStocks.length,
+        coreStructureReady: true,
+        coreContextReady: contextAligned,
+        coreNegativePoolsReady: contextAligned && facts.poolsReady,
+        coreNegativePoolsAt: facts.retrievedAt,
+      }
+    : facts;
+  const core = emotionCoreReading(
+    coreFacts,
+    previous,
+    rows,
+    stocks,
+    coreEvidence,
+  );
   const highRows = rows.filter((row) => row.fromHeight >= 2);
   const negative = highRows.filter(
     (row) => finite(row.changePct) && row.changePct < 0,
@@ -550,7 +911,6 @@ export function shortEmotionReading(
   const positive = highRows.filter(
     (row) => finite(row.changePct) && row.changePct > 0,
   );
-  const rate = cohort.ready ? cohort.consecutive.rate : null;
   const families = ['主板', '创业板 / 科创板', '北交所'].map((name) => {
     const members = stocks.filter(
       (stock) => emotionBoardFamily(stock.code) === name,
@@ -580,7 +940,6 @@ export function shortEmotionReading(
   const mainHighRows = highRows.filter(
     (stock) => emotionBoardFamily(stock.code) === '主板',
   );
-  const mainMiddleHigh = mainHighRows.filter((stock) => stock.fromHeight >= 3);
   const highestPrior = Math.max(
     0,
     ...highRows.map((stock) => stock.fromHeight),
@@ -588,35 +947,30 @@ export function shortEmotionReading(
   const oldLeaders = highRows.filter(
     (stock) => stock.fromHeight === highestPrior,
   );
-  const highPoolHeights = [
-    ...new Set(highRows.map((stock) => stock.fromHeight)),
-  ]
-    .sort((a, b) => b - a)
-    .slice(0, 2);
-  const highPoolFloor = highPoolHeights.at(-1) ?? 0;
-  const highPoolRows = highRows.filter((stock) =>
-    highPoolHeights.includes(stock.fromHeight),
-  );
-  const middleRows = highRows.filter(
-    (stock) => stock.fromHeight < highPoolFloor,
-  );
-  const highPoolAdvanced = highPoolRows.filter(
-    (stock) => stock.state === 'SEALED',
+  // The complete retained registry is authoritative, including old and trend cores.
+  // No intersection with yesterday's consecutive-board cohort is permitted here.
+  const highPoolRows = core.candidates;
+  const highPoolFloor = null;
+  const middleRows = core.middleRows;
+  const highCandidates = core.candidates;
+  const highPoolAdvanced = core.highFeedback.strong.knownCount ?? 0;
+  const highPoolFailed = highCandidates.filter(
+    (candidate) =>
+      candidate.state === '爆量分歧' ||
+      highRows.some(
+        (row) => row.code === candidate.code && row.state === 'FAILED',
+      ),
   ).length;
-  const highPoolFailed = highPoolRows.filter(
-    (stock) => stock.state === 'FAILED',
-  ).length;
-  const highPoolQuoted = highPoolRows.filter((stock) =>
-    finite(stock.changePct),
-  );
-  const highPoolNegative = highPoolQuoted.filter(
-    (stock) => stock.changePct! < 0,
+  const highPoolQuoted = highCandidates.filter(
+    (candidate) => candidate.quoteState === 'READY',
   );
   const highPoolDeep = highPoolQuoted.filter(
-    (stock) => stock.state !== 'SEALED' && stock.changePct! <= -5,
+    (candidate) => (candidate.changePct ?? 0) <= -5,
   );
-  const highPoolExtreme = highPoolQuoted.filter(
-    (stock) => stock.state !== 'SEALED' && stock.changePct! <= -9,
+  const highPoolExtreme = highCandidates.filter((candidate) =>
+    (facts.limitDownStocks ?? []).some(
+      (stock) => stock.code === candidate.code,
+    ),
   );
   const middleAdvanced = middleRows.filter(
     (stock) => stock.state === 'SEALED',
@@ -718,75 +1072,50 @@ export function shortEmotionReading(
   const marketHostile =
     !facts.stale &&
     (observed.indexMood === '三大指数下跌' || observed.broad === '多数下跌');
-  const activeContext =
-    facts.stale
-      ? '指数与赚钱面为同日旧快照，不判主动/被动'
-      : !observed.indexReady || !observed.breadthReady
-      ? '指数或赚钱面不完整，主动/被动强弱不定性'
+  const activeContext = facts.stale
+    ? '指数与赚钱面为旧快照，仅保留具体时间，不判断当前主动/被动'
+    : !observed.indexReady || !observed.breadthReady
+      ? '市场参照不全，相对抗跌性待补证据'
       : highPoolDeep.length > 0 && marketSupportive
-        ? '环境不差而高标深水，偏主动走弱'
+        ? '市场环境不差但部分候选相对走弱；主动先后以逐股分钟证据为准'
         : highPoolAdvanced > 0 && marketHostile
-          ? '环境偏弱仍有高标晋级，显示相对抗跌'
-          : '高标表现与市场环境大体同向';
-
-  let highLabel = '高标数据不足';
-  let highTone: EmotionTone = 'unknown';
-  if (judgmentReady && highPoolRows.length > 0) {
-    highTone = 'mixed';
-    const highRate = highPoolAdvanced / highPoolRows.length;
-    const lowSupport = (cohort.first.rate ?? 0) >= 25;
-    const relaySupport = (rate ?? 0) >= 50;
-    const severeSpread = highPoolExtreme.length > 0 || highPoolDeep.length >= 2;
-    const mainBoardBreak =
-      mainMiddleHigh.length >= 3 &&
-      mainMiddleHigh.every((stock) => stock.state !== 'SEALED') &&
-      facts.limitDown >= 5 &&
-      facts.limitDown >= facts.limitUp * 0.15;
-    if (mainBoardBreak) {
-      highLabel = '主板高位断层';
-      highTone = 'negative';
-    } else if (highPoolAdvanced === 0 && severeSpread) {
-      highLabel = marketSupportive ? '高标主动走弱' : '高标负反馈扩大';
-      highTone = 'negative';
-    } else if (
-      highPoolAdvanced === 0 &&
-      highPoolRows.length >= 2 &&
-      highPoolNegative.length === highPoolRows.length &&
-      (highPoolDeep.length > 0 || (rate ?? 0) < 25)
-    ) {
-      highLabel = '高标退潮';
-      highTone = 'negative';
-    } else if (
-      highRate >= 0.5 &&
-      relaySupport &&
-      lowSupport &&
-      !mainFamily.gaps.length
-    ) {
-      highLabel = severeSpread ? '高标有承接' : '高标一致强';
-      highTone = severeSpread ? 'mixed' : 'positive';
-    } else if (highRate >= 0.5 && (!relaySupport || !lowSupport)) {
-      highLabel = '高标抱团';
-      highTone = 'mixed';
-    } else if (highPoolAdvanced > 0) {
-      highLabel = highPoolRows.length >= 3 ? '高标淘汰赛' : '高标分歧';
-    } else {
-      highLabel = '高标分歧';
-    }
-  }
-  const highSummary =
-    highLabel === '高标一致强'
-      ? '最高两档多数完成晋级，中低位仍有补充，当前更接近高标生态共振。'
-      : highLabel === '高标抱团'
-        ? '少数高标仍强，但中低位承接或低位补充不足，不能把核心存活当成整体情绪强。'
-        : highLabel === '主板高位断层'
-          ? '主板昨日3板及以上集体未晋级，同时跌停压力不低；独立20cm高标不能掩盖主板传棒断裂。'
-          : highLabel === '高标主动走弱'
-            ? '市场环境并不差，但高标出现深水负反馈，说明核心筹码自身承接在减弱。'
-            : highLabel === '高标负反馈扩大' || highLabel === '高标退潮'
-              ? '最高两档晋级受阻且深水负反馈增加，风险正从失败个股向高标池扩散。'
-              : highLabel === '高标数据不足'
-                ? '缺少完整高标池或准确反馈，不用最高板数字代替高标生态。'
-                : '高标池同时出现晋级与淘汰，当前重点看负反馈是否继续向中位扩散。';
+          ? '市场偏弱仍有候选封住；不能据此推断其带动市场'
+          : '市场参照与逐股主动、带动证据分别判断';
+  const negativeKnown = core.highFeedback.deepWater.knownCount ?? 0;
+  const extremeKnown = core.highFeedback.extreme.knownCount ?? 0;
+  const confirmedCores = core.candidates.filter(
+    (candidate) => !candidate.provisional,
+  );
+  const healthyConfirmed =
+    confirmedCores.length > 0 &&
+    core.highFeedback.state === 'READY' &&
+    negativeKnown === 0 &&
+    extremeKnown === 0 &&
+    core.middle.state === 'READY' &&
+    core.middle.deepWater === 0 &&
+    core.middle.twoDayNegative === 0 &&
+    (cohort.consecutive.rate ?? 0) >= 50 &&
+    (cohort.consecutive.attemptRate ?? 0) >= 50;
+  const highLabel = !core.candidates.length
+    ? '高标数据不足'
+    : core.retreatWarning
+      ? '核心存活 · 中位退潮预警'
+      : extremeKnown > 0 || negativeKnown >= 2
+        ? '核心负反馈明显'
+        : healthyConfirmed
+          ? '核心与接力共振'
+          : highPoolAdvanced > 0
+            ? '核心有存活，生态待验证'
+            : '情绪核心观察中';
+  const highTone: EmotionTone =
+    core.retreatWarning || extremeKnown > 0 || negativeKnown >= 2
+      ? 'negative'
+      : healthyConfirmed
+        ? 'positive'
+        : core.candidates.length
+          ? 'mixed'
+          : 'unknown';
+  const highSummary = core.summary;
 
   let relayLabel = '接力数据不足';
   let relayTone: EmotionTone = 'unknown';
@@ -796,7 +1125,7 @@ export function shortEmotionReading(
     relayTone = 'mixed';
     const relayRate = cohort.consecutive.rate ?? 0;
     const relaySealRate = cohort.consecutive.sealRate ?? 0;
-    const extremeRisk = relayExtreme.length > 0 || highLabel === '高标退潮';
+    const extremeRisk = relayExtreme.length > 0 || highTone === 'negative';
     const middleBroken =
       middleRows.length >= 2 && middleAdvanced === 0 && middleDeep.length > 0;
     if (
@@ -915,50 +1244,64 @@ export function shortEmotionReading(
   ].filter(Boolean) as string[];
   const highEvidence = [
     {
-      label: '动态高标池',
-      value: highPoolRows.length
-        ? `昨${highPoolFloor}板及以上 ${highPoolRows.length}只`
-        : '待补',
-      detail: highPoolRows.length
-        ? highPoolRows
-            .map((row) => `${row.name}（昨${row.fromHeight}板）`)
-            .join('、')
-        : '没有用固定“4板以上”机械定义高标。',
-      state: highPoolRows.length ? 'READY' : 'MISSING',
+      label: '当前情绪核心',
+      value:
+        '召回' +
+        core.candidates.length +
+        '只 · 已确认持续核心' +
+        confirmedCores.length +
+        '只',
+      detail: core.candidates.length
+        ? core.candidates
+            .map((candidate) => candidate.name + '：' + candidate.currentRole)
+            .join('；')
+        : '缺可验证身份，不以普通首板补池。',
+      state: core.candidates.length ? 'READY' : 'MISSING',
     },
     {
-      label: '集体反馈',
-      value: highPoolRows.length
-        ? `${highPoolAdvanced}/${highPoolRows.length}晋级 · ${highPoolFailed}只触板未封`
-        : '—',
-      detail: `${stateSource}核对；深水断板${highPoolDeep.length}只，极端负反馈${highPoolExtreme.length}只。`,
-      state:
-        highPoolQuoted.length === highPoolRows.length ? 'READY' : 'DEGRADED',
+      label: '高标群体反馈',
+      value:
+        '已知走强' +
+        highPoolAdvanced +
+        ' · 深水' +
+        negativeKnown +
+        ' · 跌停' +
+        extremeKnown,
+      detail:
+        '当前报价覆盖' +
+        core.highFeedback.covered +
+        '/' +
+        core.candidates.length +
+        '；这些是已知计数，缺失不视为0，也不与接力分母互换。',
+      state: core.highFeedback.state,
     },
     {
       label: '中位吹哨',
-      value: middleRows.length
-        ? `${middleAdvanced}/${middleRows.length}晋级 · 深水${middleDeep.length}只`
-        : '暂无独立中位样本',
-      detail: '中位先恶化时，即使最高板仍封住，也不能判断生态健康。',
-      state: cohort.ready ? 'READY' : 'MISSING',
+      value:
+        (core.middle.promoted ?? '—') +
+        '/' +
+        (core.middle.denominator ?? '—') +
+        '晋级 · 已知深水' +
+        core.middle.deepWaterKnown +
+        '只',
+      detail:
+        core.middle.detail +
+        ' 连续两日负反馈已知' +
+        core.middle.twoDayNegativeKnown +
+        '只，覆盖' +
+        core.middle.twoDayCovered +
+        '/' +
+        core.middle.sampleCount +
+        '。' +
+        core.middle.spread.detail,
+      state: core.middle.state,
     },
     {
-      label: '低位补充',
-      value: cohort.ready
-        ? `${cohort.first.advanced}/${cohort.first.count}首板晋级`
-        : '—',
-      detail: '用1进2观察后续接棒者，不用首板总数替代。',
-      state: cohort.ready ? 'READY' : 'MISSING',
-    },
-    {
-      label: '主动 / 被动',
+      label: '相对强弱与主动性',
       value: activeContext,
-      detail: '只做环境对照；没有分钟路径时不声称弱转强、地天或主动回封。',
-      state:
-        !facts.stale && observed.indexReady && observed.breadthReady
-          ? 'READY'
-          : 'DEGRADED',
+      detail:
+        '相对表现不是因果。九维证据逐股列出；无分钟不能判主动回封或带动先后。',
+      state: facts.stale ? 'DEGRADED' : 'READY',
     },
   ];
   const relayEvidence = [
@@ -988,9 +1331,9 @@ export function shortEmotionReading(
     },
     {
       label: '失败成本',
-      value: `${weakPressure} · 深水${relayDeep.length}只 · 极端${relayExtreme.length}只`,
-      detail: '相同晋级率下，失败者是否深水、跌停，决定下一棒还敢不敢接。',
-      state: consecutiveQuotesComplete ? 'READY' : 'DEGRADED',
+      value: `${weakPressure} · 深水${core.feedback.deepWater ?? '—'}只 · 极端${core.feedback.extreme ?? '—'}只`,
+      detail: core.feedback.detail,
+      state: core.feedback.state,
     },
     {
       label: '梯队与主线',
@@ -1053,6 +1396,8 @@ export function shortEmotionReading(
       summary: highSummary,
       poolFloor: highPoolFloor,
       rows: highPoolRows,
+      recallBasis:
+        '高标身份由可解释角色证据合并；最高/次高板仅作为召回条件，不是身份评分。',
       advanced: highPoolAdvanced,
       failed: highPoolFailed,
       deep: highPoolDeep,
@@ -1060,6 +1405,7 @@ export function shortEmotionReading(
       activeContext,
       evidence: highEvidence,
     },
+    core,
     relay: {
       label: relayLabel,
       tone: relayTone,

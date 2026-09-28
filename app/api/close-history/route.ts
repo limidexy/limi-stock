@@ -1,5 +1,4 @@
-import seedDocument from '@/lib/close-history.generated.json';
-import type { CloseHistoryDocument } from '@/lib/close-history';
+import { CLOSE_HISTORY, type CloseHistoryDocument } from '@/lib/close-history';
 import { buildLatestCloseSnapshot } from '@/lib/market';
 import { loadCloseHistory, saveCloseSnapshot } from '@/lib/persistence';
 import { enrichEmotionCloses } from '@/lib/emotion-tracking-source';
@@ -7,7 +6,7 @@ import { enrichEmotionCloses } from '@/lib/emotion-tracking-source';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const seed = seedDocument as CloseHistoryDocument;
+  const seed: CloseHistoryDocument = CLOSE_HISTORY;
   let snapshots = seed.snapshots;
   let persistenceState: 'READY' | 'DEGRADED' = 'READY';
   let persistenceMode: 'DYNAMIC' | 'BUNDLED_FALLBACK' = 'DYNAMIC';

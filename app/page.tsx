@@ -10,6 +10,10 @@ import { EmotionTrackingBoard } from '@/components/emotion-tracking-board';
 import { UnifiedMarketBoard } from '@/components/unified-market-board';
 import { unifiedMarketReading } from '@/lib/unified-market';
 import {
+  buildCoreEvidence,
+  type CoreTrackingPayload,
+} from '@/lib/core-evidence';
+import {
   windowedRadarEvents,
   type RadarEvent,
   type RadarHistory,
@@ -334,34 +338,53 @@ function usePolling<T>(url: string, intervalMs: number): PollState<T> {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const requestSerial = useRef(0);
+  const controllerRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
     if (document.visibilityState === 'hidden') return;
     if (inFlight.current) return;
     inFlight.current = true;
+    const serial = ++requestSerial.current;
+    const controller = new AbortController();
+    controllerRef.current?.abort();
+    controllerRef.current = controller;
     try {
-      const response = await fetch(url, { cache: 'no-store' });
+      const response = await fetch(url, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const payload = (await response.json()) as T & { reason?: string };
       if (!response.ok)
         throw new Error(payload.reason || `HTTP ${response.status}`);
-      setData(payload);
-      setError(null);
+      if (serial === requestSerial.current && !controller.signal.aborted) {
+        setData(payload);
+        setError(null);
+      }
     } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : '行情源短暂波动，正在自动重连',
-      );
+      if (!controller.signal.aborted && serial === requestSerial.current)
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : '行情源短暂波动，正在自动重连',
+        );
     } finally {
-      setLoading(false);
-      inFlight.current = false;
+      if (serial === requestSerial.current) {
+        setLoading(false);
+        inFlight.current = false;
+      }
     }
   }, [url]);
 
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), intervalMs);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      controllerRef.current?.abort();
+      requestSerial.current += 1;
+      inFlight.current = false;
+    };
   }, [intervalMs, refresh]);
 
   return { data, loading, error, refresh };
@@ -1830,6 +1853,10 @@ export default function Home() {
     '/api/intraday-emotion',
     30_000,
   );
+  const coreTracking = usePolling<CoreTrackingPayload>(
+    '/api/emotion-tracking?date=latest&lookback=20',
+    30_000,
+  );
   const closeHistory = usePolling<CloseHistoryDocument>(
     '/api/close-history',
     60_000,
@@ -1843,6 +1870,27 @@ export default function Home() {
   const previousEmotionClose = history.snapshots
     .filter((snapshot) => snapshot.date.replaceAll('-', '') < emotionDate)
     .at(-1);
+  const coreEvidence = useMemo(
+    () =>
+      intradayEmotion.data
+        ? buildCoreEvidence({
+            facts: toEmotionFacts(intradayEmotion.data),
+            tracking: coreTracking.data,
+            speed: speed.data,
+            radarEvents,
+            flowRows: flow.data?.allRows ?? flow.data?.series ?? [],
+            history: history.snapshots,
+          })
+        : null,
+    [
+      coreTracking.data,
+      flow.data,
+      history.snapshots,
+      intradayEmotion.data,
+      radarEvents,
+      speed.data,
+    ],
+  );
   const unifiedReading = intradayEmotion.data
     ? unifiedMarketReading({
         facts: toEmotionFacts(intradayEmotion.data),
@@ -1853,6 +1901,7 @@ export default function Home() {
         radarEvents,
         flow: flow.data,
         speed: speed.data,
+        coreEvidence,
         intradayEvidence: intradayEmotion.data.intradayEvidence,
         auctionEvidence: intradayEmotion.data.auctionEvidence,
       })
@@ -1984,6 +2033,7 @@ export default function Home() {
       ladder.refresh(),
       speed.refresh(),
       intradayEmotion.refresh(),
+      coreTracking.refresh(),
       closeHistory.refresh(),
     ]);
     setRefreshing(false);
@@ -2208,12 +2258,14 @@ export default function Home() {
               error={intradayEmotion.error}
               history={history}
               ladder={ladder.data}
+              coreEvidence={coreEvidence}
             />
             <EmotionCycleBoard
               selectedDate={selectedCloseDate}
               onDateChange={selectCloseDate}
               history={history}
               ladder={ladder.data}
+              coreEvidence={coreEvidence}
             />
           </TabsContent>
 

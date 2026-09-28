@@ -1,8 +1,11 @@
 import { env } from 'cloudflare:workers';
 
-import seedDocument from '@/lib/close-history.generated.json';
 import marketSeedDocument from '@/lib/market-snapshots.generated.json';
-import type { CloseHistoryDocument, CloseSnapshot } from '@/lib/close-history';
+import {
+  CLOSE_HISTORY,
+  type CloseHistoryDocument,
+  type CloseSnapshot,
+} from '@/lib/close-history';
 
 type PersistedRow = {
   payload_json: string;
@@ -87,7 +90,7 @@ export async function saveCloseSnapshot(snapshot: CloseSnapshot) {
 async function seedCloseSnapshots() {
   await ensureSchema();
   const database = getDatabase();
-  const seed = seedDocument as CloseHistoryDocument;
+  const seed: CloseHistoryDocument = CLOSE_HISTORY;
   if (!seed.snapshots.length) return;
   const now = new Date().toISOString();
   await database.batch(
@@ -116,7 +119,7 @@ export async function loadCloseHistory(): Promise<CloseSnapshot[]> {
     .prepare('SELECT payload_json FROM close_snapshots ORDER BY trade_date ASC')
     .all<PersistedRow>();
   const seedByDate = new Map(
-    (seedDocument as CloseHistoryDocument).snapshots.map((snapshot) => [
+    CLOSE_HISTORY.snapshots.map((snapshot) => [
       snapshot.date,
       snapshot,
     ]),
@@ -131,7 +134,7 @@ export async function loadCloseHistory(): Promise<CloseSnapshot[]> {
       // exact-date quote evidence at read time so a deployment can repair
       // historical coverage without overwriting the archived market facts.
       closeQuotes: {
-        ...(persisted.closeQuotes ?? {}),
+        ...persisted.closeQuotes,
         ...seed.closeQuotes,
       },
     };

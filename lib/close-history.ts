@@ -127,7 +127,8 @@ export type IntradayEmotionSnapshot = {
   };
 };
 
-export const CLOSE_HISTORY = closeHistoryDocument as CloseHistoryDocument;
+export const CLOSE_HISTORY =
+  closeHistoryDocument as unknown as CloseHistoryDocument;
 export const CLOSE_DATES = CLOSE_HISTORY.snapshots.map(
   (snapshot) => snapshot.date,
 );

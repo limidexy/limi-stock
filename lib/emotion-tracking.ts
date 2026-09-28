@@ -1,5 +1,6 @@
 import type { CloseSnapshot, CloseStock } from './close-history';
 import type { PriceTrend } from './timeline-evidence';
+import { extremePathObservation } from './core-minute-evidence.ts';
 
 export type TrackingQuote = {
   changePct: number;
@@ -9,12 +10,24 @@ export type TrackingQuote = {
 export type TrackingDay = {
   date: string;
   previousDate?: string;
+  cutoff?: string;
   quotes: Record<string, TrackingQuote>;
   trends: Record<string, PriceTrend>;
   source: string;
+  sourceState?: 'LIVE' | 'ARCHIVED' | 'STALE';
+  availableAt?: string;
+  capturedAt?: string;
   asOf?: string;
   sessionState?: 'LIVE' | 'CLOSED';
   concepts?: Record<string, string[]>;
+  conceptsAvailableAt?: string;
+  conceptsState?: 'READY' | 'DEGRADED' | 'MISSING' | 'RECOVERED_LATE';
+  conceptStates?: Record<
+    string,
+    'READY' | 'DEGRADED' | 'MISSING' | 'RECOVERED_LATE'
+  >;
+  styleCandidates?: CloseStock[];
+  styleMembers?: CloseStock[];
   noTrade?: Record<string, string>;
 };
 export type TrackingHistory = Record<string, TrackingDay>;
@@ -84,15 +97,18 @@ export function trackingCandidates(
   date: string,
   lookback = 10,
 ) {
-  const prior = history
+  const allPrior = history
     .filter((x) => x.date < date)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(-lookback);
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const prior = allPrior.slice(-lookback);
   const leaders = new Map<
     string,
     CloseStock & { peakDate: string; peakHeight: number }
   >();
-  for (const day of prior.filter(complete)) {
+  // lookback controls the amount of path/feedback displayed, not identity
+  // retention. A former high board must remain recallable after it leaves the
+  // recent window; exit is an evidence-backed state, never a slice operation.
+  for (const day of allPrior.filter(complete)) {
     // Membership is fixed from a PREVIOUS close, never today's winners.
     for (const stock of stocksOf(day).filter(
       (x) => x.height === day.highestBoard && x.height >= 3,
@@ -110,6 +126,18 @@ export function trackingCandidates(
   return {
     prior,
     previous,
+    displayLeaders: [...leaders.values()].filter((leader) =>
+      prior.some(
+        (day) =>
+          complete(day) &&
+          stocksOf(day).some(
+            (stock) =>
+              stock.code === leader.code &&
+              stock.height === day.highestBoard &&
+              stock.height >= 3,
+          ),
+      ),
+    ),
     leaders: [...leaders.values()],
     failed: unique(previous?.failedStocks ?? []),
   };
@@ -168,11 +196,7 @@ export function reboundObservation(
       if (point.pct < low.pct) {
         low = point;
         recovered = null;
-      } else if (
-        !recovered &&
-        low.pct <= -5 &&
-        point.pct - low.pct >= 4
-      )
+      } else if (!recovered && low.pct <= -5 && point.pct - low.pct >= 4)
         recovered = point;
     }
     const last = points.at(-1)!;
@@ -290,6 +314,122 @@ function acceleration(trend: PriceTrend | undefined, cutoff: string) {
   }
   return null;
 }
+
+function negativeAcceleration(
+  trend: PriceTrend | undefined,
+  cutoff: string,
+  afterMinute = -Infinity,
+) {
+  const points = cleanPath(trend, cutoff);
+  for (let i = 3; i < points.length; i++) {
+    const window = points.slice(i - 3, i + 1);
+    if (
+      consecutivePath(window) &&
+      window[0].minute > afterMinute &&
+      window[3].pct - window[0].pct <= -1
+    )
+      return {
+        time: window[3].time,
+        minute: window[3].minute,
+        pct: window[3].pct,
+        gain: window[3].pct - window[0].pct,
+      };
+  }
+  return null;
+}
+
+function completeMinutePath(trend: PriceTrend | undefined, cutoff: string) {
+  const points = cleanPath(trend, cutoff);
+  const end = minuteIndex(cutoff);
+  const regular = points.every(
+    (point, index) =>
+      !index ||
+      point.minute - points[index - 1].minute === 1 ||
+      (point.time === '15:00' && points[index - 1].time === '14:57'),
+  );
+  return Boolean(
+    points.length >= 5 &&
+    points[0].time <= '09:31' &&
+    end !== null &&
+    points.at(-1)?.time === cutoff &&
+    regular,
+  );
+}
+
+type LeadLagGroup = ReturnType<typeof leadLagObservation>;
+
+function negativeLeadLagObservation(
+  group: LeadLagGroup,
+  evidence: TrackingDay | undefined,
+  cutoff: string,
+) {
+  const corePathReady = completeMinutePath(
+    evidence?.trends[group.core.code],
+    cutoff,
+  );
+  const onset = corePathReady
+    ? negativeAcceleration(
+        evidence?.trends[group.core.code],
+        cutoff,
+        (minuteIndex(cutoff) ?? Infinity) - 13,
+      )
+    : null;
+  const rows = group.rows.map((member) => {
+    const pathReady = completeMinutePath(evidence?.trends[member.code], cutoff);
+    const response =
+      onset && pathReady
+        ? negativeAcceleration(
+            evidence?.trends[member.code],
+            cutoff,
+            onset.minute,
+          )
+        : null;
+    const lag = response && onset ? response.minute - onset.minute : null;
+    return {
+      code: member.code,
+      name: member.name,
+      time: response?.time ?? null,
+      changePct: response?.pct ?? null,
+      lag: lag !== null && lag >= 1 && lag <= 10 ? lag : null,
+      role: !corePathReady
+        ? '核心分钟路径不全'
+        : !onset
+          ? '核心未触发负向起点'
+          : !pathReady
+            ? '成员分钟路径不全'
+            : lag !== null && lag >= 1 && lag <= 10
+              ? '随后负向响应'
+              : lag !== null && lag <= 0
+                ? '早于或同分钟'
+                : '窗口外或未触发',
+      pathState: pathReady ? ('READY' as const) : ('MISSING' as const),
+    };
+  });
+  const following = rows.filter((row) => row.role === '随后负向响应');
+  return {
+    core: group.core,
+    industry: group.industry,
+    onset,
+    direction: 'down' as const,
+    status:
+      corePathReady && onset && rows.every((row) => row.pathState === 'READY')
+        ? ('READY' as const)
+        : ('MISSING' as const),
+    rows,
+    requested: rows.length + 1,
+    available:
+      (corePathReady ? 1 : 0) +
+      rows.filter((row) => row.pathState === 'READY').length,
+    following: following.length,
+    label: !corePathReady
+      ? '核心分钟路径缺失，不能确认向下先后'
+      : !onset
+        ? '未发现连续3分钟负向起点'
+        : following.length
+          ? '观察到随后负向响应 · 非因果认定'
+          : '未确认向下扩散',
+  };
+}
 export function leadLagObservation(
   core: CloseStock,
   members: CloseStock[],
@@ -386,6 +526,10 @@ export function buildEmotionTracking(
     evidence[day.date] = {
       ...source,
       date: day.date,
+      cutoff: '15:00',
+      sourceState: source?.sourceState ?? 'ARCHIVED',
+      availableAt: source?.availableAt ?? `${day.date}T15:00:00+08:00`,
+      capturedAt: source?.capturedAt,
       source: source?.source ?? day.source,
       quotes: { ...poolQuotes, ...source?.quotes },
       trends: source?.trends ?? {},
@@ -397,7 +541,6 @@ export function buildEmotionTracking(
   const prev = candidates.previous;
   const hasCurrent = complete(current);
   const adjacent = Boolean(
-    hasCurrent &&
     currentEvidence &&
     prev &&
     priorSession(date, prev.date, currentEvidence) &&
@@ -442,6 +585,7 @@ export function buildEmotionTracking(
           ? (quote(date, stock.code)?.changePct ?? null)
           : null,
       quoteState: quoteState(date, stock.code),
+      quoteTime: quote(date, stock.code)?.quoteTime ?? null,
       quoteNote: evidence[date]?.noTrade?.[stock.code] ?? null,
       path: days.map((day) => ({
         date: day.date,
@@ -478,7 +622,7 @@ export function buildEmotionTracking(
             quoteTime: q?.quoteTime ?? null,
             quoteState: state,
             label: !q
-              ? currentEvidence?.noTrade?.[stock.code] ?? '当日报价缺失'
+              ? (currentEvidence?.noTrade?.[stock.code] ?? '当日报价缺失')
               : !hasCurrent
                 ? '当日报价可用，封板状态缺失'
                 : sealed
@@ -496,6 +640,8 @@ export function buildEmotionTracking(
     ...allOld,
     ...(adjacent ? candidates.failed : []),
     ...(adjacent ? stocksOf(prev).filter((x) => x.height >= 2) : []),
+    ...(currentEvidence?.styleCandidates ?? []),
+    ...(currentEvidence?.styleMembers ?? []),
   ]);
   const rebounds = watched.map((stock) =>
     currentEvidence?.noTrade?.[stock.code]
@@ -513,7 +659,7 @@ export function buildEmotionTracking(
           ...reboundObservation(currentEvidence?.trends[stock.code], cutoff),
         },
   );
-  const groups = adjacent
+  const standardGroups = adjacent
     ? [...new Set(stocksOf(prev).map((x) => x.industry))]
         .filter((x) => x && !['UNKNOWN', '未分类'].includes(x))
         .map((industry) => {
@@ -538,6 +684,64 @@ export function buildEmotionTracking(
         .flat()
         .filter((x) => x.rows.length > 0)
     : [];
+  const styleGroups = (currentEvidence?.styleCandidates ?? []).flatMap(
+    (core) => {
+      const ownConcepts = currentEvidence?.concepts?.[core.code] ?? [];
+      const members = unique([
+        ...(currentEvidence?.styleMembers ?? []),
+        ...stocksOf(prev),
+        ...(prev?.failedStocks ?? []),
+      ]).filter(
+        (member) =>
+          member.code !== core.code &&
+          (currentEvidence?.concepts?.[member.code] ?? []).some((name) =>
+            ownConcepts.includes(name),
+          ),
+      );
+      return members.length
+        ? [leadLagObservation(core, members, currentEvidence, cutoff)]
+        : [];
+    },
+  );
+  const groups = [
+    ...new Map(
+      [...standardGroups, ...styleGroups].map((group) => [
+        group.core.code,
+        group,
+      ]),
+    ).values(),
+  ];
+  // A middle transmitter need not be the highest stock in its industry.
+  const middleNegativeGroups = adjacent
+    ? stocksOf(prev)
+        .filter((stock) => stock.height === 3 || stock.height === 4)
+        .map((core) =>
+          leadLagObservation(
+            core,
+            unique([...stocksOf(prev), ...(prev?.failedStocks ?? [])]).filter(
+              (member) => member.industry === core.industry,
+            ),
+            currentEvidence,
+            cutoff,
+          ),
+        )
+    : [];
+  const negativeGroups = [
+    ...new Map(
+      [...groups, ...middleNegativeGroups].map((group) => [
+        group.core.code,
+        group,
+      ]),
+    ).values(),
+  ].map((group) => negativeLeadLagObservation(group, currentEvidence, cutoff));
+  const extremePaths = watched.map((stock) =>
+    extremePathObservation(
+      date,
+      stock,
+      currentEvidence?.trends[stock.code],
+      cutoff,
+    ),
+  );
   const allOldQuotes = old.flatMap((x) => x.path);
   const coverage = (requested: number, available: number, reason: string) => ({
     requested,
@@ -555,7 +759,26 @@ export function buildEmotionTracking(
     date,
     cutoff,
     lookback,
+    extremePaths: { rows: extremePaths },
     source: currentEvidence?.source ?? '该日跟踪证据未归档',
+    sourceState: currentEvidence?.sourceState ?? 'ARCHIVED',
+    availableAt:
+      currentEvidence?.availableAt ??
+      currentEvidence?.asOf ??
+      (currentEvidence ? `${date}T${cutoff}:00+08:00` : undefined),
+    concepts: currentEvidence?.concepts,
+    conceptStates: currentEvidence?.conceptStates,
+    conceptsAvailableAt:
+      currentEvidence?.conceptsAvailableAt ?? currentEvidence?.capturedAt,
+    conceptsState:
+      currentEvidence?.conceptsState ??
+      (currentEvidence?.concepts
+        ? currentEvidence.capturedAt &&
+          Date.parse(currentEvidence.capturedAt) >
+            Date.parse(`${date}T15:00:00+08:00`)
+          ? 'RECOVERED_LATE'
+          : 'READY'
+        : 'MISSING'),
     status:
       hasCurrent &&
       adjacent &&
@@ -576,7 +799,7 @@ export function buildEmotionTracking(
         allOldQuotes.filter((x) => x.quoteState !== 'MISSING').length,
         missingSessions.length
           ? '区间存在缺日；断板日仅在相邻完整收盘间确认'
-          : '按此前最高板≥3板入池，断板后保留；窗口外个股不在本次样本',
+          : '历史空间身份持续保留；回看窗口只控制路径长度，不删除旧身份',
       ),
     },
     failedRepair: {
@@ -608,6 +831,14 @@ export function buildEmotionTracking(
         groups.reduce((s, x) => s + x.requested, 0),
         groups.reduce((s, x) => s + x.available, 0),
         '核心=昨日同细分行业最高连板股，并列分别跟踪；成员=昨日涨停/炸板股。3分钟涨幅增量≥1个百分点，随后1—10个交易分钟响应；非全板块、非因果认定',
+      ),
+    },
+    negativeLeadLag: {
+      rows: negativeGroups,
+      ...coverage(
+        negativeGroups.reduce((sum, group) => sum + group.requested, 0),
+        negativeGroups.reduce((sum, group) => sum + group.available, 0),
+        '仅使用同日连续分钟路径：核心先出现连续3分钟跌幅≥1个百分点，成员在1—10个交易分钟内负向响应；没有分钟路径不从日线推导',
       ),
     },
     boundary:

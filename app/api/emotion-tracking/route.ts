@@ -1,4 +1,11 @@
-import { CLOSE_HISTORY, type CloseSnapshot } from '@/lib/close-history';
+import {
+  CLOSE_HISTORY,
+  type CloseSnapshot,
+  type CloseStock,
+} from '@/lib/close-history';
+import calendar from '@/lib/trading-calendar.generated.json';
+import type { getSpeedSnapshot } from '@/lib/market';
+import { updateInfluenceHistory } from '@/lib/core-influence-history';
 import {
   buildEmotionTracking,
   trackingCandidates,
@@ -18,6 +25,7 @@ import {
 import {
   loadCloseHistory,
   loadExactModuleSnapshot,
+  loadLatestModuleSnapshot,
   saveModuleSnapshot,
 } from '@/lib/persistence';
 
@@ -45,11 +53,18 @@ async function capture(requested: string, lookback: number) {
     if (day.closeQuotes)
       evidence[day.date] = {
         date: day.date,
+        cutoff: '15:00',
         source: evidence[day.date]?.source ?? day.source,
+        sourceState: evidence[day.date]?.sourceState ?? 'ARCHIVED',
+        availableAt:
+          evidence[day.date]?.availableAt ?? `${day.date}T15:00:00+08:00`,
+        capturedAt: evidence[day.date]?.capturedAt,
         previousDate: day.previousDate,
         quotes: day.closeQuotes,
         trends: evidence[day.date]?.trends ?? {},
         concepts: evidence[day.date]?.concepts,
+        conceptsAvailableAt: evidence[day.date]?.conceptsAvailableAt,
+        conceptsState: evidence[day.date]?.conceptsState,
         noTrade: evidence[day.date]?.noTrade,
       };
   const saved = await loadExactModuleSnapshot<TrackingDay>(
@@ -66,9 +81,48 @@ async function capture(requested: string, lookback: number) {
     };
   if (live) {
     const candidates = trackingCandidates(history, date, lookback);
+    const speed = await loadExactModuleSnapshot<
+      Awaited<ReturnType<typeof getSpeedSnapshot>>
+    >('speed', date).catch(() => null);
+    const visibleSpeed =
+      speed?.tradeDate === context.tradeDate && speed.sourceState === 'LIVE'
+        ? speed.rows.filter((row) => {
+            const q = Date.parse(row.quoteTime ?? '');
+            return (
+              Number.isFinite(q) &&
+              q <= Date.now() &&
+              Date.now() - q <= 120_000 &&
+              row.metadataState === 'READY' &&
+              Boolean(row.metadataAsOf) &&
+              Date.parse(row.metadataAsOf!) <= Date.now() &&
+              row.concepts.length > 0
+            );
+          })
+        : [];
+    const styleRows = [...visibleSpeed]
+      .filter((row) => (row.amount ?? 0) >= 1e9 && (row.changePct ?? 0) > 0)
+      .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
+      .slice(0, 3);
+    const styleConcepts = new Set(styleRows.flatMap((row) => row.concepts));
+    const memberRows = visibleSpeed
+      .filter((row) => row.concepts.some((name) => styleConcepts.has(name)))
+      .slice(0, 12);
+    const toStyleStock = (row: (typeof visibleSpeed)[number]): CloseStock => ({
+      code: row.code,
+      name: row.name,
+      height: 0,
+      changePct: row.changePct,
+      industry: row.industry || '未分类',
+      firstTouch: null,
+      lastSeal: null,
+      breakCount: 0,
+      sealFund: null,
+    });
     const codes = [
       ...new Set(
         [
+          ...styleRows,
+          ...memberRows,
           ...candidates.leaders,
           ...candidates.failed,
           ...stocksOf(candidates.previous),
@@ -76,27 +130,45 @@ async function capture(requested: string, lookback: number) {
       ),
     ];
     const fetched = await fetchTrackingEvidence(codes, context.tradeDate);
-    // Refresh pools AFTER the quote capture; do not advance a stale pool snapshot's cutoff.
-    const snap = await getIntradayEmotionSnapshot(true);
-    if (snap.tradeDate !== context.tradeDate || snap.sourceState !== 'LIVE')
-      throw Error('盘中快照日期或状态未对齐');
-    cutoff = snap.cutoff;
-    const current = {
-      ...snap,
-      date,
-      cutoff: '15:00',
-      status: snap.status,
-      coverage: {
-        reported: snap.breadth.rowsAvailable,
-        available: snap.breadth.rowsAvailable,
-      },
-      ladders: snap.ladders ?? [],
-      failedStocks: snap.failedStocks ?? [],
-      limitDownStocks: snap.limitDownStocks ?? [],
-    } as unknown as CloseSnapshot;
-    const index = history.findIndex((x) => x.date === date);
-    if (index >= 0) history[index] = current;
-    else history.push(current);
+    const captureTime = new Date().toISOString();
+    // A pool endpoint failure must not delete valid independent minute captures.
+    // Its old cutoff is never advanced or passed off as the fresh capture.
+    const snap = await getIntradayEmotionSnapshot(true).catch(() => null);
+    const poolAge =
+      Date.parse(captureTime) - Date.parse(snap?.retrievedAt ?? '');
+    const alignedPool =
+      snap?.tradeDate === context.tradeDate &&
+      snap.sourceState === 'LIVE' &&
+      poolAge >= -60_000 &&
+      poolAge <= 60_000;
+    cutoff = alignedPool
+      ? snap.cutoff
+      : new Date(Date.parse(captureTime) + 8 * 3600_000)
+          .toISOString()
+          .slice(11, 16);
+    if (cutoff > '11:30' && cutoff < '13:01') cutoff = '11:30';
+    if (cutoff > '15:00') cutoff = '15:00';
+    if (!alignedPool)
+      storageReason =
+        '情绪池暂不可用；仅保留真实分钟、报价与既有身份，池状态不确认';
+    if (alignedPool) {
+      const current = {
+        ...snap,
+        date,
+        cutoff: '15:00',
+        status: snap.status,
+        coverage: {
+          reported: snap.breadth.rowsAvailable,
+          available: snap.breadth.rowsAvailable,
+        },
+        ladders: snap.ladders ?? [],
+        failedStocks: snap.failedStocks ?? [],
+        limitDownStocks: snap.limitDownStocks ?? [],
+      } as unknown as CloseSnapshot;
+      const index = history.findIndex((x) => x.date === date);
+      if (index >= 0) history[index] = current;
+      else history.push(current);
+    }
     const quotes: TrackingDay['quotes'] = {};
     for (const [code, q] of fetched.quotes)
       if (q.changePct !== null && q.quoteTime)
@@ -107,11 +179,44 @@ async function capture(requested: string, lookback: number) {
         };
     const day: TrackingDay = {
       date,
+      cutoff,
+      previousDate: calendar.dates.filter((d) => d < date).at(-1),
       quotes,
       trends: { ...saved?.trends, ...fetched.trends },
-      asOf: snap.retrievedAt,
+      sourceState: 'LIVE',
+      availableAt: alignedPool
+        ? snap.retrievedAt
+        : `${date}T${cutoff}:00+08:00`,
+      capturedAt: captureTime,
+      asOf: alignedPool ? snap.retrievedAt : `${date}T${cutoff}:00+08:00`,
       sessionState: 'LIVE',
-      source: '当日实时请求；截止到本次行情池核验时点，报价仅接受60秒内样本',
+      concepts: {
+        ...saved?.concepts,
+        ...evidence[date]?.concepts,
+        ...Object.fromEntries(
+          memberRows.map((row) => [row.code, row.concepts]),
+        ),
+      },
+      conceptStates: {
+        ...saved?.conceptStates,
+        ...evidence[date]?.conceptStates,
+        ...Object.fromEntries(
+          memberRows.map((row) => [row.code, 'READY' as const]),
+        ),
+      },
+      conceptsAvailableAt: memberRows.length
+        ? memberRows
+            .map((row) => row.metadataAsOf!)
+            .sort()
+            .at(-1)
+        : (saved?.conceptsAvailableAt ?? evidence[date]?.conceptsAvailableAt),
+      conceptsState: memberRows.length
+        ? 'DEGRADED'
+        : (saved?.conceptsState ?? evidence[date]?.conceptsState ?? 'MISSING'),
+      styleCandidates: styleRows.map(toStyleStock),
+      styleMembers: memberRows.map(toStyleStock),
+      source:
+        '当日独立分钟/逐股报价请求；非连板容量候选复用已保存涨速样本，仅触发观察，不授予龙头身份',
     };
     evidence[date] = day;
     if (JSON.stringify(day).length < 1_800_000)
@@ -140,9 +245,18 @@ async function capture(requested: string, lookback: number) {
     const close = history.find((x) => x.date === date)!;
     const day: TrackingDay = {
       date,
+      cutoff: '15:00',
       quotes: close.closeQuotes ?? {},
       trends: { ...saved?.trends, ...fetched.trends },
+      sourceState: 'ARCHIVED',
+      availableAt: `${date}T15:00:00+08:00`,
+      capturedAt: saved?.capturedAt ?? evidence[date]?.capturedAt,
       sessionState: 'CLOSED',
+      concepts: saved?.concepts ?? evidence[date]?.concepts,
+      conceptsAvailableAt:
+        saved?.conceptsAvailableAt ?? evidence[date]?.conceptsAvailableAt,
+      conceptsState:
+        saved?.conceptsState ?? evidence[date]?.conceptsState ?? 'MISSING',
       source: '当日15:00收盘报价与同日分钟路径',
     };
     evidence[date] = day;
@@ -152,7 +266,7 @@ async function capture(requested: string, lookback: number) {
       });
     else storageReason = '收盘分钟包超过单次归档大小限制，本次未持久化';
   }
-  if (!history.some((x) => x.date === date))
+  if (!history.some((x) => x.date === date) && !evidence[date])
     return {
       status: 'MISSING',
       date,
@@ -173,10 +287,44 @@ async function capture(requested: string, lookback: number) {
     lookback,
     cutoff,
   );
+  const priorInfluence = await loadLatestModuleSnapshot<{
+    records: Parameters<typeof updateInfluenceHistory>[1];
+  }>('emotion-core-influence').catch(() => null);
+  const influenceHistory = updateInfluenceHistory(
+    result,
+    priorInfluence?.records ?? [],
+  );
+  const historyMonotone = !(priorInfluence?.records ?? []).some(
+    (record) =>
+      Date.parse(record.observedAt) > Date.parse(result.availableAt ?? ''),
+  );
+  if (
+    live &&
+    historyMonotone &&
+    JSON.stringify(influenceHistory) !==
+      JSON.stringify(priorInfluence?.records ?? [])
+  ) {
+    const storedInfluence = { date, records: influenceHistory };
+    await saveModuleSnapshot('emotion-core-influence', storedInfluence).catch(
+      () => {
+        storageReason = [
+          storageReason,
+          '核心影响证据保存失败；本次仍显示已采集事实',
+        ]
+          .filter(Boolean)
+          .join('；');
+      },
+    );
+  }
   return {
     ...result,
+    influenceHistory,
     sourceState: live ? 'LIVE' : 'ARCHIVED',
     retrievedAt: new Date().toISOString(),
+    availableAt: result.availableAt,
+    concepts: result.concepts,
+    conceptsAvailableAt: result.conceptsAvailableAt,
+    conceptsState: result.conceptsState,
     storageReason,
     status: storageReason ? 'DEGRADED' : result.status,
   };

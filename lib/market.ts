@@ -29,7 +29,7 @@ import {
 
 const PUBLIC_CLIENT_TOKEN = '7eea3edcaed734bea9cbfc24409ed989';
 const MARKET_FILTER = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048';
-const QUOTE_FIELDS = 'f12,f14,f2,f3,f5,f6,f8,f15,f18,f20,f21,f22,f62,f100,f184';
+const QUOTE_FIELDS = 'f12,f14,f2,f3,f5,f6,f8,f15,f18,f20,f21,f22,f62,f100,f124,f184';
 
 export type DataState = 'READY' | 'DEGRADED' | 'MISSING';
 
@@ -59,6 +59,7 @@ export type StockMetadata = {
   name: string;
   industry: string | null;
   concepts: string[];
+  observedAt?: string;
 };
 
 export type LimitHistory = {
@@ -537,6 +538,7 @@ export async function fetchStockMetadata(code: string): Promise<StockMetadata> {
     name: String(data.f58 ?? ''),
     industry: data.f127 && data.f127 !== '-' ? String(data.f127) : null,
     concepts: primaryConcepts.length ? primaryConcepts : fallbackConcepts,
+    observedAt: new Date().toISOString(),
   };
   metadataCache.set(code, {
     expiresAt: Date.now() + 6 * 60 * 60 * 1000,
@@ -2523,6 +2525,8 @@ export async function getSpeedSnapshot() {
       previousClose: numberOrNull(row.f18),
       mainNetInflow: numberOrNull(row.f62),
       industry: String(row.f100 ?? ''),
+      quoteTime: numberOrNull(row.f124) !== null && Number(row.f124) > 0 && Number(row.f124) * 1000 <= Date.now()
+        ? new Date(Number(row.f124) * 1000).toISOString() : undefined,
     }))
     .filter(
       (row) =>
@@ -2557,6 +2561,7 @@ export async function getSpeedSnapshot() {
     return {
       ...row,
       concepts: metadataResult.concepts,
+      metadataAsOf: 'observedAt' in metadataResult ? metadataResult.observedAt : undefined,
       metadataState: metadataResult.concepts.length
         ? ('READY' as DataState)
         : ('DEGRADED' as DataState),

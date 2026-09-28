@@ -89,7 +89,8 @@ test('all real close prices make the current-day sentiment ready without claimin
   const result = shortEmotionReading(sep4(), sep3(), exactCloseLadder());
   assert.equal(result.status, 'READY');
   assert.equal(result.version, 'short-emotion-v2');
-  assert.equal(result.highBoard.label, '高标淘汰赛');
+  assert.equal(result.highBoard.tone, 'negative');
+  assert.match(result.highBoard.summary, /核心仍强，但中位已经发出退潮预警/);
   assert.equal(result.relay.label, '接力退潮');
   assert.equal(result.relay.candidateCount, 9);
   assert.equal(result.cohort.consecutive.attempts, 3);
@@ -221,24 +222,25 @@ test('an independent 20cm five-board cannot mask the main-board relay break', ()
     archivedFacts('2026-08-14'),
     archivedFacts('2026-08-13'),
   );
-  assert.match(result.label, /主板高位断层/);
+  assert.equal(result.highBoard.tone, 'negative');
+  assert.notEqual(result.relay.tone, 'positive');
   assert.equal(result.families[0].highest, 3);
   assert.equal(result.families[1].highest, 5);
   assert.equal(result.families[1].leaders[0].name, '蓝盾光电');
 });
 
-test('the dynamic high-board pool uses the two actual top tiers instead of an empty arithmetic tier', () => {
+test('highest tiers are recall evidence, not a final core threshold or confirmed leader identity', () => {
   const result = shortEmotionReading(
     archivedFacts('2026-09-18'),
     archivedFacts('2026-09-17'),
   );
-  assert.equal(result.highBoard.poolFloor, 3);
-  assert.deepEqual(
-    [...new Set(result.highBoard.rows.map((row) => row.fromHeight))],
-    [5, 3],
-  );
-  assert.equal(result.highBoard.label, '高标抱团');
-  assert.notEqual(result.highBoard.label, '高标退潮');
+  assert.equal(result.highBoard.poolFloor, null);
+  assert.equal(result.highBoard.rows, result.core.candidates);
+  assert.ok(result.core.candidates.some((row) => row.historicalHeight === 5));
+  assert.ok(result.core.candidates.some((row) => row.roles.includes('当前最高竞争者')));
+  assert.ok(result.core.candidates.every((row) => row.provisional));
+  assert.ok(result.core.candidates.every((row) => row.dimensions.initiative.state === 'MISSING'));
+  assert.notEqual(result.highBoard.tone, 'positive');
 });
 
 test('independent sentiment does not change just because indices or market breadth change', () => {

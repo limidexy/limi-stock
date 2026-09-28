@@ -4,6 +4,7 @@ import {
   ladderReading,
   shortEmotionReading,
   type EmotionFacts,
+  type EmotionCoreEvidence,
   type ReadingLadder,
 } from '@/lib/market-reading';
 import type { CloseSnapshot } from '@/lib/close-history';
@@ -101,6 +102,7 @@ export type UnifiedMarketInput = {
   speed?: UnifiedSpeed | null;
   intradayEvidence?: IntradayMinuteEvidence | null;
   auctionEvidence?: AuctionOrderbookEvidence | null;
+  coreEvidence?: EmotionCoreEvidence | null;
 };
 
 export type UnifiedMarketReading = {
@@ -177,6 +179,7 @@ export function unifiedMarketReading(
     speed,
     intradayEvidence,
     auctionEvidence,
+    coreEvidence,
   } = input;
   const observed = emotionReading(facts);
   const previousFacts: EmotionFacts | null = previousClose
@@ -186,7 +189,7 @@ export function unifiedMarketReading(
         breadthReady: true,
       }
     : null;
-  const short = shortEmotionReading(facts, previousFacts, ladder);
+  const short = shortEmotionReading(facts, previousFacts, ladder, coreEvidence);
   const cohort = ladderReading(ladder, facts.date);
   const quoteReady = cohort.ready && cohort.all.priceReady === cohort.all.count;
   const alignedClose = close && sameDate(facts.date, close.date) ? close : null;
@@ -239,12 +242,13 @@ export function unifiedMarketReading(
         )
         .sort((a, b) => a.changePct! - b.changePct!)
     : [];
-  const topHeight = Math.max(
-    0,
-    ...(facts.ladders ?? []).map((level) => level.height),
+  const coreCandidates = short.core?.candidates ?? [];
+  const topStocks = coreCandidates.filter(
+    (candidate) =>
+      candidate.roles.includes('当前最高竞争者') ||
+      candidate.roles.includes('当前次高竞争者') ||
+      candidate.roles.includes('最近交易日最高板/核心'),
   );
-  const topStocks =
-    facts.ladders?.find((level) => level.height === topHeight)?.stocks ?? [];
   const strongestPeer = cohort.ready
     ? [...cohort.rows]
         .filter((row) => finite(row.changePct))
@@ -302,7 +306,10 @@ export function unifiedMarketReading(
         ? 'DEGRADED'
         : 'MISSING';
   const emotionState: KnowledgeState =
-    observed.usable && short.status === 'READY' ? 'READY' : 'DEGRADED';
+    observed.usable &&
+    coreCandidates.some((candidate) => candidate.confirmedEvidence.length > 0)
+      ? 'READY'
+      : 'DEGRADED';
 
   const modules: KnowledgeModule[] = [
     {
@@ -439,11 +446,13 @@ export function unifiedMarketReading(
       question: '风险偏好上限是否稳定？',
       conclusion: short.highBoard.label,
       state:
-        short.highBoard.rows.length && short.status === 'READY'
+        short.core.highFeedback.state === 'READY' &&
+        coreCandidates.some((candidate) => !candidate.provisional)
           ? 'READY'
           : 'DEGRADED',
       judgment:
-        short.highBoard.rows.length && short.status === 'READY'
+        short.core.highFeedback.state === 'READY' &&
+        coreCandidates.some((candidate) => !candidate.provisional)
           ? 'CONFIRMED'
           : 'OBSERVE',
       tone:
@@ -453,7 +462,7 @@ export function unifiedMarketReading(
       ),
       boundary:
         '高标是动态高位生态，不用单一最高板或某只核心存活替代群体反馈。',
-      next: '如果最高两档抗住分歧且中位不再扩散亏钱效应，则高标风险上限稳定；否则继续降级。',
+      next: '持续跟踪当前与历史核心的真实响应、负反馈和中位传递；不以最高两档或少数核心封住替代生态确认。',
     },
     {
       id: 'relay',
@@ -461,11 +470,9 @@ export function unifiedMarketReading(
       question: '赚钱效应还能向上传递吗？',
       conclusion: short.relay.label,
       state:
-        short.relay.candidateCount >= 3 && short.status === 'READY'
-          ? 'READY'
-          : 'DEGRADED',
+        short.relay.candidateCount >= 3 && cohort.ready ? 'READY' : 'DEGRADED',
       judgment:
-        short.relay.candidateCount >= 3 && short.status === 'READY'
+        short.relay.candidateCount >= 3 && cohort.ready
           ? 'CONFIRMED'
           : 'OBSERVE',
       tone: short.relay.tone === 'unknown' ? 'neutral' : short.relay.tone,
@@ -481,10 +488,13 @@ export function unifiedMarketReading(
       name: '龙头 / 角色',
       question: '谁拥有主动性、带动性与抗跌性？',
       conclusion: topStocks.length
-        ? `${topStocks.length === 1 ? '高位核心候选' : '同身位核心竞争'}：${topStocks.map((stock) => stock.name).join('、')}`
+        ? `${topStocks.length === 1 ? '高位候选观察' : '高位角色竞争'}：${topStocks.map((stock) => `${stock.name}（${stock.state}）`).join('、')}`
         : '高位核心候选尚未形成',
       state:
-        topStocks.length && boardProcess.length
+        topStocks.length &&
+        coreCandidates.some(
+          (candidate) => candidate.confirmedEvidence.length > 0,
+        )
           ? 'READY'
           : topStocks.length
             ? 'DEGRADED'
@@ -493,11 +503,16 @@ export function unifiedMarketReading(
       tone: topStocks.length === 1 ? 'mixed' : 'neutral',
       evidence: [
         topStocks.length
-          ? `当前${topHeight}板：${topStocks.map((stock) => `${stock.name}（${stock.industry}）`).join('、')}`
+          ? `动态候选：${topStocks.map((stock) => `${stock.name}（${stock.code} · ${stock.roles.slice(0, 2).join('、')}）`).join('；')}`
           : '没有完整高标梯队',
         topStocks.length
-          ? `封板过程：${topStocks.map((stock) => `${stock.name}${stock.firstTouch ?? '—'}首触/${stock.breakCount ?? '—'}次炸板`).join('；')}`
-          : '封板过程不可用',
+          ? topStocks
+              .map(
+                (stock) =>
+                  `${stock.name}：${stock.confirmedEvidence.join('、') || '已入池但确认证据不足'}`,
+              )
+              .join('；')
+          : '逐股核心证据不可用',
       ],
       boundary:
         '先涨停或板数最高只获得候选资格；缺少逐分钟先后与板块响应时，不授予“真正龙头”。',

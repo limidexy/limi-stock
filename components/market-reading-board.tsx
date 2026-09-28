@@ -22,6 +22,7 @@ import {
   emotionReading,
   shortEmotionReading,
   ladderReading,
+  type EmotionCoreEvidence,
   type EmotionFacts,
   type ReadingLadder,
 } from '@/lib/market-reading';
@@ -61,10 +62,12 @@ export function EmotionEvidencePanel({
   snapshot,
   previous,
   ladder,
+  coreEvidence,
 }: {
   snapshot: IntradayEmotionSnapshot | CloseSnapshot;
   previous?: CloseSnapshot;
   ladder?: ReadingLadder | null;
+  coreEvidence?: EmotionCoreEvidence | null;
 }) {
   const facts = toEmotionFacts(snapshot);
   const reading = emotionReading(facts);
@@ -76,6 +79,7 @@ export function EmotionEvidencePanel({
     facts,
     previous ? toEmotionFacts(previous) : null,
     ladder,
+    coreEvidence,
   ).cohort;
   const showCohort = cohort.ready && !facts.stale;
   return (
@@ -87,6 +91,7 @@ export function EmotionEvidencePanel({
         facts={facts}
         previous={previous ? toEmotionFacts(previous) : null}
         ladder={ladder}
+        coreEvidence={coreEvidence}
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>

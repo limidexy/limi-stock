@@ -84,10 +84,6 @@ export function EmotionTrackingBoard({
     let stopped = false,
       timer: ReturnType<typeof setTimeout>;
     const controller = new AbortController();
-    setData(null);
-    setRequestKey(key);
-    setLoading(true);
-    setError(null);
     async function poll() {
       try {
         const response = await fetch(
@@ -98,11 +94,16 @@ export function EmotionTrackingBoard({
         if (!response.ok || !result.oldLeaders)
           throw Error(result.reason ?? '跟踪数据未就绪');
         if (!stopped) {
+          setRequestKey(key);
           setData(result);
           setError(null);
         }
       } catch (e) {
-        if (!stopped) setError(String(e));
+        if (!stopped) {
+          setRequestKey(key);
+          setData(null);
+          setError(String(e));
+        }
       } finally {
         if (!stopped) {
           setLoading(false);
@@ -144,7 +145,9 @@ export function EmotionTrackingBoard({
             size="sm"
             onClick={() => setRevision((x) => x + 1)}
           >
-            <RefreshCw className={loading ? 'animate-spin' : ''} />
+            <RefreshCw
+              className={loading || requestKey !== key ? 'animate-spin' : ''}
+            />
             刷新跟踪
           </Button>
         </div>
@@ -222,6 +225,7 @@ export function EmotionTrackingBoard({
                 </TabsTrigger>
                 <TabsTrigger value="rebound">盘中反核过程</TabsTrigger>
                 <TabsTrigger value="lead">核心与跟随</TabsTrigger>
+                <TabsTrigger value="negative">负向先后</TabsTrigger>
               </TabsList>
               <TabsContent value="old" className="space-y-3">
                 <Coverage part={current.oldLeaders} />
@@ -433,6 +437,50 @@ export function EmotionTrackingBoard({
                             {stock.time ?? '未检出时点'} · {stock.role}
                             {stock.lag != null
                               ? `（${stock.lag > 0 ? '+' : ''}${stock.lag}交易分钟）`
+                              : ''}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </TabsContent>
+              <TabsContent value="negative" className="space-y-3">
+                <Coverage part={current.negativeLeadLag} />
+                <p className="text-sm text-muted-foreground">
+                  只接受同日连续分钟路径：核心先出现连续3分钟跌幅至少1个百分点，成员在其后1—10个交易分钟负向响应；同现但无先后保持
+                  MISSING。
+                </p>
+                {current.negativeLeadLag.rows.map((group) => (
+                  <article
+                    key={`${group.industry}:${group.core.code}`}
+                    className="rounded-lg border p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-semibold">
+                        {group.industry} · {group.core.name}（向下观察）
+                      </h3>
+                      <Badge variant="outline">
+                        {group.status} · {group.available}/{group.requested}
+                      </Badge>
+                    </div>
+                    <p className="my-2 text-sm">
+                      {group.onset
+                        ? `${group.onset.time} 核心3分钟负向增量${group.onset.gain.toFixed(2)}个百分点`
+                        : '核心没有可核验的连续分钟负向起点'}{' '}
+                      · {group.label}
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {group.rows.map((stock) => (
+                        <div
+                          key={stock.code}
+                          className="rounded-md bg-muted/50 p-3 text-sm"
+                        >
+                          <p className="font-semibold">{stock.name}</p>
+                          <p className="mt-1 text-muted-foreground">
+                            {stock.time ?? '未检出时点'} · {stock.role}
+                            {stock.lag != null
+                              ? `（+${stock.lag}交易分钟）`
                               : ''}
                           </p>
                         </div>
