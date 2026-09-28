@@ -121,7 +121,7 @@ export function CloseDatePicker({
           variant="secondary"
           className={compact ? 'hidden lg:inline-flex' : undefined}
         >
-          15:00
+          收盘 15:00
         </Badge>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-auto p-2">

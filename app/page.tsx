@@ -2046,6 +2046,11 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {alignedDate ? (
+              <Badge variant="secondary" className="hidden sm:inline-flex">
+                盘中 {alignedDate.slice(5)}
+              </Badge>
+            ) : null}
             <Badge variant="outline" className="hidden gap-1.5 sm:inline-flex">
               <span
                 className={`size-1.5 rounded-full ${sourceNotice ? 'bg-amber-500' : closedSnapshot ? 'bg-sky-500' : 'bg-emerald-500'}`}
