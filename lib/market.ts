@@ -9,6 +9,7 @@ import { enrichEmotionCloses } from '@/lib/emotion-tracking-source';
 import { loadCloseHistory } from '@/lib/persistence';
 import { emotionReading } from '@/lib/market-reading';
 import { buildRadarSnapshot } from '@/lib/radar-evidence';
+import tradingCalendarDocument from '@/lib/trading-calendar.generated.json';
 import {
   buildArchivedLadderSnapshot,
   consecutiveLimitHeight,
@@ -50,6 +51,7 @@ const clistCache = new Map<
     value: { total: number; rows: ClistRow[]; host: string; stale?: boolean };
   }
 >();
+let verifiedSessionCache: CacheRecord<string[]> | null = null;
 
 export type StockMetadata = {
   code: string;
@@ -1868,55 +1870,90 @@ async function previousTradingPool(tradeDate: string) {
   const closeHistory = await loadCloseHistory().catch(
     () => CLOSE_HISTORY.snapshots,
   );
-  for (let offset = 1; offset <= 10; offset += 1) {
-    const candidate = subtractDays(tradeDate, offset);
-    const weekday = new Date(
-      `${candidate.slice(0, 4)}-${candidate.slice(4, 6)}-${candidate.slice(6, 8)}T12:00:00Z`,
-    ).getUTCDay();
-    if (weekday === 0 || weekday === 6) continue;
-    const archived = closeHistory.find(
-      (snapshot) =>
-        snapshot.date.replaceAll('-', '') === candidate &&
-        snapshot.cutoff === '15:00' &&
-        snapshot.status === 'READY',
-    );
-    if (archived) {
-      return {
-        tradeDate: candidate,
-        rows: archived.ladders.flatMap((level) =>
-          level.stocks.map((stock) => ({
-            c: stock.code,
-            n: stock.name,
-            lbc: stock.height,
-            hybk: stock.industry,
-          })),
-        ) as PoolRow[],
-        providerQdate: '',
-        dateState: 'READY' as DataState,
-      };
-    }
-    const pool = await fetchPool('ZTPool', candidate);
-    attempts.push({
-      date: candidate,
-      qdate: pool.qdate,
-      rows: pool.rows.length,
-    });
-    if (pool.rows.length && pool.qdate === candidate) {
-      return {
-        tradeDate: candidate,
-        rows: pool.rows,
-        providerQdate: pool.qdate,
-        dateState:
-          pool.qdate === candidate
-            ? ('READY' as DataState)
-            : ('DEGRADED' as DataState),
-      };
-    }
-    throw new Error(
-      `上一交易日候选${candidate}未获精确日期确认；保留缺失，不跳到更早的涨停池`,
-    );
+  const sessions = await verifiedTradingSessions();
+  const candidate = sessions.filter((date) => date < tradeDate).at(-1);
+  if (!candidate)
+    throw new Error(`未找到${tradeDate}之前的已验证交易日`);
+  const archived = closeHistory.find(
+    (snapshot) =>
+      snapshot.date.replaceAll('-', '') === candidate &&
+      snapshot.cutoff === '15:00' &&
+      snapshot.status === 'READY',
+  );
+  if (archived) {
+    return {
+      tradeDate: candidate,
+      rows: archived.ladders.flatMap((level) =>
+        level.stocks.map((stock) => ({
+          c: stock.code,
+          n: stock.name,
+          lbc: stock.height,
+          hybk: stock.industry,
+        })),
+      ) as PoolRow[],
+      providerQdate: '',
+      dateState: 'READY' as DataState,
+    };
   }
-  throw new Error(`10日内未找到上一交易日涨停池 ${JSON.stringify(attempts)}`);
+  const pool = await fetchPool('ZTPool', candidate);
+  attempts.push({ date: candidate, qdate: pool.qdate, rows: pool.rows.length });
+  if (pool.rows.length && pool.qdate === candidate) {
+    return {
+      tradeDate: candidate,
+      rows: pool.rows,
+      providerQdate: pool.qdate,
+      dateState: 'READY' as DataState,
+    };
+  }
+  throw new Error(
+    `已验证上一交易日${candidate}的涨停池未获精确日期确认 ${JSON.stringify(attempts)}`,
+  );
+}
+
+async function verifiedTradingSessions(): Promise<string[]> {
+  if (verifiedSessionCache && verifiedSessionCache.expiresAt > Date.now())
+    return verifiedSessionCache.value;
+  const fallback = (tradingCalendarDocument.dates ?? [])
+    .map((date) => String(date).replaceAll('-', ''))
+    .filter((date) => /^\d{8}$/.test(date));
+  try {
+    const symbols = ['sh000001', 'sz399001'];
+    const calendars = await Promise.all(
+      symbols.map(async (symbol) => {
+        const payload = await fetchJson(
+          `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${symbol},day,,,180,qfq`,
+        );
+        const security = ((payload.data ?? {}) as Record<string, unknown>)[
+          symbol
+        ] as Record<string, unknown> | undefined;
+        const rows = security &&
+          (Array.isArray(security.qfqday)
+            ? security.qfqday
+            : Array.isArray(security.day)
+              ? security.day
+              : []);
+        return ((rows as unknown[][] | undefined) ?? [])
+          .map((row) => String(row[0] ?? '').replaceAll('-', ''))
+          .filter((date) => /^\d{8}$/.test(date));
+      }),
+    );
+    const intersection = calendars[0].filter((date) =>
+      calendars.slice(1).every((calendar) => calendar.includes(date)),
+    );
+    if (!intersection.length) throw new Error('两市指数交易日无交集');
+    verifiedSessionCache = {
+      expiresAt: Date.now() + 6 * 60 * 60 * 1000,
+      value: intersection,
+    };
+    return intersection;
+  } catch {
+    if (!fallback.length) throw new Error('本地交易日历不可用');
+    verifiedSessionCache = {
+      expiresAt: Date.now() + 5 * 60 * 1000,
+      value: fallback,
+    };
+    return fallback;
+  }
 }
 
 function poolCode(row: PoolRow): string {
