@@ -17,6 +17,7 @@ import {
 } from '../lib/timeline-evidence.ts';
 import {
   mergeQuoteRows,
+  parseTencentLiveQuotes,
   quoteComplete,
   sameTradeDate,
 } from '../lib/quote-evidence.ts';
@@ -33,6 +34,23 @@ const archivedFacts = (date) => ({
 });
 const sep4 = () => archivedFacts('2026-09-04');
 const sep3 = () => archivedFacts('2026-09-03');
+
+test('Tencent live fallback accepts only the exact requested quote date', () => {
+  const text = [
+    'v_sh600000="1~浦发银行~600000~9.11~9.00~9.03~0~0~0~~~~~~~~~~~~~~~~~~~~~~20260928104516~0.11~1.22~9.14~9.00~9.11/586205/533479468";',
+    'v_sz000001="51~平安银行~000001~11.33~11.30~11.28~0~0~0~~~~~~~~~~~~~~~~~~~~~~20260927104518~0.03~0.27~11.41~11.28~11.33/375882/426686034";',
+  ].join('\n');
+  const quotes = parseTencentLiveQuotes(
+    text,
+    ['600000', '000001'],
+    '20260928',
+  );
+  assert.equal(quotes.size, 1);
+  assert.equal(quotes.get('600000').changePct, 1.22);
+  assert.equal(quotes.get('600000').speedPct, null);
+  assert.equal(quotes.get('600000').amount, 533479468);
+  assert.equal(quotes.get('600000').quoteTime, '2026-09-28T02:45:16.000Z');
+});
 
 test('historical emotion uses complete exact-date close quotes without inventing returns', () => {
   const result = shortEmotionReading(sep4(), sep3());
@@ -117,6 +135,40 @@ test('one first-board pool race degrades low support without erasing verified hi
   assert.notEqual(result.highBoard.label, '高标数据不足');
   assert.notEqual(result.relay.label, '接力数据不足');
   assert.match(result.missing.join('；'), /首板池与梯队接口存在1只瞬时差异/);
+});
+
+test('a current complete live ladder survives a same-day stale emotion snapshot', () => {
+  const facts = {
+    ...sep4(),
+    date: '2026-09-28',
+    status: 'DEGRADED',
+    stale: true,
+    cutoff: '10:34',
+    retrievedAt: '2026-09-28T10:34:00+08:00',
+  };
+  const previous = { ...sep3(), date: '2026-09-24' };
+  const ladder = exactCloseLadder();
+  ladder.tradeDate = '20260928';
+  ladder.previousTradeDate = '20260924';
+  ladder.sessionState = 'LIVE';
+  ladder.sourceState = 'LIVE';
+  ladder.retrievedAt = '2026-09-28T10:35:00+08:00';
+  ladder.sealedStocks = sep4().ladders.flatMap((level) => level.stocks);
+  ladder.counts.todaySealed = ladder.sealedStocks.length;
+  ladder.competitors = ladder.competitors.map((row) => ({
+    ...row,
+    quoteTime: '2026-09-28T10:35:00+08:00',
+    priceQuoteTime: '2026-09-28T10:35:00+08:00',
+  }));
+  const result = shortEmotionReading(facts, previous, ladder);
+  assert.equal(result.status, 'DEGRADED');
+  assert.equal(result.cohortSource, '同日完整昨日涨停跟踪');
+  assert.equal(result.cohort.ready, true);
+  assert.equal(result.relay.candidateCount, 9);
+  assert.ok(result.highBoard.rows.length > 0);
+  assert.notEqual(result.highBoard.label, '高标数据不足');
+  assert.notEqual(result.relay.label, '接力数据不足');
+  assert.match(result.missing.join('；'), /高标与接力已独立使用当前梯队证据/);
 });
 
 test('individual stale, absent or future price times cannot enter a complete return distribution', () => {

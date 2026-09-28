@@ -25,7 +25,7 @@ export type ReadingLadder = {
   sourceState?: string;
   sessionState?: string;
   retrievedAt?: string;
-  counts?: { previousLimitUp: number };
+  counts?: { previousLimitUp: number; todaySealed?: number };
   sealedStocks?: EmotionStock[];
   competitors: ReadingCompetitor[];
 };
@@ -424,7 +424,11 @@ export function shortEmotionReading(
 ) {
   const observed = emotionReading(facts);
   const structureReady = completeStructure(facts);
-  const stocks = structureReady
+  // A same-day persisted emotion snapshot becomes STALE when its upstream
+  // request fails. Its structure can still be used for cross-checking, but it
+  // must not by itself make the current judgment READY.
+  const factsStructureComplete = completeStructure({ ...facts, stale: false });
+  const factsStocks = factsStructureComplete
     ? uniqueStocks(facts.ladders!.flatMap((level) => level.stocks))
     : [];
   const sourceTime = Date.parse(suppliedLadder?.retrievedAt ?? '');
@@ -433,16 +437,25 @@ export function shortEmotionReading(
   const closeTime = Date.parse(
     `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}T15:00:00+08:00`,
   );
+  const liveSourceDate = Number.isFinite(sourceTime)
+    ? new Date(sourceTime + 8 * 3_600_000)
+        .toISOString()
+        .slice(0, 10)
+        .replaceAll('-', '')
+    : '';
   const timeAligned =
     facts.cutoff === '15:00'
       ? suppliedLadder?.sessionState === 'CLOSED' &&
         Number.isFinite(sourceTime) &&
         sourceTime >= closeTime
       : suppliedLadder?.sessionState === 'LIVE' &&
+        suppliedLadder?.sourceState === 'LIVE' &&
         Number.isFinite(sourceTime) &&
         Number.isFinite(factsTime) &&
-        sourceTime <= factsTime &&
-        factsTime - sourceTime <= 60_000;
+        liveSourceDate === digits &&
+        (facts.stale ||
+          (sourceTime <= factsTime && factsTime - sourceTime <= 60_000));
+  const evidenceTime = facts.stale && timeAligned ? sourceTime : factsTime;
   const timedLadder = suppliedLadder
     ? {
         ...suppliedLadder,
@@ -454,8 +467,8 @@ export function shortEmotionReading(
             facts.cutoff === '15:00'
               ? quoteTime === closeTime
               : Number.isFinite(quoteTime) &&
-                quoteTime <= factsTime &&
-                factsTime - quoteTime <= 60_000 &&
+                quoteTime <= evidenceTime &&
+                evidenceTime - quoteTime <= 60_000 &&
                 new Date(quoteTime + 8 * 3_600_000)
                   .toISOString()
                   .slice(0, 10)
@@ -465,13 +478,21 @@ export function shortEmotionReading(
       }
     : null;
   const supplied = ladderReading(timedLadder, facts.date);
-  const stateStocks = suppliedLadder?.sealedStocks?.length
+  const suppliedStateStocks = suppliedLadder?.sealedStocks?.length
     ? uniqueStocks(suppliedLadder.sealedStocks)
-    : stocks;
-  const stateSource = suppliedLadder?.sealedStocks?.length
+    : [];
+  const suppliedStateComplete = Boolean(
+    suppliedLadder &&
+      suppliedLadder.counts?.todaySealed !== undefined &&
+      suppliedStateStocks.length === suppliedLadder.counts.todaySealed,
+  );
+  const stateStocks = suppliedStateComplete
+    ? suppliedStateStocks
+    : factsStocks;
+  const stateSource = suppliedStateComplete
     ? '梯队接口同批涨停池'
     : '情绪接口涨停池';
-  const stateMismatches = structureReady
+  const stateMismatches = suppliedStateComplete || factsStructureComplete
     ? supplied.rows.filter((row) => {
         if (
           !['SEALED', 'FAILED', 'DROPPED'].includes(row.state) ||
@@ -492,16 +513,16 @@ export function shortEmotionReading(
     Math.floor(firstBoardCount * 0.02),
   );
   const stateAligned =
-    structureReady &&
+    (suppliedStateComplete || structureReady) &&
     !stateMismatches.some((row) => row.fromHeight >= 2) &&
     stateMismatches.length <= toleratedFirstBoardDrift;
   const priorStocks = previous?.ladders?.flatMap((level) => level.stocks) ?? [];
   const priorAligned =
     previous &&
     completeStructure(previous) &&
-    adjacentCloses({ ...facts, cutoff: '15:00' }, previous) &&
     compactDate(previous.date) ===
       compactDate(suppliedLadder?.previousTradeDate) &&
+    compactDate(previous.date) < compactDate(facts.date) &&
     priorStocks.length === supplied.rows.length &&
     supplied.rows.every((row) =>
       priorStocks.some(
@@ -512,8 +533,7 @@ export function shortEmotionReading(
     supplied.ready &&
     timeAligned &&
     stateAligned &&
-    priorAligned &&
-    !facts.stale;
+    priorAligned;
   const derived = historicalEmotionLadder(facts, previous);
   const ladder = useSupplied ? timedLadder : derived;
   const cohort = useSupplied ? supplied : ladderReading(derived, facts.date);
@@ -521,7 +541,8 @@ export function shortEmotionReading(
     cohort.ready &&
     cohort.all.count > 0 &&
     cohort.all.priceReady === cohort.all.count;
-  const rows = cohort.ready && !facts.stale ? cohort.rows : [];
+  const rows = cohort.ready && (useSupplied || !facts.stale) ? cohort.rows : [];
+  const stocks = useSupplied ? stateStocks : factsStocks;
   const highRows = rows.filter((row) => row.fromHeight >= 2);
   const negative = highRows.filter(
     (row) => finite(row.changePct) && row.changePct < 0,
@@ -609,11 +630,12 @@ export function shortEmotionReading(
   const weakest = [...negative].sort(
     (a, b) => b.fromHeight - a.fromHeight || a.changePct! - b.changePct!,
   );
-  const ready =
+  const contextReady =
     facts.status !== 'MISSING' &&
     !facts.stale &&
     observed.poolsReady &&
     structureReady;
+  const judgmentReady = useSupplied || contextReady;
   const consecutiveQuotesComplete =
     cohort.ready &&
     cohort.consecutive.count > 0 &&
@@ -691,11 +713,15 @@ export function shortEmotionReading(
     ? main
     : (families.find((f) => f.started > 0) ?? main);
   const marketSupportive =
-    observed.indexMood === '三大指数上涨' || observed.broad === '多数上涨';
+    !facts.stale &&
+    (observed.indexMood === '三大指数上涨' || observed.broad === '多数上涨');
   const marketHostile =
-    observed.indexMood === '三大指数下跌' || observed.broad === '多数下跌';
+    !facts.stale &&
+    (observed.indexMood === '三大指数下跌' || observed.broad === '多数下跌');
   const activeContext =
-    !observed.indexReady || !observed.breadthReady
+    facts.stale
+      ? '指数与赚钱面为同日旧快照，不判主动/被动'
+      : !observed.indexReady || !observed.breadthReady
       ? '指数或赚钱面不完整，主动/被动强弱不定性'
       : highPoolDeep.length > 0 && marketSupportive
         ? '环境不差而高标深水，偏主动走弱'
@@ -705,7 +731,7 @@ export function shortEmotionReading(
 
   let highLabel = '高标数据不足';
   let highTone: EmotionTone = 'unknown';
-  if (ready && highPoolRows.length > 0) {
+  if (judgmentReady && highPoolRows.length > 0) {
     highTone = 'mixed';
     const highRate = highPoolAdvanced / highPoolRows.length;
     const lowSupport = (cohort.first.rate ?? 0) >= 25;
@@ -764,7 +790,8 @@ export function shortEmotionReading(
 
   let relayLabel = '接力数据不足';
   let relayTone: EmotionTone = 'unknown';
-  const relaySampleReady = ready && cohort.ready && highRows.length >= 3;
+  const relaySampleReady =
+    judgmentReady && cohort.ready && highRows.length >= 3;
   if (relaySampleReady) {
     relayTone = 'mixed';
     const relayRate = cohort.consecutive.rate ?? 0;
@@ -814,7 +841,7 @@ export function shortEmotionReading(
   const compare =
     previous &&
     adjacentCloses(facts, previous) &&
-    ready &&
+    contextReady &&
     completeStructure(previous)
       ? {
           date: previous.date,
@@ -866,7 +893,7 @@ export function shortEmotionReading(
           : '降温'
         : '稳定';
   const missing = [
-    !structureReady && '当日完整涨停梯队未齐',
+    !structureReady && !useSupplied && '当日完整涨停梯队未齐',
     !cohort.ready && '缺少相邻交易日完整涨停名单，不能确认接力',
     useSupplied &&
       stateMismatches.length > 0 &&
@@ -874,7 +901,10 @@ export function shortEmotionReading(
     cohort.ready &&
       !quoteComplete &&
       `昨日涨停股当日价格覆盖${cohort.all.priceReady}/${cohort.all.count}，不计算不完整样本收益中位数`,
-    facts.stale && '最近成功结果，非当前实时，不合成当前情绪',
+    facts.stale &&
+      (useSupplied
+        ? '指数、涨跌家数为同日最近成功快照；高标与接力已独立使用当前梯队证据'
+        : '最近成功结果，非当前实时，不合成当前情绪'),
     !consecutiveQuotesComplete &&
       '昨日连板股当日价格未齐，弱侧压力和接力溢价不定性',
     !sealProcessReady &&
@@ -926,7 +956,9 @@ export function shortEmotionReading(
       value: activeContext,
       detail: '只做环境对照；没有分钟路径时不声称弱转强、地天或主动回封。',
       state:
-        observed.indexReady && observed.breadthReady ? 'READY' : 'DEGRADED',
+        !facts.stale && observed.indexReady && observed.breadthReady
+          ? 'READY'
+          : 'DEGRADED',
     },
   ];
   const relayEvidence = [
@@ -991,7 +1023,7 @@ export function shortEmotionReading(
     version: 'short-emotion-v2',
     label,
     tone,
-    status: !ready
+    status: !contextReady
       ? facts.status === 'MISSING'
         ? 'MISSING'
         : 'DEGRADED'

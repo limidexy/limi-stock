@@ -16,6 +16,7 @@ import {
 } from '@/lib/ladder-evidence';
 import {
   mergeQuoteRows,
+  parseTencentLiveQuotes,
   quoteComplete,
   quoteDate,
   type StockQuote,
@@ -605,6 +606,38 @@ async function fetchStockChangesAndSpeeds(
         mergeQuoteRows(quotes, rows, missing, tradeDate, host);
       } catch {
         // Try the next public quote host for this batch.
+      }
+    }
+    // Eastmoney's list endpoint can return a valid but very sparse batch. The
+    // Tencent quote line is an independent exact-date lane for current price,
+    // previous close and amount. It deliberately does not invent speed.
+    const tencentMissing = batch.filter(
+      (code) => quotes.get(code)?.changePct == null,
+    );
+    if (tencentMissing.length && Date.now() <= deadline) {
+      try {
+        const text = await fetchText(
+          `https://qt.gtimg.cn/q=${tencentMissing.map(marketSymbol).join(',')}`,
+          'https://gu.qq.com/',
+          5_000,
+        );
+        const recovered = parseTencentLiveQuotes(
+          text,
+          tencentMissing,
+          tradeDate,
+        );
+        for (const [code, quote] of recovered) {
+          const prior = quotes.get(code);
+          quotes.set(code, {
+            changePct: prior?.changePct ?? quote.changePct,
+            speedPct: prior?.speedPct ?? null,
+            amount: prior?.amount ?? quote.amount,
+            quoteTime: quote.quoteTime,
+            quoteSource: quote.quoteSource,
+          });
+        }
+      } catch {
+        // Keep the Eastmoney rows and expose remaining price gaps downstream.
       }
     }
     // A partial batch is not a complete quote result. Retry only missing codes.
