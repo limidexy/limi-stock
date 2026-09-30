@@ -45,6 +45,37 @@ function run(id) {
 const core = (r, c) => r.candidates.find((row) => row.code === c);
 const stock = (r, c) => r.tape.rows.find((row) => row.code === c);
 
+test('unseen real 0922 09:45: identity, current repair and transmission are independent', () => {
+  const { reading: r, input } = run('0922-0945-space-repair-divergence');
+  assert.equal(
+    input.sourceHash,
+    'dbb145da150d31df9845db5eefd6b1e353398622b5c1626ee6e7fb8fcf7eb784',
+  );
+  assert.equal(Object.keys(input.sourceDay.trends).length, 76);
+  assert.equal(stock(r, '001216').support, 'STABLE_SEAL');
+  assert.equal(stock(r, '603230').support, 'RESEALED');
+  assert.equal(stock(r, '603230').resealedAt, '09:42');
+  assert.equal(stock(r, '601811').support, 'STABLE_SEAL');
+  assert.ok(stock(r, '002285').changePct < 1);
+  assert.ok(
+    stock(r, '002453').changePct < -3,
+    'earlier return to red is not lasting repair',
+  );
+  const tier = r.middle.tiers.find((t) => t.fromHeight === 3);
+  assert.deepEqual(
+    [tier.promoted, tier.denominator, tier.deepKnown, tier.priceCovered],
+    [1, 5, 1, 5],
+  );
+  assert.ok(r.candidates.every((c) => c.provisional));
+  assert.ok(
+    !core(r, '603230').interpretation.influence.groups.some((g) =>
+      g.members.some((m) => m.code === '601811'),
+    ),
+  );
+  assert.ok(!JSON.stringify(r).includes('华瓷股份带动全市场'));
+  assert.ok(input.history.every((d) => d.date < '2026-09-22'));
+});
+
 test('real 0918 09:40: stable seal, opened board and re-seal are distinct with no late concepts', () => {
   const { reading: r } = run('0918-0940-peer-divergence');
   assert.equal(core(r, '001216').pricePath.support, 'STABLE_SEAL');
@@ -98,7 +129,7 @@ test('real 0924 09:40: surviving space leader cannot hide three deep-water names
   assert.equal(core(r, '000910').pricePath.openedAt, '09:33');
   assert.equal(r.retreatWarning, true);
   assert.equal(r.tone, 'negative');
-  assert.match(r.summary, /核心仍强，但中位已经发出退潮预警/);
+  assert.match(r.summary, /空间高位仍有强势表现，但中位已出现集中负反馈/);
   for (const name of ['大亚圣象', '南威软件', '华远控股', '华丽家族'])
     assert.ok(
       r.summary.includes(name),

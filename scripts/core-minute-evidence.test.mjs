@@ -83,7 +83,7 @@ const summary = () => ({
       {
         core: { code: '600001', name: '容量样本' },
         status: 'READY',
-        onset: { time: '09:40' },
+        onset: { time: '09:40', gain: 2 },
         rows: ['600002', '600003'].map((code) => ({
           code,
           pathState: 'READY',

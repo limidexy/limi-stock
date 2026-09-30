@@ -123,7 +123,7 @@ test('acceptance 1: sealed space leader with broadly deep-water middle cannot be
   const r = emotionCoreReading(facts(ss), before, rows, ss);
   assert.equal(r.retreatWarning, true);
   assert.equal(r.tone, 'negative');
-  assert.match(r.summary, /核心仍强，但中位已经发出退潮预警/);
+  assert.match(r.summary, /空间高位仍有强势表现，但中位已出现集中负反馈/);
   assert.equal(r.middle.promoted, 0);
   assert.equal(r.middle.denominator, 2);
 });
@@ -297,7 +297,7 @@ test('acceptance 10: code-normalized deduplication retains multiple evidence tag
   assert.ok(at(r, '600001').roles.length >= 2);
 });
 
-test('positive control: dated raw liquidity, influence and recognition decay permits a traceable exit', () => {
+test('three falling historical proxies without current comparable scope cannot certify identity exit', () => {
   const r = emotionCoreReading(
     facts([]),
     null,
@@ -333,8 +333,8 @@ test('positive control: dated raw liquidity, influence and recognition decay per
       },
     ),
   );
-  assert.equal(at(r, '600099').state, '影响衰减退出');
-  assert.equal(at(r, '600099').transitionTrace.at(-1).to, '影响衰减退出');
+  assert.notEqual(at(r, '600099').state, '影响衰减退出');
+  assert.match(at(r, '600099').dimensions.persistence.basis, /下降不等于退出/);
 });
 
 test('negative control: responses before the rebound cannot be counted as repair propagation', () => {

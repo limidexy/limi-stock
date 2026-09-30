@@ -301,9 +301,64 @@ function CoreCandidateCard({
         </div>
         <Badge variant="outline">
           {candidate.state}
-          {candidate.provisional ? ' · 待验证候选' : ' · 持续影响已确认'}
+          {' · 不等于市场核心认证'}
         </Badge>
       </div>
+      {candidate.interpretation ? (
+        <div className="mt-3 grid gap-3 rounded-lg border bg-background/70 p-3 text-sm leading-6 sm:grid-cols-2">
+          <div>
+            <p className="font-semibold">
+              身份依据 · {candidate.interpretation.identity.label}
+            </p>
+            <p className="text-muted-foreground">
+              {candidate.interpretation.identity.basis}
+            </p>
+          </div>
+          <div>
+            <p className="font-semibold">
+              当下反馈 · {candidate.interpretation.feedback.label}
+            </p>
+            <p className="text-muted-foreground">
+              {candidate.interpretation.feedback.basis}
+            </p>
+          </div>
+          <div className="sm:col-span-2">
+            <p className="font-semibold">
+              影响范围 · {candidate.interpretation.influence.label}
+            </p>
+            {candidate.interpretation.influence.groups.map((group) => (
+              <p
+                key={`${group.concept}-${group.direction}`}
+                className={
+                  group.direction === 'down' ? 'market-down' : 'market-up'
+                }
+              >
+                {group.concept} · {group.direction === 'down' ? '负向' : '正向'}
+                ：
+                {group.members
+                  .map((m) => `${m.name} ${m.time}（滞后${m.lag}分钟）`)
+                  .join('、')}
+                {group.historyDays.length
+                  ? `；另有${group.historyDays.length}个同题材同方向历史观察日（非连续性认证）`
+                  : '；尚无同题材同方向跨日记录'}
+              </p>
+            ))}
+            <p className="text-muted-foreground">
+              {candidate.interpretation.influence.basis}
+            </p>
+          </div>
+          <div className="sm:col-span-2 border-t pt-2">
+            <p>
+              <span className="font-semibold">反证与限制：</span>
+              {candidate.interpretation.counterEvidence.join('；')}
+            </p>
+            <p className="mt-1">
+              <span className="font-semibold">后续怎么判断：</span>
+              {candidate.interpretation.nextCheck}
+            </p>
+          </div>
+        </div>
+      ) : null}
       <PricePathFacts path={path} />
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
         <span
@@ -326,15 +381,6 @@ function CoreCandidateCard({
       <p className="mt-2 text-xs leading-5">
         入池：{candidate.reasons.join('；') || '暂无可解释召回依据'}
       </p>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-        已确认：{candidate.confirmedEvidence.join('；') || '暂无'}
-        <br />
-        缺口：{candidate.missingEvidence.join('；') || '暂无'}
-      </p>
-      <p className="mt-1 text-xs leading-5">
-        影响：板块 {candidate.impact.sector} · 接力 {candidate.impact.relay} ·
-        整体 {candidate.impact.group}
-      </p>
       {candidate.scopeReason ? (
         <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
           当前范围：{candidate.scope ?? '未标注'} · {candidate.scopeReason}
@@ -351,6 +397,11 @@ function CoreCandidateCard({
           展开九维原始事实矩阵
         </summary>
         <div className="mt-2">
+          <p className="mb-2 leading-5 text-muted-foreground">
+            可核验事实：{candidate.confirmedEvidence.join('；') || '暂无'}
+            <br />
+            缺口：{candidate.missingEvidence.join('；') || '暂无'}
+          </p>
           <DimensionGrid dimensions={candidate.dimensions} />
           <div className="mt-3 space-y-1 rounded-md border p-2">
             <p className="font-medium">可见证据驱动的状态迁移</p>
@@ -600,7 +651,7 @@ export function ShortEmotionPanel({
         <div className="min-w-0">
           <p className="flex items-center gap-2 text-sm font-semibold">
             <ThermometerSun className="size-4 text-amber-500" />
-            当前情绪核心 · 高标与接力分开判断
+            高标与情绪角色 · 身份、强弱、影响分开看
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             情绪池：{date(facts.date)} {facts.cutoff}
@@ -633,7 +684,7 @@ export function ShortEmotionPanel({
           label={reading.highBoard.label}
           tone={reading.highBoard.tone}
           summary={reading.highBoard.summary}
-          badge={`情绪核心候选 ${activeCandidates.length}只`}
+          badge={`当前角色观察 ${activeCandidates.length}只`}
           evidence={reading.highBoard.evidence}
         />
         <JudgmentCard
@@ -648,7 +699,7 @@ export function ShortEmotionPanel({
 
       <section className="space-y-3 rounded-lg border border-sky-500/25 bg-sky-500/[0.035] p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold">当前情绪核心逐股证据</h3>
+          <h3 className="text-sm font-semibold">当前角色 · 逐股依据与反证</h3>
           <span className="text-xs text-muted-foreground">
             {activeCandidates.length
               ? `${activeCandidates.length}只活跃／竞争观察；普通首板、孤立高板不自动确认`

@@ -6,6 +6,22 @@ import { priceLimitState } from '../../lib/timeline-evidence.ts';
 
 export const REAL_SCENARIOS = [
   {
+    id: '0922-0945-space-repair-divergence',
+    date: '2026-09-22',
+    cutoff: '09:45',
+    focus: [
+      '001216',
+      '603230',
+      '002285',
+      '601811',
+      '000504',
+      '600630',
+      '002453',
+      '600448',
+      '600127',
+    ],
+  },
+  {
     id: '0918-0940-peer-divergence',
     date: '2026-09-18',
     cutoff: '09:40',

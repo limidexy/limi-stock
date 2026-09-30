@@ -181,11 +181,13 @@ export const EMOTION_CORE_STATES = [
   '分离/卡位',
   '龙头候选',
   '明牌核心',
+  '局部响应观察',
   '加速一致',
   '爆量分歧',
   '修复/断板',
   '反包或二波',
   '老高标跟踪',
+  '历史角色跟踪',
   '影响衰减退出',
 ] as const;
 
@@ -200,6 +202,9 @@ export type EmotionCoreRole =
   | '主线先锋/候选/明牌'
   | '20cm趋势容量核心'
   | '趋势容量核心候选'
+  | '题材响应观察'
+  | '负向响应观察'
+  | '分歧失败跟踪'
   | '板块接力带动者';
 
 export type CoreDimension = {
@@ -220,6 +225,28 @@ export type CoreCandidate = {
   height: number | null;
   historicalHeight?: number | null;
   currentRole?: string;
+  interpretation: {
+    identity: { label: string; basis: string };
+    feedback: { label: string; basis: string };
+    influence: {
+      direction: 'UP' | 'DOWN' | 'MIXED' | 'UNRESOLVED';
+      label: string;
+      basis: string;
+      groups: Array<{
+        concept: string;
+        direction: 'up' | 'down';
+        members: Array<{
+          code: string;
+          name: string;
+          time: string;
+          lag: number;
+        }>;
+        historyDays: string[];
+      }>;
+    };
+    counterEvidence: string[];
+    nextCheck: string;
+  };
   scope?: 'ACTIVE' | 'COMPETITOR' | 'HISTORY';
   scopeReason?: string;
   pricePath?: TapeStock;
@@ -368,6 +395,7 @@ export type EmotionCoreEvidence = {
     state: EvidenceState;
     respondingCodes: string[];
     concept: string;
+    direction?: 'up' | 'down';
   }>;
   volumeEvidence?: Array<{
     code: string;
@@ -1147,14 +1175,14 @@ export function shortEmotionReading(
   const highLabel = !core.activeCandidates.length
     ? '高标数据不足'
     : core.retreatWarning
-      ? '核心存活 · 中位退潮预警'
+      ? '高位分化 · 中位负反馈预警'
       : extremeKnown > 0 || negativeKnown >= 2
-        ? '核心负反馈明显'
+        ? '高位观察池负反馈明显'
         : healthyConfirmed
           ? '核心与接力共振'
           : highPoolAdvanced > 0
-            ? '核心有存活，生态待验证'
-            : '情绪核心观察中';
+            ? '高位仍有承接，群体影响未确认'
+            : '空间与情绪角色观察中';
   const highTone: EmotionTone =
     core.retreatWarning || extremeKnown > 0 || negativeKnown >= 2
       ? 'negative'
@@ -1292,13 +1320,15 @@ export function shortEmotionReading(
   ].filter(Boolean) as string[];
   const highEvidence = [
     {
-      label: '当前情绪核心',
+      label: '当前角色观察',
       value:
         '召回' +
         core.activeCandidates.length +
-        '只 · 已确认持续核心' +
-        confirmedCores.length +
-        '只',
+        '只 · 有题材响应' +
+        core.activeCandidates.filter(
+          (candidate) => candidate.interpretation.influence.groups.length > 0,
+        ).length +
+        '只（非龙头认证）',
       detail: core.activeCandidates.length
         ? core.activeCandidates
             .map((candidate) => candidate.name + '：' + candidate.currentRole)

@@ -40,11 +40,7 @@ test('Tencent live fallback accepts only the exact requested quote date', () => 
     'v_sh600000="1~浦发银行~600000~9.11~9.00~9.03~0~0~0~~~~~~~~~~~~~~~~~~~~~~20260928104516~0.11~1.22~9.14~9.00~9.11/586205/533479468";',
     'v_sz000001="51~平安银行~000001~11.33~11.30~11.28~0~0~0~~~~~~~~~~~~~~~~~~~~~~20260927104518~0.03~0.27~11.41~11.28~11.33/375882/426686034";',
   ].join('\n');
-  const quotes = parseTencentLiveQuotes(
-    text,
-    ['600000', '000001'],
-    '20260928',
-  );
+  const quotes = parseTencentLiveQuotes(text, ['600000', '000001'], '20260928');
   assert.equal(quotes.size, 1);
   assert.equal(quotes.get('600000').changePct, 1.22);
   assert.equal(quotes.get('600000').speedPct, null);
@@ -90,7 +86,10 @@ test('all real close prices make the current-day sentiment ready without claimin
   assert.equal(result.status, 'READY');
   assert.equal(result.version, 'short-emotion-v2');
   assert.equal(result.highBoard.tone, 'negative');
-  assert.match(result.highBoard.summary, /核心仍强，但中位已经发出退潮预警/);
+  assert.match(
+    result.highBoard.summary,
+    /空间高位仍有强势表现，但中位已出现集中负反馈/,
+  );
   assert.equal(result.relay.label, '接力退潮');
   assert.equal(result.relay.candidateCount, 9);
   assert.equal(result.cohort.consecutive.attempts, 3);
@@ -236,11 +235,21 @@ test('highest tiers are recall evidence, not a final core threshold or confirmed
   );
   assert.equal(result.highBoard.poolFloor, null);
   assert.equal(result.highBoard.rows, result.core.activeCandidates);
-  assert.equal(result.core.candidates.length, result.core.activeCandidates.length + result.core.historicalCandidates.length);
+  assert.equal(
+    result.core.candidates.length,
+    result.core.activeCandidates.length +
+      result.core.historicalCandidates.length,
+  );
   assert.ok(result.core.candidates.some((row) => row.historicalHeight === 5));
-  assert.ok(result.core.candidates.some((row) => row.roles.includes('当前最高竞争者')));
+  assert.ok(
+    result.core.candidates.some((row) => row.roles.includes('当前最高竞争者')),
+  );
   assert.ok(result.core.candidates.every((row) => row.provisional));
-  assert.ok(result.core.candidates.every((row) => row.dimensions.initiative.state === 'MISSING'));
+  assert.ok(
+    result.core.candidates.every(
+      (row) => row.dimensions.initiative.state === 'MISSING',
+    ),
+  );
   assert.notEqual(result.highBoard.tone, 'positive');
 });
 

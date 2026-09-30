@@ -62,7 +62,9 @@ type Rebound = NonNullable<Tracking['rebounds']>['rows'][number];
 type Group = NonNullable<Tracking['leadLag']>['rows'][number];
 type Pair = {
   core: string;
+  coreName: string;
   member: string;
+  memberName: string;
   onset: string;
   time: string;
   lag: number;
@@ -442,7 +444,9 @@ export function readEmotionCores(
         if (member === c) continue;
         out.push({
           core: c,
+          coreName: g.core.name,
           member,
+          memberName: m.name,
           onset: onset.time,
           time: m.time,
           lag,
@@ -558,23 +562,30 @@ export function readEmotionCores(
       ? day(old.brokenDate)
       : null;
   }
-  for (const proof of evidence?.influenceHistory ?? []) {
-    if (
-      proof.state !== 'READY' ||
-      day(proof.date) > date ||
-      !atOrBefore(proof.observedAt, proof.date) ||
-      new Set(
-        proof.respondingCodes.filter((c) => codeOf(c) !== codeOf(proof.code)),
-      ).size < 2 ||
-      !proof.source ||
-      !proof.concept
-    )
-      continue;
+  const verifiedInfluenceHistory = (evidence?.influenceHistory ?? []).filter(
+    (proof) => {
+      const knownAt = stamp(proof.date, proof.observedAt);
+      return (
+        proof.state === 'READY' &&
+        day(proof.date) <= date &&
+        knownAt !== null &&
+        dateAt(knownAt) === day(proof.date) &&
+        knownAt <= target &&
+        new Set(
+          proof.respondingCodes
+            .map(codeOf)
+            .filter((c) => c !== codeOf(proof.code)),
+        ).size >= 2 &&
+        Boolean(proof.source && proof.concept)
+      );
+    },
+  );
+  for (const proof of verifiedInfluenceHistory) {
     recall(
       proof.code,
       proof.name ?? allMeta.get(codeOf(proof.code))?.name ?? proof.code,
-      '板块接力带动者',
-      `${proof.date} ${proof.observedAt.slice(11, 16)}已记录${proof.concept}至少2个成员随后响应；历史影响身份保留，今日是否仍有影响另行验证`,
+      proof.direction === 'down' ? '负向响应观察' : '题材响应观察',
+      `${proof.date} ${proof.observedAt.slice(11, 16)}已记录${proof.concept}至少2个成员随后${proof.direction === 'down' ? '负向' : '正向'}响应；历史观察保留，今日是否仍有影响另行验证`,
       proof.observedAt,
     );
   }
@@ -642,24 +653,19 @@ export function readEmotionCores(
         `采集成交额样本${largeAmounts.length}只中位列前3、成交额${(s.amount! / 1e8).toFixed(2)}亿；另有${related.length}个已核验概念成员响应${persistent ? '及多日正反馈' : ''}。仅容量候选，不以20cm代码授予身份`,
       );
   }
-  for (const p of upPairs) {
+  for (const p of [...upPairs, ...downPairs]) {
     const existing = registry.get(p.core),
       s = speedByCode.get(p.core),
       meta = allMeta.get(p.core);
-    if (!existing && !(p.concept && liquid.has(p.core))) continue;
+    // Relation recall is independent of board height, speed-list membership,
+    // return sign and size. An observed local sequence is not a leader award.
+    if (!existing && !p.concept) continue;
     recall(
       p.core,
-      existing?.name ?? s?.name ?? meta?.name ?? p.core,
-      '板块接力带动者',
-      `${p.onset}本股先动，${p.member}于${p.time}随后响应（${p.lag}交易分钟）；${p.concept ? `同属已核验概念${p.concept}` : '仅同组时序线索，概念归属缺证据'}，不单独认定因果`,
+      existing?.name ?? s?.name ?? meta?.name ?? p.coreName ?? p.core,
+      p.direction === 'down' ? '负向响应观察' : '题材响应观察',
+      `${p.onset}本股先${p.direction === 'down' ? '回落' : '拉升'}，${p.member}于${p.time}随后${p.direction === 'down' ? '负向' : '正向'}响应（${p.lag}交易分钟）；${p.concept ? `同属已核验概念${p.concept}` : '仅同组时序线索，概念归属缺证据'}，不单独认定因果`,
     );
-    if (p.concept)
-      recall(
-        p.core,
-        registry.get(p.core)!.name,
-        '主线先锋/候选/明牌',
-        `${p.concept}成员先后可核验；主线地位和持续性另行判断`,
-      );
   }
   // Extreme failures/repairs only recall already recognizable stocks, never all failed first boards.
   for (const r of registry.values()) {
@@ -671,7 +677,11 @@ export function readEmotionCores(
       prior?.failedStocks?.some((s) => codeOf(s.code) === r.code) ||
       prior?.limitDownStocks?.some((s) => codeOf(s.code) === r.code);
     if (nowBad || priorBad) {
-      r.roles.add('极端负反馈代表');
+      r.roles.add(
+        downByCode.has(r.code) || extremePaths.get(r.code)?.skyFloor === true
+          ? '极端负反馈代表'
+          : '分歧失败跟踪',
+      );
       r.reasons.push(
         `${nowBad ? '当日' : '前一交易日'}已辨识股票出现炸板或跌停池记录，继续跟踪负反馈`,
       );
@@ -813,13 +823,14 @@ export function readEmotionCores(
       broken: boolean;
       rebound: ReturnType<typeof validRebound>;
       up: Pair[];
+      down: Pair[];
       repaired: boolean;
       decayReady: boolean;
       exited: boolean;
     }
   >();
   const candidates: CoreCandidate[] = [...registry.values()]
-    .map((r) => {
+    .map((r): CoreCandidate => {
       const c = r.code,
         row = rowByCode.get(c),
         s = sealedByCode.get(c),
@@ -829,6 +840,60 @@ export function readEmotionCores(
         pricePath = tapeByCode.get(c);
       const own = upPairs.filter((p) => p.core === c),
         related = own.filter((p) => p.concept);
+      const historicalIdentity = verifiedInfluenceHistory.filter(
+        (x) => codeOf(x.code) === c && day(x.date) < date,
+      );
+      const negativeOwn = downPairs.filter((p) => p.core === c);
+      const directional = [...related, ...negativeOwn.filter((p) => p.concept)];
+      const currentGroups: CoreCandidate['interpretation']['influence']['groups'] =
+        [...new Set(directional.map((p) => `${p.direction}:${p.concept}`))].map(
+          (key) => {
+            const pairs = directional.filter(
+              (p) => `${p.direction}:${p.concept}` === key,
+            );
+            const first = pairs[0];
+            return {
+              concept: first.concept!,
+              direction: first.direction,
+              members: [
+                ...new Map(
+                  pairs.map((p) => [
+                    p.member,
+                    {
+                      code: p.member,
+                      name:
+                        allMeta.get(p.member)?.name ??
+                        rowByCode.get(p.member)?.name ??
+                        p.memberName ??
+                        p.member,
+                      time: p.time,
+                      lag: p.lag,
+                    },
+                  ]),
+                ).values(),
+              ],
+              historyDays: [
+                ...new Set(
+                  verifiedInfluenceHistory
+                    .filter(
+                      (x) =>
+                        codeOf(x.code) === c &&
+                        day(x.date) < date &&
+                        x.state === 'READY' &&
+                        atOrBefore(x.observedAt, x.date) &&
+                        x.concept === first.concept &&
+                        (x.direction ?? 'up') === first.direction &&
+                        Boolean(x.source) &&
+                        new Set(
+                          x.respondingCodes.map(codeOf).filter((z) => z !== c),
+                        ).size >= 2,
+                    )
+                    .map((x) => day(x.date)),
+                ),
+              ].sort(),
+            };
+          },
+        );
       const peerPairs = own.filter(
         (p) => row && rowByCode.get(p.member)?.fromHeight === row.fromHeight,
       );
@@ -898,14 +963,19 @@ export function readEmotionCores(
                 : '主动先后缺少分钟证据',
             '自身反弹或涨速单值不足以证明先于板块和竞争者发动',
           );
-      let leadership = related.length
+      let leadership = directional.length
         ? dimension(
             minuteCurrent ? 'READY' : 'DEGRADED',
-            `${related.map((p) => `${p.member}@${p.time}(+${p.lag}分钟)`).join('、')}；关系${related[0].concept}`,
+            currentGroups
+              .map(
+                (g) =>
+                  `${g.concept}${g.direction === 'down' ? '负向' : '正向'}：${g.members.map((m) => `${m.name}@${m.time}(滞后${m.lag}分钟)`).join('、')}`,
+              )
+              .join('；'),
             '同一对股票的概念归属与分钟响应同时核验；这是观测先后，不是独立因果证明' +
               (minuteCurrent ? '' : '；分钟快照较旧，当前带动状态降级'),
             minuteObservedAt ?? targetTime,
-            related[0].source,
+            directional[0].source,
           )
         : dimension(
             own.length || following.length ? 'DEGRADED' : 'MISSING',
@@ -964,11 +1034,20 @@ export function readEmotionCores(
           );
       }
       const identity = dimension(
-        r.peak >= 2 ? 'DEGRADED' : related.length ? 'READY' : 'MISSING',
+        r.peak >= 2 || directional.length || historicalIdentity.length
+          ? 'READY'
+          : 'MISSING',
         r.peak >= 2
           ? `历史空间记忆${r.peak}板；${r.brokenDate ? `断板自${dashed(r.brokenDate)}` : '仍跟踪当前竞争'}`
-          : `趋势/容量候选，已核验概念成员${related.length}个`,
-        '保留空间记忆与真实响应，但不会仅因板高、股票代码或存在某概念就认证核心',
+          : historicalIdentity.length && !directional.length
+            ? historicalIdentity
+                .map(
+                  (x) =>
+                    `历史${x.date} ${x.concept}${x.direction === 'down' ? '负向' : '正向'}响应观察：${new Set(x.respondingCodes.map(codeOf)).size}成员`,
+                )
+                .join('；')
+            : `局部题材响应观察，已核验${new Set(directional.map((p) => p.member)).size}个成员；不等于容量核心`,
+        'READY仅表示此处身份来源可追溯，不是市场核心认证；身份与今日强弱、影响方向独立',
       );
       const peers = row
         ? rows.filter((p) => p.code !== c && p.fromHeight === row.fromHeight)
@@ -1015,28 +1094,21 @@ export function readEmotionCores(
         volume?.source ?? source,
       );
       const influenceDays = [
-        ...new Set(
-          (evidence?.influenceHistory ?? [])
-            .filter(
-              (x) =>
-                codeOf(x.code) === c &&
-                day(x.date) < date &&
-                x.state === 'READY' &&
-                atOrBefore(x.observedAt, x.date) &&
-                x.respondingCodes.filter((z) => codeOf(z) !== c).length >= 2 &&
-                Boolean(x.source && x.concept),
-            )
-            .map((x) => day(x.date)),
-        ),
+        ...new Set(currentGroups.flatMap((g) => g.historyDays)),
       ];
       const groupInfluence = dimension(
-        related.length >= 2 && minuteCurrent
+        directional.length && minuteCurrent
           ? 'READY'
-          : own.length
+          : own.length || negativeOwn.length
             ? 'DEGRADED'
             : 'MISSING',
-        related.length
-          ? `已核验${new Set(related.map((p) => p.member)).size}个概念成员响应；跨日已核验${influenceDays.length}日`
+        directional.length
+          ? currentGroups
+              .map(
+                (g) =>
+                  `${g.concept}：${g.members.length}个${g.direction === 'down' ? '负向' : '正向'}响应，历史同题材同方向观察${g.historyDays.length}日`,
+              )
+              .join('；')
           : own.length
             ? '有局部先后关系，未确认概念或整体核心情绪扩散'
             : '群体影响证据缺失',
@@ -1062,7 +1134,7 @@ export function readEmotionCores(
         ...new Map(decay.map((x) => [day(x.date), x])).values(),
       ].slice(-3);
       const decayReady = ds.length === 3;
-      const exited =
+      const decliningProxies =
         decayReady &&
         ds.every(
           (x, i) =>
@@ -1070,15 +1142,15 @@ export function readEmotionCores(
             (x.liquidityShare < ds[i - 1].liquidityShare &&
               x.responseCount < ds[i - 1].responseCount &&
               x.recognitionCount < ds[i - 1].recognitionCount),
-        ) &&
-        !own.length &&
-        !rebound;
+        );
+      // These inputs have neither a fixed observation-universe identity nor
+      // continuous-session/low-residual-influence evidence. Three falling
+      // proxies cannot certify extinction; keep the identity in history.
+      const exited = false;
       const persistence = dimension(
         influenceDays.length >= 2 ? 'READY' : 'DEGRADED',
-        `身份首次可见${r.firstSeen.slice(0, 10)}；已核验跨日影响${influenceDays.length}日；完整三维衰减观察${ds.length}/3日`,
-        exited
-          ? '连续3个可见观测日的流动性集中、响应数量、辨识度均下降，且覆盖≥90%，允许退出'
-          : '跌幅不是影响衰减；不接受无原始量值的衰减布尔标签，缺数据保留跟踪',
+        `身份首次可见${r.firstSeen.slice(0, 10)}；当前同题材同方向历史观察${influenceDays.length}日；三维代理量记录${ds.length}/3日${decliningProxies ? '，数值下降' : ''}`,
+        '下降不等于退出：尚缺固定观察范围、连续交易日、显著衰减及当前正负两侧影响消失的证据。无当前事件只移入历史观察，不删除身份',
       );
 
       const transitionTrace: CoreCandidate['transitionTrace'] = [
@@ -1116,11 +1188,16 @@ export function readEmotionCores(
         );
         move('老高标跟踪', targetTime, '保留历史身份；未获三类持续衰减证据');
       }
-      if (!r.brokenDate && influenceDays.length > 0 && !own.length)
+      if (
+        !r.brokenDate &&
+        historicalIdentity.length > 0 &&
+        !own.length &&
+        !negativeOwn.length
+      )
         move(
-          '老高标跟踪',
+          r.peak >= 2 ? '老高标跟踪' : '历史角色跟踪',
           targetTime,
-          '历史真实带动证据持续保留；当日响应缺失不等于影响衰减',
+          '历史题材响应观察保留；当日响应缺失不等于影响衰减，也不认证连续因果带动',
         );
       const peerLeading =
         minuteCurrent &&
@@ -1137,23 +1214,20 @@ export function readEmotionCores(
             peer.relation === 'MORE_STABLE' ||
             peer.relation === 'REPAIR_SEPARATION',
         );
-      const confirmed =
+      const localConvergence =
         minuteCurrent &&
-        related.length > 0 &&
-        q.state === 'READY' &&
-        q.value! > 0 &&
-        (influenceDays.length > 0 ||
-          Boolean(
-            relativeSupport && pricePath?.initiative.result === 'OBSERVED',
-          ));
+        currentGroups.some(
+          (g) => g.direction === 'up' && g.members.length >= 2,
+        ) &&
+        relativeSupport &&
+        pricePath?.initiative.result === 'OBSERVED';
       const repairSeparation =
         pricePath?.support === 'RESEALED' &&
         q.state === 'READY' &&
         pricePath.peerRelations.some(
           (peer) => peer.relation === 'REPAIR_SEPARATION',
         );
-      if (exited) move('影响衰减退出', targetTime, persistence.basis);
-      else if (repaired)
+      if (repaired)
         move(
           '反包或二波',
           targetTime,
@@ -1171,17 +1245,13 @@ export function readEmotionCores(
           targetTime,
           '同身位可核验分钟先动，且同时间报价相对分离；不直接授予龙头',
         );
-      else if (confirmed)
+      else if (minuteCurrent && directional.length > 0)
         move(
-          '明牌核心',
+          localConvergence ? '龙头候选' : '局部响应观察',
           targetTime,
-          '当前同概念成员响应及相对承接或此前影响记录相互支持；不以固定两日记录作为冷启动门槛',
-        );
-      else if (minuteCurrent && related.length > 0 && own.length > 0)
-        move(
-          '龙头候选',
-          targetTime,
-          '本股先动且已核验概念成员随后响应；主线持续性尚未闭环',
+          localConvergence
+            ? '同一可见窗口的先动、概念响应和相对承接共同支持候选；仍未确认市场核心'
+            : '正负方向分别记录同题材先后；尚不能排除共同环境或其他先动者，不授予明牌核心',
         );
       else if (
         r.brokenDate === date ||
@@ -1207,7 +1277,7 @@ export function readEmotionCores(
             ? '本股属于随后响应成员，不是主动带动者'
             : '同身位竞争仍在进行，仅有板位或价格结果',
         );
-      if (!exited && confirmed && volumeRatio !== null && s && boardsReady) {
+      if (localConvergence && volumeRatio !== null && s && boardsReady) {
         if (volumeRatio >= 2 && (s.breakCount ?? 0) > 0)
           move('爆量分歧', targetTime, chips.fact);
         else if (
@@ -1219,7 +1289,7 @@ export function readEmotionCores(
           move(
             '加速一致',
             targetTime,
-            '已确认核心在缩量且未开板条件下继续封住；具体量能见筹码维度',
+            '局部响应候选缩量且未开板；这是量价状态，不是核心身份升级',
           );
       }
       const dimensions = {
@@ -1233,8 +1303,10 @@ export function readEmotionCores(
         groupInfluence,
         persistence,
       };
-      const currentRole = exited
-        ? '影响衰减退出'
+      const currentRole = negativeOwn.length
+        ? related.length
+          ? '正负响应并存 · 分歧观察'
+          : '负向响应源观察 · 不因下跌丢失身份'
         : pricePath?.support === 'OPENED'
           ? '同身位打开回落 · 承接分歧'
           : pricePath?.support === 'STABLE_SEAL' && relativeSupport
@@ -1243,8 +1315,8 @@ export function readEmotionCores(
               ? '修复回封 · 同身位相对分离'
               : pricePath?.support === 'RESEALED'
                 ? '局部修复回封观察'
-                : confirmed
-                  ? '局部核心作用已核验'
+                : localConvergence
+                  ? '局部主动/响应/承接共现 · 核心候选'
                   : following.length && !own.length
                     ? '同身位被动跟随观察'
                     : peerLeading
@@ -1255,8 +1327,8 @@ export function readEmotionCores(
                           ? minuteCurrent
                             ? '板块先动候选'
                             : '曾先动候选（旧分钟观察）'
-                          : influenceDays.length && !s
-                            ? '历史板块/容量核心跟踪'
+                          : historicalIdentity.length && !s
+                            ? '历史题材响应角色跟踪'
                             : broken
                               ? '断板空间股/老高标跟踪'
                               : '空间竞争观察（未认证龙头）';
@@ -1265,6 +1337,7 @@ export function readEmotionCores(
         broken,
         rebound,
         up: own,
+        down: negativeOwn,
         repaired,
         decayReady,
         exited,
@@ -1279,7 +1352,82 @@ export function readEmotionCores(
         pricePath,
         historicalHeight: r.peak || null,
         state,
-        provisional: !confirmed,
+        // A local price sequence cannot alone certify a market-wide core.
+        provisional: true,
+        interpretation: {
+          identity: {
+            label: broken
+              ? '断板后保留空间身份'
+              : r.roles.has('当前最高竞争者')
+                ? '当前空间锚 · 非龙头认证'
+                : r.roles.has('当前次高竞争者')
+                  ? '次高空间竞争'
+                  : r.peak >= 2
+                    ? '历史空间身份'
+                    : historicalIdentity.length && !directional.length
+                      ? '历史题材响应身份'
+                      : '题材局部响应身份',
+            basis: identity.fact,
+          },
+          feedback: {
+            label:
+              q.state !== 'READY'
+                ? '当前反馈数据不足'
+                : (pricePath?.supportLabel ??
+                  (q.value! < 0
+                    ? '当前负反馈'
+                    : q.value! > 0
+                      ? '当前正反馈'
+                      : '当前平盘')),
+            basis: `截至${q.time ?? '报价时刻缺失'} ${pct(q.value)}；${pricePath ? '依据已见分钟路径，不扩展为全天结论' : '只有报价结果，未据此声称主动承接'}`,
+          },
+          influence: {
+            direction:
+              related.length && negativeOwn.some((p) => p.concept)
+                ? 'MIXED'
+                : related.length
+                  ? 'UP'
+                  : negativeOwn.some((p) => p.concept)
+                    ? 'DOWN'
+                    : 'UNRESOLVED',
+            label: directional.length
+              ? `${minuteCurrent ? '' : '旧观察 · '}${related.length && negativeOwn.some((p) => p.concept) ? '正负响应并存' : related.length ? '局部正向响应' : '局部负向响应'}，非因果认证`
+              : '群体影响尚未确认',
+            basis: directional.length
+              ? '只覆盖列出的题材成员；不同概念、方向与历史观察不拼接认证。时间先后也可能来自共同消息或行情。'
+              : leadership.fact + '；未观测到与证据缺失分开，不解释成没有影响',
+            groups: currentGroups,
+          },
+          counterEvidence: [
+            ...(following.length
+              ? [
+                  `本股也在${following[0].time}作为随后响应成员；不能把所有波动都解释为它发动`,
+                ]
+              : []),
+            ...(q.state === 'READY' && q.value! < 0
+              ? ['当前报价为负反馈；不能因历史地位仍在就描述为强势承接']
+              : []),
+            ...(negativeOwn.length
+              ? ['已出现负向先后响应；影响仍在可能代表风险传播，而非走强']
+              : []),
+            ...(pricePath?.support === 'OPENED'
+              ? ['可见封板后已打开，未维持先前强度']
+              : []),
+            ...(pricePath?.peerRelations.filter(
+              (p) => p.relation === 'WEAKER_SUPPORT',
+            ).length
+              ? ['同身位存在更稳定对象，不能仅因板高授予核心地位']
+              : []),
+            ...(!directional.length
+              ? ['缺少同时点概念成员响应，空间身份不能代替带动证据']
+              : ['共同环境、消息驱动与其他先动者尚未排除']),
+          ],
+          nextCheck: negativeOwn.length
+            ? '若本股修复，继续看同题材与中位负反馈是否同步收窄；只有自身反弹，仍只算单股修复'
+            : broken || rebound
+              ? '若回拉后低点抬高、同身位不再继续恶化且题材成员随后改善，再升级为局部修复扩散；重新回落则保留修复失败事实'
+              : '继续核对后续助攻、分歧时相对承接及回踩后的再次响应；若成员先涨、本股后涨或响应未延续，应下调带动假设',
+        },
         height: actualHeight,
         trend: boardFamily(c),
         changePct: q.value,
@@ -1313,8 +1461,13 @@ export function readEmotionCores(
         statusBasis: transitionTrace.at(-1)!.evidence,
         transitionTrace,
         impact: {
-          sector: related.length
-            ? `${related[0].concept}：${related.length}个已核验响应成员`
+          sector: directional.length
+            ? currentGroups
+                .map(
+                  (g) =>
+                    `${g.concept}：${g.members.length}个${g.direction === 'down' ? '负向' : '正向'}响应成员`,
+                )
+                .join('；')
             : `行业线索${meta?.industry ?? row?.industry ?? '缺失'}，概念带动未确认`,
           relay: peerPairs.length
             ? `${peerPairs.length}个同身位响应`
@@ -1322,7 +1475,7 @@ export function readEmotionCores(
               ? '自身为随后响应成员'
               : '接力先后未确认',
           group:
-            related.length >= 2
+            directional.length >= 2
               ? '局部板块成员响应已见；整体市场扩散仍未确认'
               : '整体核心情绪影响MISSING',
         },
@@ -1519,7 +1672,7 @@ export function readEmotionCores(
       activeCandidates.map((c) =>
         !info.get(c.code)!.broken
           ? false
-          : info.get(c.code)!.up.length
+          : info.get(c.code)!.up.length || info.get(c.code)!.down.length
             ? true
             : null,
       ),
@@ -1570,7 +1723,7 @@ export function readEmotionCores(
     ),
     exits: metric(
       candidates.map((c) => info.get(c.code)!.exited),
-      '实际执行退出数；缺三维原始衰减证据一律保留，不用暴跌或布尔标签代替',
+      '实际执行退出数；现有三维下降代理量不足以证明退出，保留历史身份，不用暴跌或缺数据代替',
     ),
   };
   const midDeep = middleQuoteReady.filter(
@@ -1681,13 +1834,19 @@ export function readEmotionCores(
     },
     detail: `次高/3进4、4进5传递层/同身位掉队/昨日断板中位独立召回；中位样本${middleCodes.length}，其中${middleRows.length}具有晋级资格、${brokenMiddleCodes.length}只断板跟踪不混入晋级分母。`,
   };
-  const strongKnown = highFeedback.strong.knownCount ?? 0;
+  const spatialStrongKnown = activeCandidates.filter(
+    (c) =>
+      (c.historicalHeight ?? 0) >= 2 &&
+      (info.get(c.code)!.sealed === true ||
+        (c.quoteState === 'READY' &&
+          c.changePct! >= 5 &&
+          info.get(c.code)!.up.length > 0)),
+  ).length;
   const retreatWarning =
-    strongKnown > 0 &&
-    ((middleCodes.length >= 2 &&
+    (middleCodes.length >= 2 &&
       midDeep.length >= Math.ceil(middleCodes.length / 2)) ||
-      twoNegative.length >= 2 ||
-      middleTiers.some((tier) => tier.deepKnown >= 2));
+    twoNegative.length >= 2 ||
+    middleTiers.some((tier) => tier.deepKnown >= 2);
   const negativeKnown = highFeedback.deepWater.knownCount ?? 0;
   const extremeKnown = highFeedback.extreme.knownCount ?? 0;
   const leadingNames = activeCandidates
@@ -1740,12 +1899,14 @@ export function readEmotionCores(
     (tierFacts ? `传递层：${tierFacts}。` : '') +
     `当前活跃/竞争观察${activeCandidates.length}只，${deepDescription}、${extremeDescription}，报价覆盖${highFeedback.covered}/${activeCandidates.length}；另${historicalCandidates.length}只保留历史身份，不混入该分母。` +
     (retreatWarning
-      ? '核心仍强，但中位已经发出退潮预警。'
+      ? spatialStrongKnown > 0
+        ? '空间高位仍有强势表现，但中位已出现集中负反馈；不能据此确认核心仍强或生态健康。'
+        : '中位已出现集中负反馈；未确认空间高位仍强，局部题材上涨不能抵消传递层风险。'
       : negativeKnown || extremeKnown
-        ? '仍有核心存活也不能判生态健康；负反馈先后扩散需看独立分钟证据。'
+        ? '个别高位存活也不能判生态健康；负反馈先后扩散需看独立分钟证据。'
         : '缺失价格、概念或分钟证据不计作无风险；候选不等于已确认龙头。');
   return {
-    version: 'emotion-core-v4',
+    version: 'emotion-core-v5',
     observationMode: lastKnown
       ? ('LAST_KNOWN' as const)
       : facts.cutoff === '15:00'

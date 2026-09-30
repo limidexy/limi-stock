@@ -12,23 +12,19 @@ const minute = (time: string) => {
   return n >= 780 ? n - 90 : n;
 };
 
-/** Append only point-in-time, per-pair confirmed observations. Preserves the
- * first observation per stock/day, so later successful outcomes cannot rewrite
- * the time at which a stock was first known to influence its group. */
+/** Append point-in-time sequences, NOT causal influence certifications. Keep
+ * direction and concept separate; later outcomes cannot rewrite first receipt. */
 export function updateInfluenceHistory(
   summary: EmotionTracking,
   previous: InfluenceRecord[],
 ): InfluenceRecord[] {
   const target = parse(summary.date, summary.cutoff);
-  const available = summary.availableAt
-    ? Date.parse(summary.availableAt)
-    : target;
-  const end =
+  const available = summary.availableAt ? Date.parse(summary.availableAt) : NaN;
+  const receiptAligned =
     Number.isFinite(available) &&
-    new Date(available + 8 * 3600000).toISOString().slice(11, 16) ===
-      summary.cutoff
-      ? available
-      : target;
+    available >= target &&
+    available < target + 60_000;
+  const end = receiptAligned ? available : target;
   const records = new Map<string, InfluenceRecord>();
   for (const r of previous)
     if (
@@ -39,7 +35,7 @@ export function updateInfluenceHistory(
       r.concept &&
       new Set(r.respondingCodes).size >= 2
     ) {
-      const key = `${r.code}:${r.date}`,
+      const key = `${r.code}:${r.date}:${r.concept}:${r.direction ?? 'up'}`,
         old = records.get(key);
       if (!old || r.observedAt < old.observedAt) records.set(key, r);
     }
@@ -47,17 +43,38 @@ export function updateInfluenceHistory(
     ? Date.parse(summary.conceptsAvailableAt)
     : NaN;
   if (
+    !receiptAligned ||
     !Number.isFinite(conceptsAt) ||
     conceptsAt > end ||
     summary.sourceState === 'STALE'
   )
     return [...records.values()];
+  const receiptBeforeEnd = (item: unknown) => {
+    const receipt = (item as { availableAt?: string }).availableAt;
+    return (
+      !receipt ||
+      (Number.isFinite(Date.parse(receipt)) && Date.parse(receipt) <= end)
+    );
+  };
   const stateOf = (code: string) =>
     summary.conceptStates?.[code] ?? summary.conceptsState;
-  for (const group of summary.leadLag.rows) {
+  const directionalGroups = [
+    ...summary.leadLag.rows.map((group) => ({
+      group,
+      direction: 'up' as const,
+    })),
+    ...(summary.negativeLeadLag?.rows ?? []).map((group) => ({
+      group,
+      direction: 'down' as const,
+    })),
+  ];
+  for (const { group, direction } of directionalGroups) {
     if (
       !group.onset ||
       group.status !== 'READY' ||
+      !receiptBeforeEnd(group) ||
+      !Number.isFinite(group.onset.gain) ||
+      (direction === 'up' ? group.onset.gain < 1 : group.onset.gain > -1) ||
       stateOf(group.core.code) !== 'READY' ||
       parse(summary.date, group.onset.time) > end
     )
@@ -67,8 +84,9 @@ export function updateInfluenceHistory(
       const responses = group.rows.filter(
         (row) =>
           row.code !== group.core.code &&
+          receiptBeforeEnd(row) &&
           row.pathState === 'READY' &&
-          row.role === '随后响应' &&
+          row.role === (direction === 'up' ? '随后响应' : '随后负向响应') &&
           row.time &&
           row.lag !== null &&
           row.lag >= 1 &&
@@ -79,7 +97,7 @@ export function updateInfluenceHistory(
           summary.concepts?.[row.code]?.includes(concept),
       );
       if (new Set(responses.map((r) => r.code)).size < 2) continue;
-      const key = `${group.core.code}:${summary.date}`;
+      const key = `${group.core.code}:${summary.date}:${concept}:${direction}`;
       if (!records.has(key))
         records.set(key, {
           code: group.core.code,
@@ -90,14 +108,17 @@ export function updateInfluenceHistory(
           state: 'READY',
           respondingCodes: [...new Set(responses.map((r) => r.code))],
           concept,
+          direction,
         });
     }
   }
-  // Keep all identities. Two earliest days establish historical continuity;
-  // the latest day retains current evidence without an unbounded minute archive.
+  // Keep earliest and latest observations per scope, not proof of continuous
+  // trading-day influence. Sparse records must never be described as continuity.
   const byCode = new Map<string, InfluenceRecord[]>();
-  for (const r of records.values())
-    byCode.set(r.code, [...(byCode.get(r.code) ?? []), r]);
+  for (const r of records.values()) {
+    const key = `${r.code}:${r.concept}:${r.direction ?? 'up'}`;
+    byCode.set(key, [...(byCode.get(key) ?? []), r]);
+  }
   return [...byCode.values()].flatMap((rows) => {
     rows.sort((a, b) => a.observedAt.localeCompare(b.observedAt));
     return [
