@@ -761,11 +761,16 @@ function SectorFlowChart({ data }: { data: FlowData }) {
         <CardAction>
           <StateBadge
             state={data.curveState}
-            label={`${data.coverage?.available ?? 0}/${data.coverage?.requested ?? 0}板块`}
+            label={`本次覆盖 ${data.coverage?.available ?? 0}/${data.coverage?.requested ?? 0}板块`}
           />
         </CardAction>
       </CardHeader>
       <CardContent className="space-y-3">
+        {data.reason ? (
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm leading-6 text-muted-foreground">
+            <p className="font-medium text-foreground">{data.reason}</p>
+          </div>
+        ) : null}
         {data.gap ? (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-xs leading-5 text-muted-foreground">
             <span className="font-medium text-foreground">

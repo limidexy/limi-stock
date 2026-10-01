@@ -134,7 +134,9 @@ function flowSeries(row: DerivedFlowRow): SectorFlowSeries {
             : '资金拐点'
         : undefined,
     detailState: 'MISSING',
-    detailBasis: '收盘包只保留板块15:00累计值，未保留成分分时资金路径',
+    detailBasis: row.points?.length
+      ? '板块分钟资金已校验；成分股分钟资金仍未取得，不据此归因到个股'
+      : '只有板块15:00累计值，未保留成分分时资金路径',
     subgroups: [],
     representatives: [],
   };
@@ -154,9 +156,13 @@ export function archivedCloseFlow(
     .sort((a, b) => a.latestMainNetInflow - b.latestMainNetInflow);
   const series = [...inflows.slice(0, 8), ...outflows.slice(0, 8)];
   const curveReady =
+    day.flow.status === 'READY' &&
     day.flow.curveStatus === 'READY' &&
     (day.flow.curveAvailable ?? 0) === (day.flow.curveRequested ?? -1) &&
     series.every((row) => row.points.length >= 230);
+  const curveAvailable = day.flow.curveAvailable ?? 0;
+  const curveRequested = day.flow.curveRequested ?? day.flow.reported;
+  const hasPartialCurves = curveAvailable > 0 && !curveReady;
   const persistentStrong = allRows
     .filter((row) => row.persistenceLabel === '持续流入')
     .sort((a, b) => (b.delta30m ?? 0) - (a.delta30m ?? 0))
@@ -168,7 +174,7 @@ export function archivedCloseFlow(
   return {
     status: curveReady ? 'READY' : 'DEGRADED',
     curveState: curveReady ? 'READY' : 'DEGRADED',
-    splitState: curveReady ? 'READY' : 'MISSING',
+    splitState: curveReady ? 'READY' : hasPartialCurves ? 'DEGRADED' : 'MISSING',
     retrievedAt: `${digits(tradeDate).slice(0, 4)}-${digits(tradeDate).slice(4, 6)}-${digits(tradeDate).slice(6)}T15:00:00+08:00`,
     tradeDate: digits(tradeDate),
     requestedDate: digits(tradeDate),
@@ -178,16 +184,22 @@ export function archivedCloseFlow(
     lastPointTime: '15:00',
     source: curveReady
       ? '已校验CLOSE包 + 精确交易日1分钟板块资金归档'
-      : '已校验CLOSE包·精确交易日15:00行业板块主力净额',
+      : hasPartialCurves
+        ? '东方财富·精确日期分钟资金补充（部分覆盖）'
+        : '东方财富·精确交易日15:00板块主力净额',
     reason: curveReady
       ? '当日板块1分钟资金曲线已完整归档，可计算5/15/30分钟变化'
-      : '已恢复收盘累计额；精确日期分钟曲线仍缺失',
+      : hasPartialCurves
+        ? `可用分钟曲线${curveAvailable}/${curveRequested}板块；日资金${day.flow.available}/${day.flow.reported}板块。已取得的曲线可看，其余不补造。`
+        : `可用收盘资金${day.flow.available}/${day.flow.reported}板块；该日分钟曲线仍缺失。`,
     basis: curveReady
       ? '曲线经交易日、时间顺序、重复分钟和15:00截止校验。'
-      : '只展示当日15:00累计主力净额；单点不冒充盘中曲线。',
+      : hasPartialCurves
+        ? '辅助观察：分钟曲线已与同日收盘资金交叉校验；排名仅限已覆盖板块，不代表全市场，不能证明个股带动。'
+        : '排名仅限已覆盖板块；只展示当日15:00累计主力净额，单点不冒充盘中曲线。',
     coverage: {
-      requested: day.flow.curveRequested ?? day.flow.reported,
-      available: day.flow.curveAvailable ?? 0,
+      requested: curveRequested,
+      available: curveAvailable,
     },
     gap: day.flow.gap ?? null,
     dataAvailableThrough: day.flow.dataAvailableThrough ?? null,
