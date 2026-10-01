@@ -294,6 +294,9 @@ export function unifiedMarketReading(
     (stock) => stock.firstTouch === '09:25' && (stock.breakCount ?? 0) === 0,
   );
   const windowEvents = radarEvents.filter((event) => event.windowReady);
+  const earlyWindowEvents = radarEvents.filter(
+    (event) => event.earlyWindowReady,
+  );
   const minuteEvidenceReady =
     intradayEvidence?.status === 'READY' &&
     intradayEvidence.resolution === 'ONE_MINUTE_LAST_FULL_MARKET_SNAPSHOT' &&
@@ -602,26 +605,34 @@ export function unifiedMarketReading(
       question: '启动、扩散、兑现和二次承接是否真实？',
       conclusion: windowEvents.length
         ? `已识别${windowEvents.length}个真实短窗异动，完整传导链仍未确认`
-        : relationEvidenceReady
-          ? relationEventCount > 0
-            ? `完整1分钟路径已校验，识别${relationEventCount}个启动、扩散、分歧或修复转折`
-            : '完整1分钟路径与候选关系已校验，当日未识别到达阈值的传导事件'
-          : minuteEvidenceReady
-            ? '精确1分钟路径完整，但候选关系观察未覆盖，不判断带动与承接'
-            : '缺少连续分钟传导证据，不能判断真实承接',
+        : earlyWindowEvents.length
+          ? `约1分钟内发现${earlyWindowEvents.length}个价格与资金同向变化，等待3分钟持续性确认`
+          : relationEvidenceReady
+            ? relationEventCount > 0
+              ? `完整1分钟路径已校验，识别${relationEventCount}个启动、扩散、分歧或修复转折`
+              : '完整1分钟路径与候选关系已校验，当日未识别到达阈值的传导事件'
+            : minuteEvidenceReady
+              ? '精确1分钟路径完整，但候选关系观察未覆盖，不判断带动与承接'
+              : '缺少连续分钟传导证据，不能判断真实承接',
       state:
         windowEvents.length || relationEvidenceReady
           ? 'READY'
-          : minuteEvidenceReady
+          : earlyWindowEvents.length
             ? 'DEGRADED'
-            : 'MISSING',
+            : minuteEvidenceReady
+              ? 'DEGRADED'
+              : 'MISSING',
       judgment:
         windowEvents.length || relationEvidenceReady
           ? 'CONFIRMED'
-          : minuteEvidenceReady
+          : earlyWindowEvents.length
             ? 'OBSERVE'
-            : 'UNCONFIRMED',
-      tone: windowEvents.some((event) => event.direction === 'up')
+            : minuteEvidenceReady
+              ? 'OBSERVE'
+              : 'UNCONFIRMED',
+      tone: [...windowEvents, ...earlyWindowEvents].some(
+        (event) => event.direction === 'up',
+      )
         ? 'mixed'
         : 'neutral',
       evidence: windowEvents.length
@@ -631,17 +642,24 @@ export function unifiedMarketReading(
               (event) =>
                 `${event.name}${event.direction === 'up' ? '启动' : '下杀'}，短窗${pct(event.displayChangePct ?? event.changePct)}`,
             )
-        : relationEvidenceReady
-          ? [
-              `精确1分钟快照${intradayEvidence!.minuteSnapshots}个，分辨率${intradayEvidence!.resolution}`,
-              `动态事件${relationEventCount}个；事件是阈值转折证据，不直接等同龙头带动`,
-            ]
-          : minuteEvidenceReady
+        : earlyWindowEvents.length
+          ? earlyWindowEvents
+              .slice(0, 3)
+              .map(
+                (event) =>
+                  `${event.name}${event.direction === 'up' ? '资金加速流入' : '资金加速流出'}，约${event.windowDurationSeconds ?? 60}秒价格变化${pct(event.displayChangePct ?? event.changePct)}，净额变化${money(event.displayFlow)}`,
+              )
+          : relationEvidenceReady
             ? [
-                `精确1分钟快照${intradayEvidence!.minuteSnapshots}个，价格路径READY`,
-                `关系候选观察${intradayEvidence!.candidateWithObservations}/${intradayEvidence!.candidateRelationEligible ?? intradayEvidence!.candidateCount}；排除${intradayEvidence!.candidateExclusions?.length ?? 0}只不具备可比同行组`,
+                `精确1分钟快照${intradayEvidence!.minuteSnapshots}个，分辨率${intradayEvidence!.resolution}`,
+                `动态事件${relationEventCount}个；事件是阈值转折证据，不直接等同龙头带动`,
               ]
-            : ['当前仅有日内快照，未形成可复核的连续分钟路径'],
+            : minuteEvidenceReady
+              ? [
+                  `精确1分钟快照${intradayEvidence!.minuteSnapshots}个，价格路径READY`,
+                  `关系候选观察${intradayEvidence!.candidateWithObservations}/${intradayEvidence!.candidateRelationEligible ?? intradayEvidence!.candidateCount}；排除${intradayEvidence!.candidateExclusions?.length ?? 0}只不具备可比同行组`,
+                ]
+              : ['当前仅有日内快照，未形成可复核的连续分钟路径'],
       boundary:
         '短窗异动不等于龙头带动；没有先后顺序、助攻耗时和回踩后的再承接，就不生成盘面故事。',
       next: '如果核心先动、30分钟内助攻扩散、回踩缩量且再次承接，才确认点带面。',

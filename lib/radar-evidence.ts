@@ -26,6 +26,8 @@ export type RadarEvent = RadarBoard & {
   memberQueriesRequested: number;
   missingReasons: string[];
   windowReady?: boolean;
+  earlyWindowReady?: boolean;
+  windowDurationSeconds?: number;
   displayChangePct?: number | null;
   displayFlow?: number | null;
 };
@@ -220,6 +222,8 @@ export function radarDisplay(event: RadarEvent) {
   return {
     ...event,
     windowReady: false,
+    earlyWindowReady: false,
+    windowDurationSeconds: undefined,
     displayChangePct:
       event.selectionBasis === 'DAY_CHANGE' ? event.changePct : event.speedPct,
     displayFlow: event.mainNetInflow,
@@ -249,7 +253,15 @@ export function radarWindow(
   after: RadarEvent,
   snapshot: Pick<RadarSnapshot, 'tradeDate' | 'sourceState' | 'sessionState'>,
   now = Date.now(),
+  options: {
+    minElapsedMs?: number;
+    maxElapsedMs?: number;
+    stage?: 'EARLY' | 'CONFIRMED';
+  } = {},
 ) {
+  const minElapsedMs = options.minElapsedMs ?? 165_000;
+  const maxElapsedMs = options.maxElapsedMs ?? 210_000;
+  const stage = options.stage ?? 'CONFIRMED';
   const fallback = radarDisplay(after);
   const time = eligibleRadarTime(after, snapshot, now);
   const priorTime = Date.parse(before.quoteTime ?? '');
@@ -257,8 +269,8 @@ export function radarWindow(
     time === null ||
     radarQuoteDate(before.quoteTime) !== snapshot.tradeDate ||
     !Number.isFinite(priorTime) ||
-    time - priorTime < 165_000 ||
-    time - priorTime > 210_000 ||
+    time - priorTime < minElapsedMs ||
+    time - priorTime > maxElapsedMs ||
     before.code !== after.code
   )
     return fallback;
@@ -296,7 +308,7 @@ export function radarWindow(
       return [];
     const elapsed =
       Date.parse(member.quoteTime!) - Date.parse(prior.quoteTime!);
-    if (elapsed < 165_000 || elapsed > 210_000) return [];
+    if (elapsed < minElapsedMs || elapsed > maxElapsedMs) return [];
     const change = priceDelta(member.changePct, prior.changePct);
     if (change === null) return [];
     return [
@@ -317,6 +329,10 @@ export function radarWindow(
   );
   if (!drivers.length) return fallback;
   const boardAligns = after.direction === 'up' ? boardFlow > 0 : boardFlow < 0;
+  const hasAlignedDriver = drivers.some(
+    (row) => row.driverRole === '价格与资金同向',
+  );
+  if (stage === 'EARLY' && (!boardAligns || !hasAlignedDriver)) return fallback;
   const sourceComplete = [before, after].every(
     (event) =>
       event.driverState === 'READY' &&
@@ -327,16 +343,21 @@ export function radarWindow(
     ...after,
     drivers,
     directionalCount,
-    windowReady: true,
+    windowReady: stage === 'CONFIRMED',
+    earlyWindowReady: stage === 'EARLY',
+    windowDurationSeconds: Math.round((time - priorTime) / 1000),
     displayChangePct: boardChange,
     displayFlow: boardFlow,
-    driverState: (sourceComplete &&
+    driverState: (stage === 'CONFIRMED' &&
+    sourceComplete &&
     boardAligns &&
-    drivers.some((row) => row.driverRole === '价格与资金同向')
+    hasAlignedDriver
       ? 'READY'
       : 'DEGRADED') as RadarState,
     driverBasis:
-      '相隔约3分钟的真实报价；成分价格与资金变化仅作同步关联，不代表因果证明。资金占比仅针对同向样本。',
+      stage === 'EARLY'
+        ? '相隔约1分钟的真实报价，板块价格与资金同向，作为早期变化提示；等待约3分钟持续性确认。成分同步不代表因果证明。'
+        : '相隔约3分钟的真实报价；成分价格与资金变化仅作同步关联，不代表因果证明。资金占比仅针对同向样本。',
   };
 }
 
@@ -640,11 +661,23 @@ export function windowedRadarEvents(
     const base = [...points]
       .reverse()
       .find((point) => time - point.at >= 165_000);
+    const earlyBase = [...points]
+      .reverse()
+      .find((point) => time - point.at >= 45_000 && time - point.at <= 105_000);
     if (!points.some((point) => point.at === time))
       points.push({ at: time, event });
     history.set(key, points);
-    return base
-      ? radarWindow(base.event, event, data, now)
-      : radarDisplay(event);
+    const confirmed = base ? radarWindow(base.event, event, data, now) : null;
+    if (confirmed?.windowReady && confirmed.driverState === 'READY')
+      return confirmed;
+    const early = earlyBase
+      ? radarWindow(earlyBase.event, event, data, now, {
+          minElapsedMs: 45_000,
+          maxElapsedMs: 105_000,
+          stage: 'EARLY',
+        })
+      : null;
+    if (early?.earlyWindowReady) return early;
+    return confirmed ?? radarDisplay(event);
   });
 }

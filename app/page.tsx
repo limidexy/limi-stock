@@ -2378,7 +2378,7 @@ export default function Home() {
                         <CardDescription>
                           {radar.data?.sessionState === 'CLOSED'
                             ? `${radar.data.tradeDate}日涨跌幅 · 非当前实时，休市不计算3分钟变化`
-                            : '逐卡标注当前涨速、日涨跌幅或实测3分钟变化；报价时间不齐时不做短窗确认'}
+                            : '约1分钟先提示价格与资金同向变化，约3分钟再确认持续性；报价时间不齐时不做短窗判断'}
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="grid gap-2">
@@ -2413,7 +2413,7 @@ export default function Home() {
                                   <p
                                     className={`text-xs ${(item.displayFlow ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
                                   >
-                                    {item.windowReady
+                                    {item.windowReady || item.earlyWindowReady
                                       ? '净额变化 '
                                       : '日内净额 '}
                                     {fmtMoney(item.displayFlow)}
@@ -2424,9 +2424,11 @@ export default function Home() {
                                 <span>
                                   {item.windowReady
                                     ? '实测约3分钟价格变化'
-                                    : item.selectionBasis === 'DAY_CHANGE'
-                                      ? '日涨跌幅'
-                                      : '当前报价涨速'}
+                                    : item.earlyWindowReady
+                                      ? `早期约${item.windowDurationSeconds ?? 60}秒变化`
+                                      : item.selectionBasis === 'DAY_CHANGE'
+                                        ? '日涨跌幅'
+                                        : '当前报价涨速'}
                                 </span>
                                 <span>
                                   同向{item.directionalCount ?? '—'}只 · 样本
@@ -2471,9 +2473,11 @@ export default function Home() {
                           label={
                             selectedEvent.windowReady
                               ? '实测短窗关联'
-                              : selectedEvent.selectionBasis === 'DAY_CHANGE'
-                                ? '日内同向样本'
-                                : '当前涨速样本'
+                              : selectedEvent.earlyWindowReady
+                                ? '早期变化观察'
+                                : selectedEvent.selectionBasis === 'DAY_CHANGE'
+                                  ? '日内同向样本'
+                                  : '当前涨速样本'
                           }
                         />
                       </CardAction>
@@ -2507,16 +2511,19 @@ export default function Home() {
                                     <dt className="text-muted-foreground">
                                       {selectedEvent.windowReady
                                         ? '3分钟价格变化'
-                                        : selectedEvent.selectionBasis ===
-                                            'DAY_CHANGE'
-                                          ? '日涨跌幅'
-                                          : '当前涨速'}
+                                        : selectedEvent.earlyWindowReady
+                                          ? '约1分钟价格变化'
+                                          : selectedEvent.selectionBasis ===
+                                              'DAY_CHANGE'
+                                            ? '日涨跌幅'
+                                            : '当前涨速'}
                                     </dt>
                                     <dd
                                       className={`mt-1 text-base font-medium ${selectedEvent.direction === 'up' ? 'market-up' : 'market-down'}`}
                                     >
                                       {fmtPct(
                                         selectedEvent.windowReady ||
+                                          selectedEvent.earlyWindowReady ||
                                           selectedEvent.selectionBasis ===
                                             'DAY_CHANGE'
                                           ? driver.changePct
@@ -2526,7 +2533,8 @@ export default function Home() {
                                   </div>
                                   <div>
                                     <dt className="text-muted-foreground">
-                                      {selectedEvent.windowReady
+                                      {selectedEvent.windowReady ||
+                                      selectedEvent.earlyWindowReady
                                         ? '净额变化'
                                         : '日内主力净额'}
                                     </dt>
@@ -2564,13 +2572,16 @@ export default function Home() {
                                 <TableHead className="text-right">
                                   {selectedEvent.windowReady
                                     ? '3分钟价格变化'
-                                    : selectedEvent.selectionBasis ===
-                                        'DAY_CHANGE'
-                                      ? '日涨跌幅'
-                                      : '当前涨速'}
+                                    : selectedEvent.earlyWindowReady
+                                      ? '约1分钟价格变化'
+                                      : selectedEvent.selectionBasis ===
+                                          'DAY_CHANGE'
+                                        ? '日涨跌幅'
+                                        : '当前涨速'}
                                 </TableHead>
                                 <TableHead className="text-right">
-                                  {selectedEvent.windowReady
+                                  {selectedEvent.windowReady ||
+                                  selectedEvent.earlyWindowReady
                                     ? '净额变化'
                                     : '日内主力净额'}
                                 </TableHead>
@@ -2619,6 +2630,7 @@ export default function Home() {
                                   >
                                     {fmtPct(
                                       selectedEvent.windowReady ||
+                                        selectedEvent.earlyWindowReady ||
                                         selectedEvent.selectionBasis ===
                                           'DAY_CHANGE'
                                         ? driver.changePct
