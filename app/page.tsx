@@ -2861,7 +2861,9 @@ export default function Home() {
                                 ? '已封板'
                                 : row.state === 'FAILED'
                                   ? '炸板未封'
-                                  : '未封板'}
+                                  : row.changePct === null
+                                    ? '反馈未取得'
+                                    : '未封板'}
                             </Badge>
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">
@@ -2956,9 +2958,11 @@ export default function Home() {
                                         : 'text-muted-foreground'
                                     }
                                   >
-                                    {(row.changePct ?? 0) < 0
-                                      ? '下跌掉队'
-                                      : '未封板'}
+                                    {row.changePct === null
+                                      ? '反馈未取得'
+                                      : row.changePct < 0
+                                        ? '下跌掉队'
+                                        : '未封板'}
                                   </Badge>
                                 )}
                               </TableCell>

@@ -48,6 +48,37 @@ test('Tencent live fallback accepts only the exact requested quote date', () => 
   assert.equal(quotes.get('600000').quoteTime, '2026-09-28T02:45:16.000Z');
 });
 
+test('a refreshed timestamp with an explicit no-trade tuple cannot fill a missing closing return', () => {
+  const fields = Array(36).fill('');
+  Object.assign(fields, {
+    2: '002813',
+    3: '26.38',
+    4: '26.38',
+    5: '0',
+    6: '0',
+    30: '20260930150000',
+    32: '0',
+    33: '0',
+    34: '0',
+    35: '26.38/0/0',
+  });
+  const raw = () => `v_sz002813="${fields.join('~')}";`;
+  assert.equal(parseTencentLiveQuotes(raw(), ['002813'], '20260930').size, 0);
+  // A genuinely traded flat close is valid. Zero change alone is not suspension.
+  Object.assign(fields, {
+    5: '26.38',
+    6: '100',
+    33: '26.40',
+    34: '26.30',
+    35: '26.38/100/263800',
+  });
+  assert.equal(
+    parseTencentLiveQuotes(raw(), ['002813'], '20260930').get('002813')
+      .changePct,
+    0,
+  );
+});
+
 test('historical emotion uses complete exact-date close quotes without inventing returns', () => {
   const result = shortEmotionReading(sep4(), sep3());
   assert.equal(result.cohort.consecutive.advanced, 1);

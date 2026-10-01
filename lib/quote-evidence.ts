@@ -74,6 +74,21 @@ export function parseTencentLiveQuotes(
     const reportedPct = Number(fields[32]);
     const deal = String(fields[35] ?? '').split('/');
     const amount = Number(deal[2]);
+    // A supplier may refresh a suspended/no-trade quote's timestamp while
+    // carrying forward yesterday's price. That is not today's traded return.
+    // Do not infer suspension merely from 0%; require the explicit empty
+    // trading tuple, and leave the feedback missing until independently known.
+    const noTrades = [
+      fields[5],
+      fields[6],
+      fields[33],
+      fields[34],
+      deal[1],
+      deal[2],
+    ].every(
+      (value) => value !== undefined && value !== '' && Number(value) === 0,
+    );
+    if (noTrades) continue;
     const changePct = Number.isFinite(reportedPct)
       ? reportedPct
       : Number.isFinite(current) &&
