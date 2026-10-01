@@ -36,6 +36,7 @@ export type TapeStock = {
   limitState: 'LIMIT_UP' | 'LIMIT_DOWN' | 'NORMAL' | 'UNKNOWN';
   firstLimitTime: string | null;
   openedAt: string | null;
+  openingGap?: boolean;
   resealedAt: string | null;
   stableSince: string | null;
   support:
@@ -216,11 +217,19 @@ export function buildTapeObservation(args: {
     let firstLimitTime: string | null = null,
       openedAt: string | null = null,
       resealedAt: string | null = null;
+    let openingGap = false;
     for (let i = 0; i < states.length; i++) {
       if (states[i] === 'LIMIT_UP') firstLimitTime ??= points[i].time;
-      if (oneMinute && i && contiguous(points.slice(i - 1, i + 1))) {
-        if (states[i - 1] === 'LIMIT_UP' && states[i] !== 'LIMIT_UP')
+      if (oneMinute && i && states[i] !== 'LIMIT_UP') {
+        // Observed loss invalidates the old repair even if its boundary
+        // minute is missing; openedAt then bounds, not locates, the loss.
+        resealedAt = null;
+        if (states[i - 1] === 'LIMIT_UP' && states[i] !== 'LIMIT_UP') {
           openedAt = points[i].time;
+          openingGap = !contiguous(points.slice(i - 1, i + 1));
+        }
+      }
+      if (oneMinute && i && contiguous(points.slice(i - 1, i + 1))) {
         if (
           openedAt &&
           states[i - 1] !== 'LIMIT_UP' &&
@@ -264,13 +273,15 @@ export function buildTapeObservation(args: {
       support === 'STABLE_SEAL'
         ? `${firstLimitTime}起在可见分钟内持续封住`
         : support === 'RESEALED'
-          ? `${openedAt}打开后，${resealedAt}回到涨停价`
+          ? `${openedAt}${openingGap ? '采样已离开涨停价（打开时点缺失）' : '打开后'}，${resealedAt}回到涨停价`
           : support === 'OPENED'
-            ? `${openedAt}打开后回落，${cutoff}为${pct(last!.changePct)}`
+            ? `${openedAt}${openingGap ? '采样已离开涨停价（打开时点缺失）' : '打开后回落'}，${cutoff}为${pct(last!.changePct)}`
             : support === 'WEAKENING'
               ? `本窗口下行，${cutoff}为${pct(last!.changePct)}`
               : support === 'NO_SEAL_SIGNAL'
-                ? `${cutoff}为${pct(last!.changePct)}，本可见段未出现回封信号`
+                ? limitState === 'LIMIT_UP' && openedAt
+                  ? `${cutoff}处于涨停价；${openedAt}${openingGap ? '已离开涨停价' : '打开'}后的回封时点未确认，过程存在缺口`
+                  : `${cutoff}为${pct(last!.changePct)}，本可见段未出现回封信号`
                 : '当前分钟价格或适用涨跌停边界不足';
     return {
       code,
@@ -290,6 +301,7 @@ export function buildTapeObservation(args: {
       limitState,
       firstLimitTime,
       openedAt,
+      openingGap,
       resealedAt,
       stableSince,
       support,
@@ -456,7 +468,10 @@ export function buildTapeObservation(args: {
         (peer.support === 'OPENED' ||
           peer.support === 'WEAKENING' ||
           peer.support === 'RESEALED' ||
-          peer.changePct !== null && row.changePct !== null && peer.changePct < row.changePct && peer.limitState !== 'LIMIT_UP')
+          (peer.changePct !== null &&
+            row.changePct !== null &&
+            peer.changePct < row.changePct &&
+            peer.limitState !== 'LIMIT_UP'))
       )
         row.peerRelations.push({
           code: peer.code,
@@ -476,7 +491,11 @@ export function buildTapeObservation(args: {
           fact: `${row.name}${row.resealedAt}回到涨停价；${peer.name}${cutoff}为${pct(peer.changePct!)}`,
         });
       if (
-        (row.support === 'OPENED' || row.changePct !== null && peer.changePct !== null && row.changePct < peer.changePct && row.limitState !== 'LIMIT_UP') &&
+        (row.support === 'OPENED' ||
+          (row.changePct !== null &&
+            peer.changePct !== null &&
+            row.changePct < peer.changePct &&
+            row.limitState !== 'LIMIT_UP')) &&
         (peer.support === 'STABLE_SEAL' || peer.support === 'RESEALED')
       )
         row.peerRelations.push({

@@ -10,6 +10,7 @@ import type {
   EvidenceState,
   ReadingCompetitor,
 } from './market-reading';
+import { buildCoreComparativeReading } from './core-comparative-reading.ts';
 
 // Point-in-time, rule-based evidence. No scalar score assigns core identity.
 const finite = (x: unknown): x is number =>
@@ -133,6 +134,17 @@ export function readEmotionCores(
     const n = stamp(date, time);
     return n !== null && dateAt(n) === date && n <= target;
   };
+  // An end-of-day archive is a replay of events through 15:00, not a claim
+  // that its receipt was observable earlier. Apply one receipt contract to
+  // envelope, tracking and tape; intraday fixed decisions get no exception.
+  const receiptAllowed = (n: number | null) =>
+    n !== null &&
+    dateAt(n) === date &&
+    (n <= target ||
+      (facts.cutoff === '15:00' &&
+        target === cutoffStamp &&
+        evidence?.sourceState === 'ARCHIVED' &&
+        n <= (stamp(date, '16:00') ?? 0)));
   const envelopeDate = day(evidence?.date ?? evidence?.tracking?.date);
   const envelopeCutoff = stamp(
     date,
@@ -151,11 +163,7 @@ export function readEmotionCores(
     envelopeDate === date &&
     envelopeCutoff !== null &&
     envelopeCutoff <= target &&
-    envelopeAvailable !== null &&
-    (envelopeAvailable <= target ||
-      (facts.cutoff === '15:00' &&
-        evidence?.sourceState === 'ARCHIVED' &&
-        envelopeAvailable <= (stamp(date, '16:00') ?? 0)));
+    receiptAllowed(envelopeAvailable);
   // One late module must not discard an independent earlier module. The
   // tracking receipt and its own event cutoff are checked separately below.
   const tracking = envelopeDate === date ? evidence?.tracking : undefined;
@@ -174,11 +182,7 @@ export function readEmotionCores(
     trackingDateOK &&
     trackingStamp !== null &&
     trackingStamp <= target &&
-    trackingAvailable !== null &&
-    (trackingAvailable <= target ||
-      (facts.cutoff === '15:00' &&
-        evidence?.sourceState === 'ARCHIVED' &&
-        trackingAvailable <= (stamp(date, '16:00') ?? 0)))
+    receiptAllowed(trackingAvailable)
       ? tracking
       : undefined;
   const minuteObservedAt =
@@ -196,7 +200,8 @@ export function readEmotionCores(
     day(rawTape.date) === date &&
     atOrBefore(rawTape.observedAt) &&
     sameDayBefore(rawTape.cutoff) &&
-    (!rawTape.sourceAvailableAt || atOrBefore(rawTape.sourceAvailableAt))
+    (!rawTape.sourceAvailableAt ||
+      receiptAllowed(stamp(date, rawTape.sourceAvailableAt)))
       ? {
           ...rawTape,
           rows: rawTape.rows.filter((row) => {
@@ -1199,8 +1204,14 @@ export function readEmotionCores(
           targetTime,
           '历史题材响应观察保留；当日响应缺失不等于影响衰减，也不认证连续因果带动',
         );
+      const weakerThanStrongPeer =
+        minuteCurrent &&
+        pricePath?.peerRelations.some(
+          (peer) => peer.relation === 'WEAKER_SUPPORT',
+        );
       const peerLeading =
         minuteCurrent &&
+        !weakerThanStrongPeer &&
         peerPairs.some((p) => {
           const pq = quoteFor(p.member);
           return (
@@ -1319,19 +1330,21 @@ export function readEmotionCores(
                   ? '局部主动/响应/承接共现 · 核心候选'
                   : following.length && !own.length
                     ? '同身位被动跟随观察'
-                    : peerLeading
-                      ? '主动分离候选'
-                      : r.roles.has('趋势容量核心候选')
-                        ? `${boardFamily(c)}趋势容量候选`
-                        : related.length
-                          ? minuteCurrent
-                            ? '板块先动候选'
-                            : '曾先动候选（旧分钟观察）'
-                          : historicalIdentity.length && !s
-                            ? '历史题材响应角色跟踪'
-                            : broken
-                              ? '断板空间股/老高标跟踪'
-                              : '空间竞争观察（未认证龙头）';
+                    : weakerThanStrongPeer
+                      ? '同身位承接偏弱 · 保留原有地位'
+                      : peerLeading
+                        ? '主动分离候选'
+                        : r.roles.has('趋势容量核心候选')
+                          ? `${boardFamily(c)}趋势容量候选`
+                          : related.length
+                            ? minuteCurrent
+                              ? '板块先动候选'
+                              : '曾先动候选（旧分钟观察）'
+                            : historicalIdentity.length && !s
+                              ? '历史题材响应角色跟踪'
+                              : broken
+                                ? '断板空间股/老高标跟踪'
+                                : '空间竞争观察（未认证龙头）';
       info.set(c, {
         sealed: seenSealed,
         broken,
@@ -1906,7 +1919,13 @@ export function readEmotionCores(
         ? '个别高位存活也不能判生态健康；负反馈先后扩散需看独立分钟证据。'
         : '缺失价格、概念或分钟证据不计作无风险；候选不等于已确认龙头。');
   return {
-    version: 'emotion-core-v5',
+    version: 'emotion-core-v6',
+    comparativeReading: buildCoreComparativeReading({
+      candidates,
+      tape: minuteCurrent ? tape : null,
+      observedAt: targetTime,
+      previousDate: previousExact && adjacent ? adjacent.date : null,
+    }),
     observationMode: lastKnown
       ? ('LAST_KNOWN' as const)
       : facts.cutoff === '15:00'

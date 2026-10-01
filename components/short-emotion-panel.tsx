@@ -19,6 +19,10 @@ import {
   type ReadingLadder,
 } from '@/lib/market-reading';
 import type { TapeStock } from '@/lib/tape-observation';
+import type {
+  CoreComparativeReading,
+  CoreStockReading,
+} from '@/lib/core-comparative-reading';
 
 export const emotionToneClass = (tone: EmotionTone) =>
   ({
@@ -269,9 +273,11 @@ function PricePathFacts({ path }: { path: TapeStock | undefined }) {
 function CoreCandidateCard({
   candidate,
   pricePath,
+  analysis,
 }: {
   candidate: CoreCandidate;
   pricePath?: TapeStock;
+  analysis?: CoreStockReading;
 }) {
   const extended = candidate as CoreCandidate & {
     peakHeight?: number | null;
@@ -304,120 +310,194 @@ function CoreCandidateCard({
           {' · 不等于市场核心认证'}
         </Badge>
       </div>
-      {candidate.interpretation ? (
-        <div className="mt-3 grid gap-3 rounded-lg border bg-background/70 p-3 text-sm leading-6 sm:grid-cols-2">
-          <div>
-            <p className="font-semibold">
-              身份依据 · {candidate.interpretation.identity.label}
-            </p>
-            <p className="text-muted-foreground">
-              {candidate.interpretation.identity.basis}
-            </p>
-          </div>
-          <div>
-            <p className="font-semibold">
-              当下反馈 · {candidate.interpretation.feedback.label}
-            </p>
-            <p className="text-muted-foreground">
-              {candidate.interpretation.feedback.basis}
-            </p>
-          </div>
-          <div className="sm:col-span-2">
-            <p className="font-semibold">
-              影响范围 · {candidate.interpretation.influence.label}
-            </p>
-            {candidate.interpretation.influence.groups.map((group) => (
-              <p
-                key={`${group.concept}-${group.direction}`}
-                className={
-                  group.direction === 'down' ? 'market-down' : 'market-up'
-                }
-              >
-                {group.concept} · {group.direction === 'down' ? '负向' : '正向'}
-                ：
-                {group.members
-                  .map((m) => `${m.name} ${m.time}（滞后${m.lag}分钟）`)
-                  .join('、')}
-                {group.historyDays.length
-                  ? `；另有${group.historyDays.length}个同题材同方向历史观察日（非连续性认证）`
-                  : '；尚无同题材同方向跨日记录'}
-              </p>
-            ))}
-            <p className="text-muted-foreground">
-              {candidate.interpretation.influence.basis}
-            </p>
-          </div>
-          <div className="sm:col-span-2 border-t pt-2">
-            <p>
-              <span className="font-semibold">反证与限制：</span>
-              {candidate.interpretation.counterEvidence.join('；')}
-            </p>
-            <p className="mt-1">
-              <span className="font-semibold">后续怎么判断：</span>
-              {candidate.interpretation.nextCheck}
-            </p>
-          </div>
-        </div>
-      ) : null}
-      <PricePathFacts path={path} />
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-        <span
-          className={
-            candidate.changePct !== null && candidate.changePct >= 0
-              ? 'market-up'
-              : 'market-down'
-          }
-        >
-          涨幅 {pct(candidate.changePct)}
-        </span>
-        <span>
-          报价 {candidate.quoteTime ?? '—'} · {candidate.quoteState}
-        </span>
-        <span>
-          涨速 {pct(candidate.speedPct)}
-          {candidate.amount !== null ? ` · 额${candidate.amount}` : ''}
-        </span>
-      </div>
-      <p className="mt-2 text-xs leading-5">
-        入池：{candidate.reasons.join('；') || '暂无可解释召回依据'}
-      </p>
-      {candidate.scopeReason ? (
-        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-          当前范围：{candidate.scope ?? '未标注'} · {candidate.scopeReason}
-        </p>
-      ) : null}
-      <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-        状态依据：{candidate.statusBasis}
-        {candidate.transitionTrace.length
-          ? ` · ${candidate.transitionTrace.at(-1)!.from ?? '无前态'}→${candidate.transitionTrace.at(-1)!.to}（${candidate.transitionTrace.at(-1)!.observedAt}）`
-          : ''}
-      </p>
-      <details className="mt-2 text-xs">
-        <summary className="cursor-pointer font-medium">
-          展开九维原始事实矩阵
-        </summary>
-        <div className="mt-2">
-          <p className="mb-2 leading-5 text-muted-foreground">
-            可核验事实：{candidate.confirmedEvidence.join('；') || '暂无'}
-            <br />
-            缺口：{candidate.missingEvidence.join('；') || '暂无'}
+      {analysis ? (
+        <div className="mt-3 space-y-2 text-sm leading-6">
+          <p className="text-muted-foreground">{analysis.premise}</p>
+          <p>{analysis.reading}</p>
+          <p className="rounded-md bg-muted/45 p-2">
+            <span className="font-semibold">接下来盯谁：</span>
+            {analysis.nextCheck}
           </p>
-          <DimensionGrid dimensions={candidate.dimensions} />
-          <div className="mt-3 space-y-1 rounded-md border p-2">
-            <p className="font-medium">可见证据驱动的状态迁移</p>
-            {candidate.transitionTrace.map((step, index) => (
-              <p
-                key={`${step.observedAt}-${index}`}
-                className="text-[11px] leading-5 text-muted-foreground"
-              >
-                {step.observedAt} · {step.from ?? '首次召回'} → {step.to}：
-                {step.evidence}（{step.source}）
-              </p>
-            ))}
-          </div>
+          <p className="text-muted-foreground">{analysis.boundary}</p>
         </div>
+      ) : null}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-sm font-medium">
+          展开身份、分钟路径与原始依据
+        </summary>
+        {candidate.interpretation ? (
+          <div className="mt-3 grid gap-3 rounded-lg border bg-background/70 p-3 text-sm leading-6 sm:grid-cols-2">
+            <div>
+              <p className="font-semibold">
+                身份依据 · {candidate.interpretation.identity.label}
+              </p>
+              <p className="text-muted-foreground">
+                {candidate.interpretation.identity.basis}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold">
+                当下反馈 · {candidate.interpretation.feedback.label}
+              </p>
+              <p className="text-muted-foreground">
+                {candidate.interpretation.feedback.basis}
+              </p>
+            </div>
+            <div className="sm:col-span-2">
+              <p className="font-semibold">
+                影响范围 · {candidate.interpretation.influence.label}
+              </p>
+              {candidate.interpretation.influence.groups.map((group) => (
+                <p
+                  key={`${group.concept}-${group.direction}`}
+                  className={
+                    group.direction === 'down' ? 'market-down' : 'market-up'
+                  }
+                >
+                  {group.concept} ·{' '}
+                  {group.direction === 'down' ? '负向' : '正向'}：
+                  {group.members
+                    .map((m) => `${m.name} ${m.time}（滞后${m.lag}分钟）`)
+                    .join('、')}
+                  {group.historyDays.length
+                    ? `；另有${group.historyDays.length}个同题材同方向历史观察日（非连续性认证）`
+                    : '；尚无同题材同方向跨日记录'}
+                </p>
+              ))}
+              <p className="text-muted-foreground">
+                {candidate.interpretation.influence.basis}
+              </p>
+            </div>
+            <div className="sm:col-span-2 border-t pt-2">
+              <p>
+                <span className="font-semibold">反证与限制：</span>
+                {candidate.interpretation.counterEvidence.join('；')}
+              </p>
+              <p className="mt-1">
+                <span className="font-semibold">后续怎么判断：</span>
+                {candidate.interpretation.nextCheck}
+              </p>
+            </div>
+          </div>
+        ) : null}
+        <PricePathFacts path={path} />
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          <span
+            className={
+              candidate.changePct !== null && candidate.changePct >= 0
+                ? 'market-up'
+                : 'market-down'
+            }
+          >
+            涨幅 {pct(candidate.changePct)}
+          </span>
+          <span>
+            报价 {candidate.quoteTime ?? '—'} · {candidate.quoteState}
+          </span>
+          <span>
+            涨速 {pct(candidate.speedPct)}
+            {candidate.amount !== null ? ` · 额${candidate.amount}` : ''}
+          </span>
+        </div>
+        <p className="mt-2 text-xs leading-5">
+          入池：{candidate.reasons.join('；') || '暂无可解释召回依据'}
+        </p>
+        {candidate.scopeReason ? (
+          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+            当前范围：{candidate.scope ?? '未标注'} · {candidate.scopeReason}
+          </p>
+        ) : null}
+        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+          状态依据：{candidate.statusBasis}
+          {candidate.transitionTrace.length
+            ? ` · ${candidate.transitionTrace.at(-1)!.from ?? '无前态'}→${candidate.transitionTrace.at(-1)!.to}（${candidate.transitionTrace.at(-1)!.observedAt}）`
+            : ''}
+        </p>
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer font-medium">
+            展开九维原始事实矩阵
+          </summary>
+          <div className="mt-2">
+            <p className="mb-2 leading-5 text-muted-foreground">
+              可核验事实：{candidate.confirmedEvidence.join('；') || '暂无'}
+              <br />
+              缺口：{candidate.missingEvidence.join('；') || '暂无'}
+            </p>
+            <DimensionGrid dimensions={candidate.dimensions} />
+            <div className="mt-3 space-y-1 rounded-md border p-2">
+              <p className="font-medium">可见证据驱动的状态迁移</p>
+              {candidate.transitionTrace.map((step, index) => (
+                <p
+                  key={`${step.observedAt}-${index}`}
+                  className="text-[11px] leading-5 text-muted-foreground"
+                >
+                  {step.observedAt} · {step.from ?? '首次召回'} → {step.to}：
+                  {step.evidence}（{step.source}）
+                </p>
+              ))}
+            </div>
+          </div>
+        </details>
       </details>
     </article>
+  );
+}
+
+function ComparativeReading({ reading }: { reading: CoreComparativeReading }) {
+  return (
+    <section
+      aria-label="核心竞争与分歧分析"
+      className="space-y-3 rounded-lg border border-sky-500/30 bg-sky-500/[0.035] p-3"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="font-semibold">核心竞争与分歧 · 放在一起判断</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{reading.scope}</p>
+        </div>
+        <Badge variant="outline">{reading.state}</Badge>
+      </div>
+      {reading.cases.length ? (
+        reading.cases.map((item) => (
+          <article
+            key={item.id}
+            className="rounded-lg border bg-background/80 p-3 text-sm leading-6"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <h4
+                className={cn(
+                  'font-semibold',
+                  item.verdict === 'PRESSURE_REMAINS'
+                    ? 'market-down'
+                    : item.verdict === 'SPLIT'
+                      ? 'text-amber-700 dark:text-amber-400'
+                      : '',
+                )}
+              >
+                {item.question}
+              </h4>
+              {item.state !== 'READY' ? (
+                <Badge variant="outline">{item.state}</Badge>
+              ) : null}
+            </div>
+            <p className="mt-2">{item.reading}</p>
+            <p className="mt-2 border-l-2 border-sky-500/40 pl-3">
+              {item.nextCheck}
+            </p>
+            <details className="mt-2 text-muted-foreground">
+              <summary className="cursor-pointer">
+                为什么这样比较 · 依据与边界
+              </summary>
+              <p className="mt-1">{item.premise}</p>
+              <p>{item.boundary}</p>
+            </details>
+          </article>
+        ))
+      ) : (
+        <p className="text-sm leading-6">
+          当前证据不足以把同身位、方向响应与失败侧放在同一窗口比较。下方保留已知个股事实，不以空样本判断整体修复或退潮。
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -651,7 +731,7 @@ export function ShortEmotionPanel({
         <div className="min-w-0">
           <p className="flex items-center gap-2 text-sm font-semibold">
             <ThermometerSun className="size-4 text-amber-500" />
-            高标与情绪角色 · 身份、强弱、影响分开看
+            高标与接力 · 看竞争、分歧与修复
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             情绪池：{date(facts.date)} {facts.cutoff}
@@ -667,13 +747,19 @@ export function ShortEmotionPanel({
       </div>
 
       {core ? (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.045] p-3">
-          <h3 className="text-sm font-semibold">主要判断</h3>
+        <details className="rounded-lg border border-amber-500/30 bg-amber-500/[0.045] p-3">
+          <summary className="cursor-pointer text-sm font-semibold">
+            观察范围与已知强弱 · 展开统计
+          </summary>
           <p className="mt-1 text-sm leading-6">{core.summary}</p>
           <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
             高标反馈按当前活跃与竞争观察计数；历史身份保留在单独展开区，不混当前分母，也不能据此当作已退出。
           </p>
-        </div>
+        </details>
+      ) : null}
+
+      {core?.comparativeReading ? (
+        <ComparativeReading reading={core.comparativeReading} />
       ) : null}
 
       <CoreFeedback reading={reading} />
@@ -699,7 +785,9 @@ export function ShortEmotionPanel({
 
       <section className="space-y-3 rounded-lg border border-sky-500/25 bg-sky-500/[0.035] p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold">当前角色 · 逐股依据与反证</h3>
+          <h3 className="text-sm font-semibold">
+            回到个股 · 它在这场竞争里说明什么
+          </h3>
           <span className="text-xs text-muted-foreground">
             {activeCandidates.length
               ? `${activeCandidates.length}只活跃／竞争观察；普通首板、孤立高板不自动确认`
@@ -713,6 +801,7 @@ export function ShortEmotionPanel({
                 key={candidate.code}
                 candidate={candidate}
                 pricePath={tapeByCode.get(candidate.code)}
+                analysis={core?.comparativeReading.stocks[candidate.code]}
               />
             ))}
           </div>
@@ -739,6 +828,7 @@ export function ShortEmotionPanel({
                 key={candidate.code}
                 candidate={candidate}
                 pricePath={tapeByCode.get(candidate.code)}
+                analysis={core?.comparativeReading.stocks[candidate.code]}
               />
             ))}
           </div>
