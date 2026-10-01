@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { timelineHeadline } from '@/lib/timeline-evidence';
 import {
+  alignedSnapshot,
+  overviewSessionLabel,
+} from '@/lib/snapshot-alignment';
+import {
   LadderOverview,
   toEmotionFacts,
 } from '@/components/market-reading-board';
@@ -486,21 +490,36 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 
 function MarketCommandCenter({
   radarEvents,
-  flow,
-  emotion,
-  ladder,
+  radarDate,
+  flow: rawFlow,
+  emotion: rawEmotion,
+  ladder: rawLadder,
+  referenceDate,
+  sessionState,
   marketNotice,
   onNavigate,
 }: {
   radarEvents: RadarEvent[];
+  radarDate?: string;
   flow: FlowData | null;
   emotion: IntradayEmotionSnapshot | null;
   ladder: LadderData | null;
+  referenceDate?: string;
+  sessionState?: string;
   marketNotice: string | null;
   onNavigate: (tab: string) => void;
 }) {
-  const rising = radarEvents.find((event) => event.direction === 'up');
-  const falling = radarEvents.find((event) => event.direction === 'down');
+  const flow = alignedSnapshot(rawFlow, referenceDate);
+  const emotion = alignedSnapshot(rawEmotion, referenceDate);
+  const ladder = alignedSnapshot(rawLadder, referenceDate);
+  const radarAligned = alignedSnapshot({ tradeDate: radarDate }, referenceDate);
+  const currentEvents = radarAligned ? radarEvents : [];
+  const rising = currentEvents.find((event) => event.direction === 'up');
+  const falling = currentEvents.find((event) => event.direction === 'down');
+  const flowNotice =
+    !flow && rawFlow
+      ? `资金快照 ${fmtTradeDate(rawFlow.tradeDate)} 未对齐或已过期，未纳入本日判断`
+      : '等待价格与资金同向确认';
   const inflow = flow?.split.cumulativeInflow[0] ?? flow?.split.inflow[0];
   const outflow = flow?.split.cumulativeOutflow[0] ?? flow?.split.outflow[0];
   const leaderNames = emotion?.leaders?.length
@@ -524,7 +543,9 @@ function MarketCommandCenter({
           .map((stock) => stock.name)
           .join('、') || '驱动股暂不可用'
       }`
-    : '当前未检测到达到阈值的板块拉升';
+    : radarAligned
+      ? '当前未检测到达到阈值的板块拉升'
+      : '本日板块拉升数据待补';
   const weakest = falling
     ? `${falling.name}明显下跌，${
         falling.drivers
@@ -532,7 +553,9 @@ function MarketCommandCenter({
           .map((stock) => stock.name)
           .join('、') || '领跌股暂不可用'
       }`
-    : '当前未检测到达到阈值的集中走弱';
+    : radarAligned
+      ? '当前未检测到达到阈值的集中走弱'
+      : '本日板块走弱数据待补';
 
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-950 to-slate-900 text-slate-100 shadow-sm dark:border-slate-800">
@@ -545,12 +568,11 @@ function MarketCommandCenter({
               className="border-slate-700 bg-slate-900 text-slate-300"
               variant="outline"
             >
-              {flow?.sessionState === 'LIVE' ? '盘中' : '最近定格'}
+              {overviewSessionLabel(sessionState)}
             </Badge>
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            {marketNotice ??
-              `行情日期 ${fmtTradeDate(flow?.tradeDate ?? emotion?.tradeDate)}`}
+            {marketNotice ?? `行情日期 ${fmtTradeDate(referenceDate)}`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -620,7 +642,7 @@ function MarketCommandCenter({
           <span className="mt-2 block text-xs text-slate-400">
             {inflow
               ? `${inflow.name} ${fmtFlowDirection(inflow.latestMainNetInflow)}`
-              : '等待价格与资金同向确认'}
+              : flowNotice}
           </span>
         </button>
 
@@ -635,7 +657,7 @@ function MarketCommandCenter({
           <span className="mt-2 block text-xs text-slate-400">
             {outflow
               ? `${outflow.name} ${fmtFlowDirection(outflow.latestMainNetInflow)}`
-              : '等待价格与资金同向确认'}
+              : flowNotice}
           </span>
         </button>
 
@@ -2189,9 +2211,14 @@ export default function Home() {
       <div className="mx-auto max-w-[1500px] space-y-4 px-4 py-4 sm:px-6 sm:py-6">
         <MarketCommandCenter
           radarEvents={radarEvents}
+          radarDate={radar.data?.tradeDate}
           flow={flow.data}
           emotion={intradayEmotion.data}
           ladder={ladder.data}
+          referenceDate={alignedDate}
+          sessionState={
+            closedSnapshot?.sessionState ?? intradayEmotion.data?.sessionState
+          }
           marketNotice={marketNotice}
           onNavigate={setActiveTab}
         />
