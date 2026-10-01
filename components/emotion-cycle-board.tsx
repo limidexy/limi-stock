@@ -443,7 +443,7 @@ export function IntradayEmotionBoard({
             </p>
           </div>
           <div className="rounded-lg border bg-background/70 p-3">
-            <p className="text-xs text-muted-foreground">全A中位数</p>
+            <p className="text-xs text-muted-foreground">有效报价中位数</p>
             <p
               className={cn(
                 'mt-1 text-lg font-semibold',
@@ -632,6 +632,31 @@ export function EmotionCycleBoard({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {selected.modules ? (
+            <div className="rounded-lg border border-amber-300/50 bg-amber-50/40 p-3 text-sm leading-6 dark:bg-amber-950/10">
+              <p>
+                基础收盘行情已核验 · {selected.date} 15:00。
+                {selected.breadth.scope}
+              </p>
+              <p className="text-muted-foreground">
+                独立证据缺口：
+                {Object.entries(selected.modules)
+                  .filter(([, value]) => value.status !== 'READY')
+                  .map(
+                    ([key]) =>
+                      ({
+                        industryMembership: '行业归属',
+                        boardDailyFlow: '板块收盘资金',
+                        minutePaths: '全市场完整分钟路径',
+                        boardMinuteFlow: '板块分钟资金曲线',
+                        auctionOrderbook: '竞价订单压力',
+                      })[key] ?? key,
+                  )
+                  .join('、')}
+                。不将基础行情齐备标成整包完整。
+              </p>
+            </div>
+          ) : null}
           <EmotionEvidencePanel
             snapshot={selected}
             previous={previous}
@@ -677,7 +702,7 @@ export function EmotionCycleBoard({
               </p>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">全A中位数</p>
+              <p className="text-xs text-muted-foreground">有效报价中位数</p>
               <p
                 className={cn(
                   'mt-1 font-semibold',

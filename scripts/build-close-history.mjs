@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { closeDirectory, closeDates } from './close-package.mjs';
 
 const projectRoot = process.cwd();
 const workspaceRoot = path.resolve(projectRoot, '..');
@@ -102,7 +103,8 @@ function cycleNode({
 }
 
 function marketPackagePath(date, file) {
-  const closePath = path.join(marketRoot, date, 'CLOSE', file);
+  const directory = closeDirectory(workspaceRoot, date);
+  const closePath = directory ? path.join(directory, file) : '';
   if (fs.existsSync(closePath)) return closePath;
   const legacyPath = path.join(marketRoot, date, file);
   return fs.existsSync(legacyPath) ? legacyPath : null;
@@ -205,7 +207,7 @@ function readClosePackageQuotes(structure, date, wantedCodes) {
     quotes[code] = {
       changePct,
       quoteTime: `${formatDate(date)}T15:00:00+08:00`,
-      source: '精确交易日READY CLOSE全市场15:00收盘包',
+      source: `精确交易日基础收盘报价 · ${structure?.breadth?.summary?.scope ?? '全A有效报价'} · 15:00`,
     };
   }
   return quotes;
@@ -233,6 +235,7 @@ if (fs.existsSync(marketRoot)) {
   }
 }
 
+for (const date of closeDates(workspaceRoot)) dates.add(date);
 const sortedDates = [...dates].sort((a, b) => a.localeCompare(b));
 const indexCloseByDate = new Map(
   sortedDates.map((date) => [date, readIndexCloses(date)]),
@@ -253,7 +256,7 @@ for (const date of sortedDates) {
   const manifest = manifestPath ? readJson(manifestPath) : null;
   if (
     manifest &&
-    (manifest.status !== 'READY' ||
+    ((manifest.status !== 'READY' && !manifest.baseReady) ||
       manifest.tradeDate !== date ||
       manifest.sessionKind !== 'CLOSE' ||
       manifest.marketDataCutoff !== '15:00')
@@ -282,6 +285,7 @@ for (const date of sortedDates) {
   ).map(normalizeStock);
   const breadthSource = summary?.breadth ?? structure?.breadth?.summary ?? {};
   const breadth = {
+    scope: breadthSource.scope ?? '全A有效报价',
     requested: Number(
       breadthSource.universe_requested ?? breadthSource.universeReported ?? 0,
     ),
@@ -361,7 +365,10 @@ for (const date of sortedDates) {
     ['sz399006', '创业板'],
   ].map(([code, name]) => {
     const close = currentCloses[code];
-    const previousClose = previousCloses[code];
+    const exactIndex = structure?.historicalDailyIndices?.find(
+      (row) => row.symbol === code,
+    );
+    const previousClose = exactIndex?.preclose ?? previousCloses[code];
     return {
       code,
       name,
@@ -380,6 +387,8 @@ for (const date of sortedDates) {
     previousDate: previousDate ? formatDate(previousDate) : undefined,
     cutoff: '15:00',
     status: 'READY',
+    evidenceStatus: manifest?.baseReady ? manifest.status : 'READY',
+    modules: manifest?.modules,
     source: structure
       ? `CLOSE收盘包 ${structure.version ?? manifest?.version ?? ''}`.trim()
       : '收盘结构摘要',
@@ -451,7 +460,8 @@ const knownMissingDates = [
 ]
   .filter(
     (date) =>
-      (!firstDate || date >= firstDate) && (!lastDate || date <= lastDate),
+      (!firstDate || date >= firstDate) &&
+      date <= new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10),
   )
   .filter((date) => !archivedDates.has(date))
   .sort();

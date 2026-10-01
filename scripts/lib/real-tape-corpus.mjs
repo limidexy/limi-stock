@@ -2,6 +2,7 @@
 // the immutable raw-minute archive BEFORE any system interpretation is applied.
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
+import zlib from 'node:zlib';
 import { priceLimitState } from '../../lib/timeline-evidence.ts';
 
 export const REAL_SCENARIOS = [
@@ -58,11 +59,17 @@ export const REAL_SCENARIOS = [
 
 export function loadRealScenario(scenario) {
   const file = new URL(
-    '../../lib/emotion-tracking.generated.json',
+    '../fixtures/real-tape-source-v1.json.gz',
     import.meta.url,
   );
-  const bytes = fs.readFileSync(file),
-    raw = JSON.parse(bytes).dates[scenario.date];
+  const bytes = fs.readFileSync(file);
+  if (
+    createHash('sha256').update(bytes).digest('hex') !==
+    '212e5696ce18e871c70fed8cc8e7bd8006ffe5e0354e49b315b6b77cecb4511b'
+  )
+    throw new Error('Frozen real-price fixture integrity failed');
+  const frozen = JSON.parse(zlib.gunzipSync(bytes));
+  const raw = frozen.dates[scenario.date];
   if (!raw) throw new Error(`Missing actual source date ${scenario.date}`);
   const closes = JSON.parse(
     fs.readFileSync(
@@ -209,7 +216,7 @@ export function loadRealScenario(scenario) {
   };
   return {
     scenario,
-    sourceHash: createHash('sha256').update(bytes).digest('hex'),
+    sourceHash: frozen.sourceHash,
     sourceDay,
     history,
     previous,

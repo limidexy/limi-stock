@@ -29,7 +29,8 @@ import {
 
 const PUBLIC_CLIENT_TOKEN = '7eea3edcaed734bea9cbfc24409ed989';
 const MARKET_FILTER = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048';
-const QUOTE_FIELDS = 'f12,f14,f2,f3,f5,f6,f8,f15,f18,f20,f21,f22,f62,f100,f124,f184';
+const QUOTE_FIELDS =
+  'f12,f14,f2,f3,f5,f6,f8,f15,f18,f20,f21,f22,f62,f100,f124,f184';
 
 export type DataState = 'READY' | 'DEGRADED' | 'MISSING';
 
@@ -1907,8 +1908,7 @@ async function previousTradingPool(tradeDate: string) {
   );
   const sessions = await verifiedTradingSessions();
   const candidate = sessions.filter((date) => date < tradeDate).at(-1);
-  if (!candidate)
-    throw new Error(`未找到${tradeDate}之前的已验证交易日`);
+  if (!candidate) throw new Error(`未找到${tradeDate}之前的已验证交易日`);
   const archived = closeHistory.find(
     (snapshot) =>
       snapshot.date.replaceAll('-', '') === candidate &&
@@ -1961,7 +1961,8 @@ async function verifiedTradingSessions(): Promise<string[]> {
         const security = ((payload.data ?? {}) as Record<string, unknown>)[
           symbol
         ] as Record<string, unknown> | undefined;
-        const rows = security &&
+        const rows =
+          security &&
           (Array.isArray(security.qfqday)
             ? security.qfqday
             : Array.isArray(security.day)
@@ -2133,7 +2134,8 @@ async function previousLimitBoardFromCurrentSession(current: CloseSnapshot) {
 export async function getLadderSnapshot() {
   // After the close, prefer the immutable daily archive over the more volatile
   // topic-pool endpoint. Live sessions continue to use the live pools below.
-  if (shanghaiClock() >= '15:05') {
+  const session = await getMarketDateContext().catch(() => null);
+  if (shanghaiClock() >= '15:05' || session?.sessionState === 'CLOSED') {
     const requestedDate = shanghaiDate();
     const closeHistory = await loadCloseHistory().catch(
       () => CLOSE_HISTORY.snapshots,
@@ -2374,6 +2376,28 @@ let archivedLadderRepair: CacheRecord<
 export async function repairArchivedLadder(
   snapshot: Awaited<ReturnType<typeof getLadderSnapshot>>,
 ) {
+  // An older same-date D1 ladder may still reference the last available day,
+  // rather than the actual preceding session. Rebuild it from independently
+  // recovered exact-day pools; do not merely patch prices onto wrong identities.
+  const recovered = CLOSE_HISTORY.snapshots.find(
+    (close) =>
+      close.date.replaceAll('-', '') === snapshot.tradeDate &&
+      close.evidenceStatus === 'DEGRADED' &&
+      close.modules?.quotes?.status === 'READY',
+  );
+  const recoveredPrevious = recovered?.previousDate
+    ? CLOSE_HISTORY.snapshots.find(
+        (close) => close.date === recovered.previousDate,
+      )
+    : null;
+  if (snapshot.sessionState === 'CLOSED' && recovered && recoveredPrevious) {
+    return buildArchivedLadderSnapshot(
+      recovered,
+      recoveredPrevious,
+      new Map(),
+      snapshot.requestedDate ?? shanghaiDate(),
+    );
+  }
   if (
     archivedLadderRepair &&
     archivedLadderRepair.expiresAt > Date.now() &&
@@ -2525,8 +2549,12 @@ export async function getSpeedSnapshot() {
       previousClose: numberOrNull(row.f18),
       mainNetInflow: numberOrNull(row.f62),
       industry: String(row.f100 ?? ''),
-      quoteTime: numberOrNull(row.f124) !== null && Number(row.f124) > 0 && Number(row.f124) * 1000 <= Date.now()
-        ? new Date(Number(row.f124) * 1000).toISOString() : undefined,
+      quoteTime:
+        numberOrNull(row.f124) !== null &&
+        Number(row.f124) > 0 &&
+        Number(row.f124) * 1000 <= Date.now()
+          ? new Date(Number(row.f124) * 1000).toISOString()
+          : undefined,
     }))
     .filter(
       (row) =>
@@ -2561,7 +2589,8 @@ export async function getSpeedSnapshot() {
     return {
       ...row,
       concepts: metadataResult.concepts,
-      metadataAsOf: 'observedAt' in metadataResult ? metadataResult.observedAt : undefined,
+      metadataAsOf:
+        'observedAt' in metadataResult ? metadataResult.observedAt : undefined,
       metadataState: metadataResult.concepts.length
         ? ('READY' as DataState)
         : ('DEGRADED' as DataState),

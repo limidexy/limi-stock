@@ -30,6 +30,16 @@ export type CloseSnapshot = {
   >;
   cutoff: '15:00';
   status: 'READY';
+  evidenceStatus?: 'READY' | 'DEGRADED';
+  modules?: Record<
+    string,
+    {
+      status: string;
+      requested?: number;
+      available?: number;
+      reason?: string | null;
+    }
+  >;
   source: string;
   limitUp: number;
   failed: number;
@@ -39,6 +49,7 @@ export type CloseSnapshot = {
   consecutiveCount: number;
   turnover: number;
   breadth: {
+    scope?: string;
     requested: number;
     rowsAvailable: number;
     up: number;
@@ -76,6 +87,7 @@ export type CloseHistoryDocument = {
     state: 'READY' | 'DEGRADED';
     mode: 'DYNAMIC' | 'BUNDLED_FALLBACK';
     latestDate: string;
+    expectedDate?: string;
     marketDate?: string;
     requestedDate?: string;
     sessionState?: 'LIVE' | 'CLOSED';

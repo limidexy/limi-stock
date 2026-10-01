@@ -30,7 +30,12 @@ function fromCloseSnapshot(
   });
   return {
     status:
-      reason || !reading.usable || !reading.indexReady ? 'DEGRADED' : 'READY',
+      reason ||
+      snapshot.evidenceStatus === 'DEGRADED' ||
+      !reading.usable ||
+      !reading.indexReady
+        ? 'DEGRADED'
+        : 'READY',
     retrievedAt: `${snapshot.date}T15:00:00+08:00`,
     tradeDate: snapshot.date.replaceAll('-', ''),
     requestedDate: snapshot.date.replaceAll('-', ''),
@@ -38,8 +43,18 @@ function fromCloseSnapshot(
     sessionState: 'CLOSED',
     sourceState: reason ? 'STALE' : 'ARCHIVED',
     cutoff: '15:00',
-    source: snapshot.source,
-    reason,
+    source: [snapshot.source, snapshot.breadth.scope]
+      .filter(Boolean)
+      .join(' · '),
+    reason:
+      [
+        reason,
+        snapshot.evidenceStatus === 'DEGRADED'
+          ? '基础收盘行情已核验；行业、资金与分钟路径按独立能力展示，非完整复盘证据包。'
+          : null,
+      ]
+        .filter(Boolean)
+        .join('；') || undefined,
     limitUp: snapshot.limitUp,
     failed: snapshot.failed,
     limitDown: snapshot.limitDown,
@@ -68,6 +83,23 @@ function fromCloseSnapshot(
 
 export async function GET() {
   const marketContext = await getMarketDateContext().catch(() => null);
+  if (marketContext?.sessionState === 'CLOSED') {
+    const history = await loadCloseHistory().catch(
+      () => CLOSE_HISTORY.snapshots,
+    );
+    const exact = history.find(
+      (snapshot) =>
+        snapshot.date.replaceAll('-', '') === marketContext.tradeDate,
+    );
+    if (exact)
+      return Response.json(
+        {
+          ...fromCloseSnapshot(exact),
+          requestedDate: marketContext.requestedDate,
+        },
+        { headers: { 'cache-control': 'no-store' } },
+      );
+  }
   const archived =
     await loadArchivedSessionSnapshot<IntradayEmotionSnapshot>(
       'intraday-emotion',
