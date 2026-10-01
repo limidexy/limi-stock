@@ -129,6 +129,7 @@ export function UnifiedMarketBoard({
 }: {
   reading: UnifiedMarketReading;
 }) {
+  const intraday = reading.modules.find((item) => item.id === 'intraday');
   return (
     <section aria-label="盘面十二模块总览" className="space-y-4">
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-950 to-slate-900 text-slate-100 shadow-sm dark:border-slate-800">
@@ -166,6 +167,30 @@ export function UnifiedMarketBoard({
           </p>
         </div>
       </div>
+
+      {intraday ? (
+        <article className="rounded-xl border border-sky-500/25 bg-sky-500/5 px-4 py-3 shadow-sm sm:px-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold text-sky-700 dark:text-sky-300">
+                盘面变化速览
+              </p>
+              <p className={cn('mt-1 font-semibold', toneClass(intraday.tone))}>
+                {intraday.conclusion}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <StatusBadge state={intraday.state} />
+              <JudgmentBadge judgment={intraday.judgment} />
+            </div>
+          </div>
+          {intraday.evidence.length ? (
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              {intraday.evidence.slice(0, 2).join('；')}
+            </p>
+          ) : null}
+        </article>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {reading.modules.map((item, index) => (
