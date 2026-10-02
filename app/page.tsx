@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { timelineHeadline } from '@/lib/timeline-evidence';
+import type { FundFlowObservation } from '@/lib/flow-observation';
 import {
   alignedSnapshot,
   overviewSessionLabel,
@@ -106,6 +107,7 @@ type SectorFlowSeries = {
   delta30m: number | null;
   points: SectorFlowPoint[];
   persistenceLabel?: string;
+  flowObservation?: FundFlowObservation;
   detailState?: DataState;
   detailBasis?: string;
   subgroups?: Array<{ name: string; count: number; leaders: string[] }>;
@@ -1004,7 +1006,7 @@ function HorizonFlowList({
   const valueOf = (item: SectorFlowSeries) =>
     horizon === 'day' ? item.latestMainNetInflow : item.delta30m;
   return (
-    <div className="rounded-lg border bg-card p-3">
+    <div className="min-w-0 rounded-lg border bg-card p-3">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h4
           className={`text-sm font-medium ${direction === 'inflow' ? 'market-up' : 'market-down'}`}
@@ -1015,13 +1017,16 @@ function HorizonFlowList({
           {horizon === 'day' ? '开盘至今' : '日内方向 · 30分钟状态'}
         </span>
       </div>
-      <div className="grid gap-2">
+      <div className="grid min-w-0 grid-cols-1 gap-2">
         {rows.length ? (
           rows.map((item, index) => (
-            <div key={item.code} className="rounded-md bg-muted/45 px-2.5 py-2">
+            <div
+              key={item.code}
+              className="min-w-0 rounded-md bg-muted/45 px-2.5 py-2"
+            >
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-1.5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <div className="truncate text-sm">
                       <span className="mr-2 text-xs text-muted-foreground">
                         {index + 1}
@@ -1031,7 +1036,7 @@ function HorizonFlowList({
                     {horizon === '30m' && item.persistenceLabel ? (
                       <Badge
                         variant="outline"
-                        className="h-5 shrink-0 px-1.5 text-[10px]"
+                        className="h-auto whitespace-normal px-1.5 py-0.5 text-xs"
                       >
                         {item.persistenceLabel}
                       </Badge>
@@ -1048,6 +1053,14 @@ function HorizonFlowList({
                   {fmtMoney(valueOf(item))}
                 </span>
               </div>
+              {horizon === '30m' && item.flowObservation ? (
+                <details className="mt-2 break-words text-xs leading-5 text-muted-foreground">
+                  <summary className="cursor-pointer">
+                    资金过程依据与限制
+                  </summary>
+                  <p>{item.flowObservation.basis}</p>
+                </details>
+              ) : null}
               <div className="mt-2">
                 <SectorDetailLine item={item} />
               </div>
@@ -1069,7 +1082,7 @@ function PersistentStrengthBoard({ data }: { data: FlowData }) {
       <CardHeader>
         <CardTitle>长周期持续强弱</CardTitle>
         <CardDescription>
-          先按开盘至今板块涨跌与累计主力资金同向筛选，再标注最近30分钟是持续、回流还是转弱；短时反抽不再让日内弱势整体消失
+          日内价格与累计资金同向只是观察起点；再比较资金前后过程。单点跳变、短长分化、转向迹象和后续延续分开，不据此确认主线或情绪反转。
         </CardDescription>
         <CardAction>
           <StateBadge
@@ -1082,7 +1095,7 @@ function PersistentStrengthBoard({ data }: { data: FlowData }) {
           />
         </CardAction>
       </CardHeader>
-      <CardContent className="grid gap-3 lg:grid-cols-2">
+      <CardContent className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
         <HorizonFlowList
           title="持续强势"
           rows={data.split.persistentStrong}

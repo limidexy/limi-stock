@@ -1,5 +1,6 @@
 import { getFlowSnapshot, getMarketDateContext } from '@/lib/market';
 import { archivedCloseFlow } from '@/lib/close-derived-evidence';
+import { refreshFlowObservations } from '@/lib/flow-observation';
 import { loadArchivedSessionSnapshot } from '@/lib/market-session';
 import {
   loadLatestModuleSnapshot,
@@ -15,7 +16,7 @@ export async function GET() {
       Awaited<ReturnType<typeof getFlowSnapshot>>
     >('flow');
   if (archived)
-    return Response.json(archived, {
+    return Response.json(refreshFlowObservations(archived), {
       headers: { 'cache-control': 'no-store' },
     });
   const context = await getMarketDateContext().catch(() => null);
@@ -42,7 +43,7 @@ export async function GET() {
     if (persisted)
       return Response.json(
         {
-          ...persisted,
+          ...refreshFlowObservations(persisted),
           status: 'DEGRADED',
           curveState: 'DEGRADED',
           splitState: 'DEGRADED',
@@ -65,7 +66,7 @@ export async function GET() {
     if (fallback)
       return Response.json(
         {
-          ...fallback,
+          ...refreshFlowObservations(fallback),
           status: 'DEGRADED',
           curveState: 'DEGRADED',
           splitState: 'DEGRADED',

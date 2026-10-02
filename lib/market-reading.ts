@@ -1116,8 +1116,13 @@ export function shortEmotionReading(
     sealedDetails.every(
       ({ stock }) =>
         stock &&
-        stock.firstTouch !== undefined &&
-        stock.breakCount !== undefined,
+        typeof stock.firstTouch === 'string' &&
+        /^(09:25|09:[3-5]\d|10:[0-5]\d|11:([0-2]\d|30)|13:[0-5]\d|14:[0-5]\d|15:00)$/.test(
+          stock.firstTouch,
+        ) &&
+        finite(stock.breakCount) &&
+        Number.isInteger(stock.breakCount) &&
+        stock.breakCount >= 0,
     );
   const oneWordCount = sealProcessReady
     ? sealedDetails.filter(
@@ -1125,18 +1130,17 @@ export function shortEmotionReading(
           stock?.firstTouch === '09:25' && (stock.breakCount ?? 0) === 0,
       ).length
     : 0;
-  const turnoverCount = sealProcessReady
-    ? sealedDetails.length - oneWordCount
+  const intradayTouchCount = sealProcessReady
+    ? sealedDetails.filter(({ stock }) => stock!.firstTouch !== '09:25').length
+    : 0;
+  const reopenedCount = sealProcessReady
+    ? sealedDetails.filter(({ stock }) => stock!.breakCount! > 0).length
     : 0;
   const participation = !sealedDetails.length
     ? '暂无成功晋级样本'
     : !sealProcessReady
-      ? '封板过程待补，不能判断一字或换手'
-      : oneWordCount === sealedDetails.length
-        ? `一致型接力为主（${oneWordCount}/${sealedDetails.length}），强度高但参与性低`
-        : turnoverCount >= oneWordCount
-          ? `换手型接力为主（${turnoverCount}/${sealedDetails.length}），承接经过盘中交易检验`
-          : `一致与换手并存（一致${oneWordCount}、换手${turnoverCount}）`;
+      ? '首触时间或开板记录不完整，封板过程不能完整描述'
+      : `封板记录：09:25首触且记录0次开板${oneWordCount}/${sealedDetails.length}只；盘中首触${intradayTouchCount}/${sealedDetails.length}只；记录开板后当前封住${reopenedCount}/${sealedDetails.length}只。换手承接未确认`;
 
   const mainFamily = mainHighRows.length
     ? main
@@ -1211,6 +1215,12 @@ export function shortEmotionReading(
     ) {
       relayLabel = '接力退潮';
       relayTone = 'negative';
+    } else if (
+      extremeRisk &&
+      (weakPressure === '高' || weakPressure === '极高' || middleBroken)
+    ) {
+      relayLabel = '局部晋级 · 失败侧承压';
+      relayTone = 'negative';
     } else if (relayRate >= 50 && relaySealRate >= 75) {
       const fullStrength =
         weakPressure === '低' &&
@@ -1230,19 +1240,21 @@ export function shortEmotionReading(
     }
   }
   const relaySummary =
-    relayLabel === '接力偏强'
-      ? '候选愿意进攻、触板后大多封住，弱侧代价低，并出现同一行业的层级传递线索。'
-      : relayLabel === '接力有承接'
-        ? '晋级和封板达到基础承接线，但高标、弱侧、断层或主线关系仍有瑕疵。'
-        : relayLabel === '接力分歧'
-          ? '敢冲的候选不算少，但触板后站不稳，接力意愿与稳定性发生分离。'
-          : relayLabel === '高位接力未确认'
-            ? '少数冲板股封得住，但真正发起晋级的候选不足，不能因封板率漂亮就判强。'
-            : relayLabel === '接力退潮'
-              ? '晋级意愿低、失败代价扩大，高标或中位负反馈已形成扩散。'
-              : relayLabel === '接力数据不足'
-                ? '候选少于3只或相邻交易日样本不完整，只展示个股事实，不做强弱定性。'
-                : '晋级不足且封板稳定性不高，接力在变差，但是否退潮还要看负反馈扩散。';
+    relayLabel === '局部晋级 · 失败侧承压'
+      ? '仍有候选晋级和封住，但失败侧出现深水或极端负反馈。成功者的封板率不能抵消掉队者的亏损压力，需观察负反馈是否向中位及次日扩散。'
+      : relayLabel === '接力偏强'
+        ? '候选愿意进攻、触板后大多封住，弱侧代价低，并出现同一行业的层级传递线索。'
+        : relayLabel === '接力有承接'
+          ? '晋级和封板达到基础承接线，但高标、弱侧、断层或主线关系仍有瑕疵。'
+          : relayLabel === '接力分歧'
+            ? '敢冲的候选不算少，但触板后站不稳，接力意愿与稳定性发生分离。'
+            : relayLabel === '高位接力未确认'
+              ? '少数冲板股封得住，但真正发起晋级的候选不足，不能因封板率漂亮就判强。'
+              : relayLabel === '接力退潮'
+                ? '晋级意愿低、失败代价扩大，高标或中位负反馈已形成扩散。'
+                : relayLabel === '接力数据不足'
+                  ? '候选少于3只或相邻交易日样本不完整，只展示个股事实，不做强弱定性。'
+                  : '晋级不足且封板稳定性不高，接力在变差，但是否退潮还要看负反馈扩散。';
   const compare =
     previous &&
     adjacentCloses(facts, previous) &&
@@ -1314,7 +1326,7 @@ export function shortEmotionReading(
       '昨日连板股当日价格未齐，弱侧压力和接力溢价不定性',
     !sealProcessReady &&
       highPoolAdvanced > 0 &&
-      '成功晋级股封板过程不全，不能区分一致型与换手型接力',
+      '成功晋级股首触或开板记录不全，封板过程描述不完整',
     '缺少概念级主线身份、预期差和核心带动关系；行业聚类仅作接力线索',
     facts.cutoff === '15:00' && '收盘快照不能还原竞价、盘中承接或反核路径',
   ].filter(Boolean) as string[];
@@ -1424,9 +1436,10 @@ export function shortEmotionReading(
       state: industryRelay ? 'DEGRADED' : 'MISSING',
     },
     {
-      label: '接力类型 / 参与性',
+      label: '晋级股封板记录',
       value: participation,
-      detail: '一字强度与换手承接分开；强不等于好参与。',
+      detail:
+        '盘中首触与开板后封住可重叠。来源首触/开板记录只能描述封板过程；缺少分钟量价与可比量能基线，不能确认健康换手、抛压被消化或实际可参与性。',
       state: sealProcessReady ? 'READY' : 'DEGRADED',
     },
   ];

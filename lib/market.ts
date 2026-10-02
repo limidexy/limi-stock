@@ -8,6 +8,7 @@ import { CLOSE_HISTORY } from '@/lib/close-history';
 import { enrichEmotionCloses } from '@/lib/emotion-tracking-source';
 import { loadCloseHistory } from '@/lib/persistence';
 import { emotionReading } from '@/lib/market-reading';
+import { observeFundFlow, type FundFlowObservation } from './flow-observation';
 import { buildRadarSnapshot } from '@/lib/radar-evidence';
 import tradingCalendarDocument from '@/lib/trading-calendar.generated.json';
 import {
@@ -86,6 +87,7 @@ export type SectorFlowSeries = {
   delta30m: number | null;
   points: SectorFlowPoint[];
   persistenceLabel?: string;
+  flowObservation?: FundFlowObservation;
   detailState?: DataState;
   detailBasis?: string;
   subgroups?: Array<{ name: string; count: number; leaders: string[] }>;
@@ -901,16 +903,15 @@ async function fetchSectorFlowSeries(
   if (!points.length)
     throw new Error(`${board.name}未返回${tradeDate}的分钟资金`);
   const latest = points.at(-1)?.mainNetInflow ?? 0;
-  const deltaFrom = (minutes: number) =>
-    points.length > minutes
-      ? latest - points[points.length - 1 - minutes].mainNetInflow
-      : null;
+  const observation = observeFundFlow(points);
   return {
     ...board,
     latestMainNetInflow: latest,
-    delta5m: deltaFrom(5),
-    delta15m: deltaFrom(15),
-    delta30m: deltaFrom(30),
+    delta5m: observation.delta5m,
+    delta15m: observation.delta15m,
+    delta30m: observation.delta30m,
+    persistenceLabel: observation.label,
+    flowObservation: observation,
     points,
   };
 }
@@ -1042,12 +1043,8 @@ async function buildFlowSnapshot(): Promise<FlowSnapshot> {
     .filter((item) => item.latestMainNetInflow > 0 && (item.changePct ?? 0) > 0)
     .map((item) => ({
       ...item,
-      persistenceLabel:
-        item.delta30m === null
-          ? '30分钟窗口建立中'
-          : item.delta30m > 0
-            ? '资金持续流入'
-            : '日内强势·30分钟转弱',
+      persistenceLabel: observeFundFlow(item.points).label,
+      flowObservation: observeFundFlow(item.points),
     }))
     .sort((a, b) => {
       const rankA = a.delta30m === null ? 1 : a.delta30m > 0 ? 0 : 2;
@@ -1059,12 +1056,8 @@ async function buildFlowSnapshot(): Promise<FlowSnapshot> {
     .filter((item) => item.latestMainNetInflow < 0 && (item.changePct ?? 0) < 0)
     .map((item) => ({
       ...item,
-      persistenceLabel:
-        item.delta30m === null
-          ? '30分钟窗口建立中'
-          : item.delta30m < 0
-            ? '资金持续流出'
-            : '日内弱势·30分钟回流',
+      persistenceLabel: observeFundFlow(item.points).label,
+      flowObservation: observeFundFlow(item.points),
     }))
     .sort((a, b) => {
       const rankA = a.delta30m === null ? 1 : a.delta30m < 0 ? 0 : 2;
@@ -1110,7 +1103,7 @@ async function buildFlowSnapshot(): Promise<FlowSnapshot> {
       ? '资金排名端点短暂波动，已使用同交易日最近快照'
       : undefined,
     basis:
-      '曲线为当日累计主力净流入；短时分流为最近5个有效交易分钟的增量。长周期强弱先看开盘至今价格与累计资金是否同向，再标注最近30分钟是持续、回流还是转弱。概念成分重叠，不作资金守恒解释。',
+      '曲线为供应商累计主力净流入统计；按真实连续交易分钟计算增量，再看不重叠5分钟段的前后方向。转向延续只描述已发生的资金统计，不确认情绪反转或个股带动；概念重叠不作资金守恒解释。',
     coverage: { requested: candidates.length, available: series.length },
     series,
     split: {

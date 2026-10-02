@@ -1,5 +1,6 @@
 import document from '@/lib/close-derived-evidence.generated.json';
 import type { FlowSnapshot, SectorFlowSeries } from '@/lib/market';
+import { observeFundFlow } from './flow-observation';
 
 type DerivedFlowRow = {
   code: string;
@@ -112,27 +113,18 @@ function flowSeries(row: DerivedFlowRow): SectorFlowSeries {
   const points = row.points?.length
     ? row.points
     : [{ time: '15:00', mainNetInflow: row.latestMainNetInflow }];
-  const delta = (minutes: number) => {
-    if (points.length <= minutes) return null;
-    return points.at(-1)!.mainNetInflow - points.at(-(minutes + 1))!.mainNetInflow;
-  };
+  const observation = observeFundFlow(points);
   return {
     code: row.code,
     name: row.name,
     changePct: row.changePct,
     latestMainNetInflow: row.latestMainNetInflow,
-    delta5m: delta(5),
-    delta15m: delta(15),
-    delta30m: delta(30),
+    delta5m: observation.delta5m,
+    delta15m: observation.delta15m,
+    delta30m: observation.delta30m,
     points,
-    persistenceLabel:
-      delta(5) !== null && delta(15) !== null && delta(30) !== null
-        ? delta(5)! > 0 && delta(15)! > 0 && delta(30)! > 0
-          ? '持续流入'
-          : delta(5)! < 0 && delta(15)! < 0 && delta(30)! < 0
-            ? '持续流出'
-            : '资金拐点'
-        : undefined,
+    persistenceLabel: observation.label,
+    flowObservation: observation,
     detailState: 'MISSING',
     detailBasis: row.points?.length
       ? '板块分钟资金已校验；成分股分钟资金仍未取得，不据此归因到个股'
@@ -164,17 +156,21 @@ export function archivedCloseFlow(
   const curveRequested = day.flow.curveRequested ?? day.flow.reported;
   const hasPartialCurves = curveAvailable > 0 && !curveReady;
   const persistentStrong = allRows
-    .filter((row) => row.persistenceLabel === '持续流入')
+    .filter((row) => row.latestMainNetInflow > 0 && (row.changePct ?? 0) > 0)
     .sort((a, b) => (b.delta30m ?? 0) - (a.delta30m ?? 0))
     .slice(0, 8);
   const persistentWeak = allRows
-    .filter((row) => row.persistenceLabel === '持续流出')
+    .filter((row) => row.latestMainNetInflow < 0 && (row.changePct ?? 0) < 0)
     .sort((a, b) => (a.delta30m ?? 0) - (b.delta30m ?? 0))
     .slice(0, 8);
   return {
     status: curveReady ? 'READY' : 'DEGRADED',
     curveState: curveReady ? 'READY' : 'DEGRADED',
-    splitState: curveReady ? 'READY' : hasPartialCurves ? 'DEGRADED' : 'MISSING',
+    splitState: curveReady
+      ? 'READY'
+      : hasPartialCurves
+        ? 'DEGRADED'
+        : 'MISSING',
     retrievedAt: `${digits(tradeDate).slice(0, 4)}-${digits(tradeDate).slice(4, 6)}-${digits(tradeDate).slice(6)}T15:00:00+08:00`,
     tradeDate: digits(tradeDate),
     requestedDate: digits(tradeDate),

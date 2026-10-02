@@ -51,6 +51,7 @@ export type UnifiedFlow = {
   sessionState?: 'LIVE' | 'CLOSED';
   sourceState?: 'LIVE' | 'ARCHIVED' | 'STALE';
   reason?: string;
+  coverage?: { requested: number; available: number };
   series: Array<{
     code: string;
     name: string;
@@ -229,6 +230,8 @@ export function unifiedMarketReading(
     : undefined;
   const flowAligned = Boolean(
     topRising &&
+    finite(topRising.changePct) &&
+    topRising.changePct > 0 &&
     risingFlow &&
     risingFlow.latestMainNetInflow > 0 &&
     topRising.driverState === 'READY' &&
@@ -255,6 +258,24 @@ export function unifiedMarketReading(
   const coreCandidates =
     core?.activeCandidates ??
     allCoreCandidates.filter((candidate) => candidate.scope !== 'HISTORY');
+  // Only engine-validated, exact-concept process evidence belongs to this
+  // direction. Market-wide promotions and same-industry moves are not edges.
+  const mainlineCases = (core?.comparativeReading?.cases ?? []).filter(
+    (item) =>
+      topRising &&
+      item.kind === 'RESPONSE' &&
+      (item.id.endsWith(`:${topRising.name}:up`) ||
+        item.id.endsWith(`:${topRising.name}:down`)),
+  );
+  const mainlineCounter = coreCandidates
+    .filter(
+      (candidate) => topRising && candidate.concepts.includes(topRising.name),
+    )
+    .flatMap((candidate) =>
+      candidate.interpretation.counterEvidence.map(
+        (text) => `${candidate.name}：${text}`,
+      ),
+    );
   const topStocks = coreCandidates.filter(
     (candidate) =>
       candidate.roles.includes('当前最高竞争者') ||
@@ -428,31 +449,23 @@ export function unifiedMarketReading(
       name: '主线',
       question: '哪个方向正在形成持续共识？',
       conclusion: topRising
-        ? `${flowAligned ? '主线候选' : '强势方向'}：${topRising.name}${flowAligned ? '（价格与资金同向）' : '；持续性未确认'}`
+        ? `主线候选：${topRising.name}；${flowAligned ? '价格与累计资金同向，' : ''}持续共识尚未确认`
         : '当前没有达到异动阈值的强势方向',
-      state: topRising
-        ? topRising.driverState === 'READY' &&
-          (Boolean(risingFlow) || topRising.windowReady)
-          ? 'READY'
-          : 'DEGRADED'
-        : radar?.status === 'MISSING'
-          ? 'MISSING'
-          : 'DEGRADED',
-      judgment: flowAligned
-        ? 'CONFIRMED'
-        : topRising
-          ? 'OBSERVE'
-          : 'UNCONFIRMED',
-      tone: flowAligned ? 'positive' : 'mixed',
+      state: !topRising && radar?.status === 'MISSING' ? 'MISSING' : 'DEGRADED',
+      judgment: topRising ? 'OBSERVE' : 'UNCONFIRMED',
+      tone: mainlineCases.some((item) => item.verdict === 'PRESSURE_REMAINS')
+        ? 'negative'
+        : 'mixed',
       evidence: topRising
         ? [
+            `市场背景：${observed.indexMood}；${observed.broad}。背景同向不等于本板块主动带动。`,
             `${topRising.name}${topRising.selectionBasis === 'SPEED' ? '短窗涨速' : '日内涨幅'}${pct(topRising.displayChangePct ?? topRising.changePct)}`,
             `${
               topRising.drivers
                 .slice(0, 4)
                 .map((stock) => stock.name)
                 .join('、') || '驱动股不可用'
-            }参与驱动`,
+            }在板块内表现；先涨不自动等于带动`,
             risingFlow
               ? `板块主力净额${money(risingFlow.latestMainNetInflow)}${risingFlow.persistenceLabel ? `，${risingFlow.persistenceLabel}` : ''}`
               : alignedFlow
@@ -460,11 +473,25 @@ export function unifiedMarketReading(
                 : flow
                   ? `资金数据日期${flow.tradeDate}未与${facts.date}对齐，已停用`
                   : '未取得同板块资金流证据',
+            alignedFlow?.coverage
+              ? `资金曲线覆盖 ${alignedFlow.coverage.available}/${alignedFlow.coverage.requested}；${alignedFlow.status === 'READY' ? '仅代表本次请求范围，不代表全市场主线排名' : '样本不完整，不能据此排定全市场主线'}`
+              : '资金覆盖范围未完整给出，不以局部正净额确认主线',
+            ...(mainlineCases.length
+              ? mainlineCases
+                  .slice(0, 2)
+                  .map((item) => `方向过程：${item.reading} ${item.boundary}`)
+              : [
+                  '过程缺口：未取得本方向核心动作、新增助攻及响应后状态的完整对应证据，不能借用其他题材的响应。',
+                ]),
+            ...mainlineCounter.slice(0, 2).map((text) => `反证：${text}`),
+            '仍需验证：容量载体是否同步承接、中低位是否扩散，以及分歧后是否由本方向核心再次带回。',
           ]
         : [radar?.reason ?? '板块价格、资金与成分股证据不足'],
       boundary:
-        '强势板块不自动等于主线；驱动、梯队、容量、持续和分歧回流尚未全部满足。',
-      next: '如果核心主动走强、助攻快速出现、容量载体承接且分歧后回流，才升级为主线确认。',
+        '现在确认的只有列出的行情事实。单时点正资金、两只上涨股或局部先后响应，都不足以确认整条主线；未取得反证也不等于不存在反证。',
+      next:
+        mainlineCases[0]?.nextCheck ??
+        '继续比较核心动作后的新增响应与原本已强成员，观察助攻回落后能否共同恢复；核心独强、后排掉队时保留分歧，不升级主线。',
     },
     {
       id: 'high-board',
@@ -492,14 +519,16 @@ export function unifiedMarketReading(
       question: '赚钱效应还能向上传递吗？',
       conclusion: short.relay.label,
       state:
-        short.relay.candidateCount >= 3 && cohort.ready ? 'READY' : 'DEGRADED',
-      judgment:
-        short.relay.candidateCount >= 3 && cohort.ready
-          ? 'CONFIRMED'
-          : 'OBSERVE',
+        short.relay.candidateCount >= 3 &&
+        cohort.ready &&
+        short.relay.evidence.every((item) => item.state === 'READY')
+          ? 'READY'
+          : 'DEGRADED',
+      judgment: 'OBSERVE',
       tone: short.relay.tone === 'unknown' ? 'neutral' : short.relay.tone,
       evidence: short.relay.evidence.map(
-        (item) => `${item.label}：${item.value}`,
+        (item) =>
+          `${item.label}：${item.value}${item.label === '晋级股封板记录' ? `。${item.detail}` : item.state !== 'READY' ? '（证据不完整）' : ''}`,
       ),
       boundary:
         '晋级率、封板率、失败代价和梯队连续性共同决定接力，不把高封板率单独当成强。',
@@ -722,8 +751,8 @@ export function unifiedMarketReading(
       : 'MISSING';
   const headline = `${observed.indexMood} · ${observed.broad} · ${short.highBoard.label} · ${short.relay.label}`;
   const factChain = topRising
-    ? `${topRising.name}进入资金视野 → ${flowAligned ? '价格与资金同向' : '资金同向尚未确认'} → ${relayWinners.length ? `${relayWinners.length}只连板完成传递` : '接力传递不足'} → ${relayLosers.length ? `${relayLosers.length}只中高位负反馈` : '失败侧暂未扩散'}`
-    : `未见明确板块启动 → ${relayWinners.length ? `${relayWinners.length}只连板维持正反馈` : '接力正反馈不足'} → ${relayLosers.length ? `${relayLosers.length}只中高位负反馈` : '失败侧暂未扩散'}`;
+    ? `强势方向观察：${topRising.name}；${flowAligned ? '价格与累计资金同向' : '同方向资金证据未确认'}。全市场连板正反馈${relayWinners.length}只、中高位负反馈${relayLosers.length}只；这些全市场计数不能证明该方向完成传导。`
+    : `未见明确板块启动；全市场连板正反馈${relayWinners.length}只、中高位负反馈${relayLosers.length}只。仅限已有报价样本，不把缺失写成没有风险。`;
 
   return {
     status: strongestState,
