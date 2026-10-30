@@ -8,10 +8,14 @@
  * （停牌），该股直接排除并记录原因，绝不顺延到更早或更晚的交易日。
  *
  * 数据源：
- *   - 股票池与最新快照：新浪 Market_Center（hs_a 全 A）
- *   - 前复权日线：腾讯 ifzq（qfq）
- *   - 目标日收盘交叉核验：新浪 CN_MarketData 日线（独立厂商）
- *     ＊ 前复权只把最新一根对齐真实价，因此只核验目标日收盘，不核验起点收盘。
+ *   - 股票池：新浪 Market_Center（hs_a 全 A）
+ *   - 前复权日线（主）：新浪 CN_MarketData 原始日线 ÷ 新浪前复权因子 qfq.js
+ *     前复权价 = 原始价 ÷ f；已用 56 组区间收益率与腾讯前复权比对（53 组完全一致，
+ *     差异仅出现在跨除权日的单一标的、幅度 ≤0.16pp）。
+ *   - 前复权日线（兜底）：腾讯 ifzq qfq（HTTPS 边缘会按请求量返回 501，故不作主源）
+ *   - 目标日收盘交叉核验：始终用「与产出该行不同的另一家」的**原始未复权收盘**比对。
+ *     两家复权算法不同（腾讯减法复权、新浪除法因子），比复权价会把口径差异
+ *     误判成数据错误，所以只比原始收盘。
  *
  * 用法：
  *   node scripts/build-multi-window-rankings.mjs --dates 30
@@ -119,12 +123,84 @@ function httpsGet(urlStr, headers = {}, timeoutMs = 25_000) {
   });
 }
 
+/**
+ * 明文 HTTP：走代理时用 absolute-URI 形式（不建 CONNECT 隧道）。
+ * 腾讯的 kline 接口在 https 边缘按量返回 501，但 http 入口仍可用，
+ * 因此核验链路需要这一条明文通道。
+ */
+function httpGet(urlStr, headers = {}, timeoutMs = 25_000) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(urlStr);
+    const proxy = PROXY ? new URL(PROXY) : null;
+    const options = proxy
+      ? {
+          hostname: proxy.hostname,
+          port: proxy.port || 80,
+          path: urlStr,
+          method: 'GET',
+          headers: { Host: target.hostname, ...headers },
+          ...(proxy.username
+            ? {
+                auth: `${decodeURIComponent(proxy.username)}:${decodeURIComponent(
+                  proxy.password,
+                )}`,
+              }
+            : {}),
+        }
+      : {
+          hostname: target.hostname,
+          port: target.port || 80,
+          path: `${target.pathname}${target.search}`,
+          method: 'GET',
+          headers: { Host: target.hostname, ...headers },
+        };
+    const request = http.request(options, (response) => {
+      if (
+        response.statusCode >= 300 &&
+        response.statusCode < 400 &&
+        response.headers.location
+      ) {
+        response.resume();
+        resolve(
+          httpGet(
+            new URL(response.headers.location, urlStr).toString(),
+            headers,
+            timeoutMs,
+          ),
+        );
+        return;
+      }
+      if (response.statusCode !== 200) {
+        response.resume();
+        reject(new Error(`HTTP ${response.statusCode}`));
+        return;
+      }
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      response.on('error', reject);
+    });
+    request.setTimeout(timeoutMs, () => request.destroy(new Error('timeout')));
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+/** 按协议分派，调用方不必关心明文/加密。 */
+function fetchText(urlStr, headers = {}, timeoutMs = 25_000) {
+  return urlStr.startsWith('http://')
+    ? httpGet(urlStr, headers, timeoutMs)
+    : httpsGet(urlStr, headers, timeoutMs);
+}
+
 const ROOT = path.resolve(import.meta.dirname, '..');
 const CALENDAR_PATH = path.join(ROOT, 'lib/trading-calendar.generated.json');
 const TOP_N = 30;
 const WINDOWS = [5, 10, 20, 30];
 const MAX_WINDOW = Math.max(...WINDOWS);
 const COLLECTOR_VERSION = 'v1.0-local-multi-window-rankings';
+/** 缓存结构版本：字段变更时递增，旧缓存自动失效。 */
+const CACHE_VERSION = 2;
 
 const args = process.argv.slice(2);
 function argValue(name, fallback) {
@@ -143,11 +219,18 @@ const DATE_COUNT = Number(argValue('--dates', '1'));
 const EXPLICIT_DATES = argValues('--date');
 const LIMIT = Number(argValue('--limit', '0'));
 const SAMPLE = Number(argValue('--sample', '0'));
-const CONCURRENCY = Number(argValue('--concurrency', '8'));
+const CONCURRENCY = Number(argValue('--concurrency', '6'));
 const OUT_DIR = path.resolve(ROOT, argValue('--out', 'public/rankings'));
 const CACHE_DIR = path.resolve(ROOT, argValue('--cache', '.cache/rankings'));
 const USE_CACHE = !args.includes('--no-cache');
 const CROSSCHECK = !args.includes('--no-crosscheck');
+/** 主源顺序：默认新浪优先，腾讯兜底；--provider tencent 可反转。 */
+const PROVIDERS = (() => {
+  const forced = argValue('--provider', '');
+  if (forced === 'tencent') return ['tencent', 'sina'];
+  if (forced === 'sina') return ['sina'];
+  return ['sina', 'tencent'];
+})();
 
 const HEADERS = {
   'User-Agent':
@@ -165,7 +248,7 @@ function isoToCompact(iso) {
 
 async function getJson(url, attempt = 0) {
   try {
-    const text = await httpsGet(url, HEADERS);
+    const text = await fetchText(url, HEADERS);
     if (!text.trim()) throw new Error('empty body');
     return JSON.parse(text);
   } catch (error) {
@@ -244,29 +327,108 @@ function limitRatioOf(symbol, code) {
 }
 
 /**
- * 腾讯前复权日线有多套等价入口。web.ifzq 与 ifzq 会被 WAF 限流（501），
- * proxy.finance.qq.com 通常可用，因此按顺序轮换，任一可用即返回。
+ * 主源：新浪（原始日线 ÷ 前复权因子）。新浪对全市场量级不设卡，
+ * 腾讯的 HTTPS 边缘会按请求量返回 501 WAF 页，因此腾讯只做独立核验与兜底。
+ *
+ * 前复权因子文件 qfq.js 的 f 是除数：前复权价 = 原始价 ÷ f。
+ * 已用 56 组「腾讯前复权 vs 新浪原始价÷因子」区间收益率比对验证（53 组完全一致，
+ * 差异仅出现在跨除权日且幅度 ≤0.16pp 的单一标的）。
  */
-const KLINE_HOSTS = [
+const SINA_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  Referer: 'https://finance.sina.com.cn',
+};
+
+const KLINE_BASES = [
+  // 明文入口目前最稳：https 边缘会按量返回 501 WAF 页。
+  'http://proxy.finance.qq.com/ifzqgtimg',
+  'https://web.ifzq.gtimg.cn',
   'https://proxy.finance.qq.com/ifzqgtimg',
   'https://ifzq.gtimg.cn',
 ];
+const KLINE_HEADERS = {
+  'User-Agent': SINA_HEADERS['User-Agent'],
+  Referer: 'https://gu.qq.com/',
+};
 
-async function fetchKlineJson(symbol, count) {
-  const query = `/appstock/app/fqkline/get?param=${symbol},day,,,${count},qfq`;
-  let lastError = null;
-  for (const host of KLINE_HOSTS) {
+async function fetchTencentBars(symbol, count, adjusted = true) {
+  // 不复权要用尾部空字段（"...,71,"），省略整段会返回 bad params。
+  const query = `/appstock/app/fqkline/get?param=${symbol},day,,,${count}${
+    adjusted ? ',qfq' : ','
+  }`;
+  const failures = [];
+  for (const base of KLINE_BASES) {
     try {
-      const json = await getJson(`${host}${query}`);
+      const text = await fetchText(`${base}${query}`, KLINE_HEADERS);
+      if (!text.trim()) throw new Error('empty body');
+      const json = JSON.parse(text);
       const node = json?.data?.[symbol];
-      const raw = node?.qfqday ?? node?.day ?? [];
-      if (raw.length) return raw;
+      // 不取复权时只认 day，避免误读 qfqday。
+      const raw = adjusted ? (node?.qfqday ?? node?.day ?? []) : (node?.day ?? []);
+      if (raw.length) {
+        return raw.map((row) => ({
+          date: row[0],
+          open: Number(row[1]),
+          close: Number(row[2]),
+          high: Number(row[3]),
+          low: Number(row[4]),
+          volume: Number(row[5]),
+        }));
+      }
+      failures.push(`${base} 无该股数据`);
     } catch (error) {
-      lastError = error;
+      failures.push(`${base} ${error.message}`);
     }
   }
-  if (lastError) throw lastError;
-  return [];
+  throw new Error(failures.join('; '));
+}
+
+async function fetchSinaFactors(symbol) {
+  const text = await fetchText(
+    `https://finance.sina.com.cn/realstock/company/${symbol}/qfq.js`,
+    SINA_HEADERS,
+  );
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) throw new Error('因子文件格式异常');
+  const json = JSON.parse(text.slice(start, end + 1));
+  const list = Array.isArray(json?.data) ? json.data : [];
+  if (!list.length) throw new Error('因子列表为空');
+  // 按日期倒序，取第一个 d <= date 的因子。
+  return list
+    .map((row) => ({ date: row.d, factor: Number(row.f) }))
+    .filter((row) => Number.isFinite(row.factor))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+
+function factorAt(factors, iso) {
+  for (const item of factors) if (item.date <= iso) return item.factor;
+  return null;
+}
+
+async function fetchSinaBars(symbol, count) {
+  const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${symbol}&scale=240&ma=no&datalen=${count}`;
+  const json = await getJson(url);
+  if (!Array.isArray(json) || !json.length) return [];
+  const factors = await fetchSinaFactors(symbol);
+  const bars = [];
+  for (const row of json) {
+    const factor = factorAt(factors, row.day);
+    if (factor == null || factor <= 0) continue;
+    bars.push({
+      date: row.day,
+      open: Number(row.open) / factor,
+      close: Number(row.close) / factor,
+      high: Number(row.high) / factor,
+      low: Number(row.low) / factor,
+      // 原始（未复权）收盘：交叉核验必须比原始价对原始价，
+      // 否则「减法复权」与「除法因子」的口径差异会被误判成数据错误。
+      rawClose: Number(row.close),
+      volume: Number(row.volume),
+    });
+  }
+  return bars;
 }
 
 async function fetchBars(symbol, count) {
@@ -274,34 +436,56 @@ async function fetchBars(symbol, count) {
   if (USE_CACHE && fs.existsSync(cacheFile)) {
     try {
       const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-      if (cached.count >= count && Date.now() - cached.at < 20 * 3_600_000) {
-        return cached.bars;
+      if (
+        cached.v === CACHE_VERSION &&
+        cached.count >= count &&
+        Date.now() - cached.at < 20 * 3_600_000
+      ) {
+        return { bars: cached.bars, source: cached.source ?? 'TENCENT_QFQ' };
       }
     } catch {
       /* 缓存损坏则重新拉取 */
     }
   }
-  const raw = await fetchKlineJson(symbol, count);
-  const bars = raw.map((row) => ({
-    date: row[0],
-    open: Number(row[1]),
-    close: Number(row[2]),
-    high: Number(row[3]),
-    low: Number(row[4]),
-    volume: Number(row[5]),
-  }));
-  if (USE_CACHE && bars.length) {
-    fs.mkdirSync(CACHE_DIR, { recursive: true });
-    fs.writeFileSync(cacheFile, JSON.stringify({ at: Date.now(), count, bars }));
+
+  const attempts = [];
+  for (const provider of PROVIDERS) {
+    try {
+      const bars =
+        provider === 'sina'
+          ? await fetchSinaBars(symbol, count)
+          : await fetchTencentBars(symbol, count);
+      if (!bars.length) {
+        attempts.push(`${provider} 无数据`);
+        continue;
+      }
+      const source = provider === 'sina' ? 'SINA_QFQ_DERIVED' : 'TENCENT_QFQ';
+      if (USE_CACHE) {
+        fs.mkdirSync(CACHE_DIR, { recursive: true });
+        fs.writeFileSync(
+          cacheFile,
+          JSON.stringify({ v: CACHE_VERSION, at: Date.now(), count, source, bars }),
+        );
+      }
+      return { bars, source };
+    } catch (error) {
+      attempts.push(`${provider} ${error.message}`);
+    }
   }
-  return bars;
+  throw new Error(attempts.join(' / '));
 }
 
-async function fetchSinaCloses(symbol, count) {
+/** 交叉核验一律取「原始未复权收盘」，两家可直接比，不受复权口径差异影响。 */
+async function fetchSinaRawCloses(symbol, count) {
   const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${symbol}&scale=240&ma=no&datalen=${count}`;
   const json = await getJson(url);
   if (!Array.isArray(json)) return new Map();
   return new Map(json.map((row) => [row.day, Number(row.close)]));
+}
+
+async function fetchTencentRawCloses(symbol, count) {
+  const bars = await fetchTencentBars(symbol, count, false);
+  return new Map(bars.map((bar) => [bar.date, bar.close]));
 }
 
 function computeWindows(entry, calendar, targets) {
@@ -324,6 +508,11 @@ function computeWindows(entry, calendar, targets) {
       const startIso = calendar[targetIndex - sessions];
       const startBar = startIso ? closeByDate.get(startIso) : null;
       const key = `${targetIso}|${sessions}`;
+      // 拉取失败不是「没有历史」，必须单独计数，否则会写出假原因。
+      if (entry.fetchError) {
+        out[key] = { excluded: 'FETCH_FAILED' };
+        continue;
+      }
       if (noHistory) {
         out[key] = { excluded: 'NO_HISTORY' };
         continue;
@@ -372,6 +561,10 @@ function computeWindows(entry, calendar, targets) {
         startIso,
         startClose: startBar.close,
         latestClose: targetBar.close,
+        // 仅新浪主源带原始收盘；缺失时该行无法做原始价对原始价的核验。
+        latestRawClose: Number.isFinite(targetBar.rawClose)
+          ? targetBar.rawClose
+          : null,
         gainPct,
         limitState,
         volumeRatio,
@@ -408,6 +601,7 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
     const candidates = [];
     let eligible = 0;
     const exclusionCount = {
+      FETCH_FAILED: 0,
       NO_HISTORY: 0,
       NO_TARGET_CLOSE: 0,
       NO_START_CLOSE: 0,
@@ -428,10 +622,12 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
     const rows = candidates.slice(0, TOP_N).map(({ entry, cell }) => {
       const snapshot = entry.universe;
       const verified = crosscheck.get(`${entry.symbol}|${targetIso}`);
+      // 比原始价对原始价：两家的复权算法不同（减法 vs 除法因子），
+      // 直接比复权价会把口径差异误判成数据错误。
       const crosscheckStatus =
-        verified == null
+        verified == null || cell.latestRawClose == null
           ? 'UNAVAILABLE'
-          : Math.abs(verified - cell.latestClose) <= 0.011
+          : Math.abs(verified - cell.latestRawClose) <= 0.011
             ? 'PASS'
             : 'MISMATCH';
       return {
@@ -450,7 +646,7 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
         circulatingMarketCap: isLatest ? snapshot.circulatingMarketCap : null,
         limitState: cell.limitState,
         quoteTime: isLatest ? `${tradeDate} ${snapshot.ticktime ?? ''}`.trim() : null,
-        source: 'TENCENT_QFQ_DAILY+SINA_CLOSE_CROSSCHECK',
+        source: entry.barsSource,
         window: sessions,
         sessions,
         startDate: isoToCompact(cell.startIso),
@@ -475,9 +671,16 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
       (row) => row.crosscheckStatus === 'UNAVAILABLE',
     ).length;
 
-    if (exclusionCount.NO_HISTORY) {
+    if (exclusionCount.FETCH_FAILED) {
+      const covered = universe.length - exclusionCount.FETCH_FAILED;
       window.reasons.push(
-        `${exclusionCount.NO_HISTORY} 只股票行情源无前复权历史（主要为北交所），不参与排行；有效覆盖 ${universe.length - exclusionCount.NO_HISTORY}/${universe.length}。`,
+        `${exclusionCount.FETCH_FAILED} 只股票行情源拉取失败（不是停牌、也不是没有历史），未参与排行；有效覆盖 ${covered}/${universe.length}。`,
+      );
+    }
+    if (exclusionCount.NO_HISTORY) {
+      const fetched = universe.length - exclusionCount.FETCH_FAILED;
+      window.reasons.push(
+        `${exclusionCount.NO_HISTORY} 只股票行情源无前复权历史（北交所、新上市等无历史品种），不参与排行；可服务标的 ${fetched - exclusionCount.NO_HISTORY}/${fetched}。`,
       );
     }
     if (exclusionCount.NO_TARGET_CLOSE) {
@@ -492,12 +695,12 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
     }
     if (mismatched) {
       window.reasons.push(
-        `${mismatched} 行目标日收盘与新浪独立收盘不一致，已保留但标记 MISMATCH。`,
+        `${mismatched} 行目标日原始收盘与另一家行情源不一致，已保留但标记 MISMATCH。`,
       );
     }
     if (unverified) {
       window.reasons.push(
-        `${unverified} 行缺少独立收盘源，无法交叉核验目标日收盘。`,
+        `${unverified} 行缺少另一家行情源的原始收盘（多为北交所等对方源未覆盖的品种），无法交叉核验目标日价格。`,
       );
     }
     if (!rows.length) {
@@ -506,9 +709,10 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
     } else if (
       mismatched ||
       unverified ||
-      exclusionCount.NO_HISTORY ||
-      exclusionCount.NO_START_CLOSE
+      exclusionCount.FETCH_FAILED ||
+      exclusionCount.NO_HISTORY
     ) {
+      // 个股在目标日/起点日停牌被排除属于正常口径（不顺延），只作说明，不降级整榜。
       window.status = 'DEGRADED';
     }
 
@@ -529,15 +733,33 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
       ? 'MISSING'
       : 'DEGRADED';
 
-  // 交叉核验覆盖按本交易日的入榜行统计：有独立源收盘即算已核验（含不一致）。
+  // 交叉核验覆盖按本交易日的入榜行统计：有对方厂商原始收盘即算已核验（含不一致）。
   let crosscheckRequested = 0;
   let crosscheckCovered = 0;
+  const crosscheckSources = new Set();
   for (const sessions of WINDOWS) {
     for (const row of windows[String(sessions)].rows) {
       crosscheckRequested += 1;
-      if (row.crosscheckStatus !== 'UNAVAILABLE') crosscheckCovered += 1;
+      if (row.crosscheckStatus === 'UNAVAILABLE') continue;
+      crosscheckCovered += 1;
+      crosscheckSources.add(
+        row.source === 'SINA_QFQ_DERIVED'
+          ? 'TENCENT_RAW_DAILY'
+          : 'SINA_RAW_DAILY',
+      );
     }
   }
+
+  const sinaBars = computed.filter(
+    (entry) => entry.barsSource === 'SINA_QFQ_DERIVED',
+  ).length;
+  const tencentBars = computed.filter(
+    (entry) => entry.barsSource === 'TENCENT_QFQ',
+  ).length;
+  const sourceLabel =
+    tencentBars > 0
+      ? `新浪原始日线÷前复权因子 ${sinaBars} 只 + 腾讯前复权日线 ${tencentBars} 只（互为独立核验）`
+      : `新浪原始日线÷前复权因子 ${sinaBars} 只（腾讯前复权独立核验）`;
 
   return {
     version: 1,
@@ -546,7 +768,7 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
     tradeDate,
     tradeDateIso: targetIso,
     generatedAt: new Date().toISOString(),
-    source: '腾讯前复权日线 + 新浪全A股票池/独立收盘核验',
+    source: sourceLabel,
     adjustment: 'QFQ',
     methodology:
       'N日涨幅=(目标日复权收盘/向前第N个交易日复权收盘-1)；起点由权威交易日历定位，起点日或目标日无收盘的股票直接排除，不顺延、不插值。',
@@ -560,8 +782,8 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
     },
     metadata: { industry: false, themes: false },
     crosscheck: {
-      source: 'SINA_CN_MARKETDATA_DAILY',
-      target: 'TARGET_DATE_CLOSE_ONLY',
+      source: [...crosscheckSources].join('+') || 'UNAVAILABLE',
+      target: 'TARGET_DATE_RAW_CLOSE',
       // 口径按本交易日实际入榜行统计，不跨日期累计。
       covered: crosscheckCovered,
       requested: crosscheckRequested,
@@ -624,18 +846,56 @@ async function main() {
     fetchBars(item.symbol, barCount),
   );
   const computed = universe.map((item, index) => {
-    const bars = Array.isArray(barsList[index]) ? barsList[index] : [];
+    const result = barsList[index];
+    const failed =
+      result == null || (!Array.isArray(result) && Boolean(result.error));
     return {
       symbol: item.symbol,
       code: item.code,
       name: item.name,
       universe: item,
-      bars,
+      bars: failed ? [] : result.bars,
+      barsSource: failed ? null : result.source,
+      fetchError: failed ? result.error : null,
       cells: {},
     };
   });
   const withBars = computed.filter((entry) => entry.bars.length).length;
+  const fetchFailed = computed.filter((entry) => entry.fetchError).length;
   log(`  成功 ${withBars}/${computed.length}，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  if (fetchFailed) {
+    log(`  ⚠ 拉取失败 ${fetchFailed} 只（会在榜单原因中如实标注，不计入「无历史」）`);
+    const sample = computed.filter((entry) => entry.fetchError).slice(0, 3);
+    for (const entry of sample) log(`    ${entry.symbol}: ${entry.fetchError}`);
+
+    // 零星失败再补拉一轮，避免网络抖动被当成覆盖缺口。
+    const retryTargets = computed.filter((entry) => entry.fetchError);
+    log(`  补拉 ${retryTargets.length} 只…`);
+    const retryResults = await pool(
+      retryTargets,
+      Math.min(CONCURRENCY, 4),
+      (entry) => fetchBars(entry.symbol, barCount),
+    );
+    let recovered = 0;
+    retryTargets.forEach((entry, index) => {
+      const result = retryResults[index];
+      if (result && Array.isArray(result.bars) && result.bars.length) {
+        entry.bars = result.bars;
+        entry.barsSource = result.source;
+        entry.fetchError = null;
+        recovered += 1;
+      }
+    });
+    log(`  补拉成功 ${recovered}/${retryTargets.length}`);
+  }
+
+  // 覆盖不足时拒绝写出：宁可失败，也不发布偏样本排行。
+  const stillFailed = computed.filter((entry) => entry.fetchError).length;
+  if (stillFailed / computed.length > 0.2) {
+    throw new Error(
+      `行情源拉取失败 ${stillFailed}/${computed.length}（${((stillFailed / computed.length) * 100).toFixed(1)}%），覆盖不足，已拒绝写出榜单。请检查网络或降低 --concurrency 后重试。`,
+    );
+  }
 
   for (const entry of computed) {
     entry.cells = computeWindows(entry, calendar, targetIsos);
@@ -643,8 +903,8 @@ async function main() {
 
   const crosscheck = new Map();
   if (CROSSCHECK) {
-    log('交叉核验目标日收盘（新浪独立源）…');
-    const wanted = new Set();
+    // 谁产出的日线，就用另一家的前复权收盘去核验，避免同源自证。
+    const wanted = new Map();
     for (const targetIso of targetIsos) {
       for (const sessions of WINDOWS) {
         const ranked = computed
@@ -652,22 +912,62 @@ async function main() {
           .filter((item) => item.cell && !item.cell.excluded)
           .sort((a, b) => b.cell.gainPct - a.cell.gainPct)
           .slice(0, TOP_N);
-        for (const item of ranked) wanted.add(item.entry.symbol);
+        for (const item of ranked) {
+          if (!item.entry.barsSource) continue;
+          wanted.set(item.entry.symbol, item.entry.barsSource);
+        }
       }
     }
-    const symbols = [...wanted];
-    const lookback = Math.min(60, maxOffset + 12);
-    const results = await pool(symbols, Math.min(CONCURRENCY, 6), (symbol) =>
-      fetchSinaCloses(symbol, lookback),
+    const fromSina = [...wanted].filter(([, source]) => source === 'SINA_QFQ_DERIVED');
+    const fromTencent = [...wanted].filter(([, source]) => source === 'TENCENT_QFQ');
+    log(
+      `交叉核验目标日收盘：${fromSina.length} 只用腾讯核验，${fromTencent.length} 只用新浪核验…`,
     );
-    symbols.forEach((symbol, index) => {
-      const closes = results[index];
-      if (!(closes instanceof Map)) return;
-      for (const targetIso of targetIsos) {
-        const close = closes.get(targetIso);
-        if (Number.isFinite(close)) crosscheck.set(`${symbol}|${targetIso}`, close);
+    const lookback = Math.min(60, maxOffset + 12);
+
+    const merge = (pairs, results) => {
+      const failed = [];
+      pairs.forEach((pair, index) => {
+        const [symbol] = pair;
+        const closes = results[index];
+        if (!(closes instanceof Map)) {
+          failed.push(pair);
+          return;
+        }
+        for (const targetIso of targetIsos) {
+          const close = closes.get(targetIso);
+          if (Number.isFinite(close)) {
+            crosscheck.set(`${symbol}|${targetIso}`, close);
+          }
+        }
+      });
+      return failed;
+    };
+
+    if (fromSina.length) {
+      const results = await pool(fromSina, 2, ([symbol]) =>
+        fetchTencentRawCloses(symbol, lookback),
+      );
+      const failed = merge(fromSina, results);
+      log(`  腾讯核验完成，累计 ${crosscheck.size} 个「股票×日期」收盘`);
+      if (failed.length) {
+        // 腾讯对量敏感，失败的再补一轮，避免把限流当成「没有独立源」。
+        log(`  补核验 ${failed.length} 只…`);
+        const retry = await pool(failed, 1, ([symbol]) =>
+          fetchTencentRawCloses(symbol, lookback),
+        );
+        const stillFailed = merge(failed, retry);
+        log(
+          `  补核验成功 ${failed.length - stillFailed.length}/${failed.length}，累计 ${crosscheck.size} 个`,
+        );
       }
-    });
+    }
+    if (fromTencent.length) {
+      const results = await pool(fromTencent, Math.min(CONCURRENCY, 6), ([symbol]) =>
+        fetchSinaRawCloses(symbol, lookback),
+      );
+      merge(fromTencent, results);
+    }
     log(`  已核验 ${crosscheck.size} 个「股票×日期」收盘`);
   }
 

@@ -497,8 +497,15 @@ export function MultiWindowRankingsBoard() {
                   ) : null}
 
                   {data.reasons.length ? (
-                    <p className="mt-3 text-xs leading-5 text-amber-700 dark:text-amber-400">
-                      降级原因：{data.reasons.join('；')}
+                    <p
+                      className={`mt-3 text-xs leading-5 ${
+                        data.status === 'READY'
+                          ? 'text-muted-foreground'
+                          : 'text-amber-700 dark:text-amber-400'
+                      }`}
+                    >
+                      {data.status === 'READY' ? '数据说明：' : '降级原因：'}
+                      {data.reasons.join('；')}
                     </p>
                   ) : null}
                 </TabsContent>
