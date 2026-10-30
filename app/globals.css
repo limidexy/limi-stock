@@ -140,10 +140,22 @@
   color: oklch(0.48 0.12 70);
 }
 
+.status-missing {
+  border-color: oklch(0.62 0.19 25 / 50%);
+  background: oklch(0.93 0.05 25 / 45%);
+  color: oklch(0.45 0.17 25);
+}
+
 .dark .status-ready {
   border-color: oklch(0.7 0.14 155 / 50%);
   background: oklch(0.35 0.08 155 / 35%);
   color: oklch(0.78 0.13 155);
+}
+
+.dark .status-missing {
+  border-color: oklch(0.68 0.18 25 / 50%);
+  background: oklch(0.34 0.09 25 / 35%);
+  color: oklch(0.8 0.15 25);
 }
 
 .dark .status-degraded {
