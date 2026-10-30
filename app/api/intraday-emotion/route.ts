@@ -171,7 +171,7 @@ export async function GET() {
       {
         status: 'MISSING',
         retrievedAt: new Date().toISOString(),
-        reason: '盘中情绪数据暂时不可用，正在自动重连',
+        reason: `盘中情绪数据缺失（${String(error)}）；正在自动重连`,
       },
       { status: 503, headers: { 'cache-control': 'no-store' } },
     );

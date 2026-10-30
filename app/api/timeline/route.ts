@@ -57,10 +57,10 @@ export async function GET() {
     const repaired = await withTimeout(
       repairArchivedTimeline(archived),
       55_000,
-    ).catch(() => ({
+    ).catch((error) => ({
       ...archived,
-      status: 'DEGRADED',
-      reason: '节点行情补查暂未完成，保留原始归档时间',
+      status: 'DEGRADED' as const,
+      reason: `节点行情补查失败（${String(error)}），保留原始归档时间`,
     }));
     return Response.json(repaired, {
       headers: { 'cache-control': 'no-store' },
@@ -93,7 +93,8 @@ export async function GET() {
     return Response.json(snapshot, {
       headers: { 'cache-control': 'no-store' },
     });
-  } catch {
+  } catch (error) {
+    const sourceError = String(error);
     const fallback =
       lastSnapshot ??
       (await loadLatestModuleSnapshot<
@@ -111,7 +112,7 @@ export async function GET() {
               ? fallback.persistedAt
               : fallback.retrievedAt,
           retrievedAt: fallback.retrievedAt,
-          reason: '分钟行情源短暂波动，展示同交易日最近盘面脉络并自动重连',
+          reason: `盘面脉络行情请求失败（${sourceError}）；展示同交易日最近盘面并自动重连`,
         },
         { headers: { 'cache-control': 'no-store' } },
       );
@@ -124,7 +125,7 @@ export async function GET() {
         lastPointTime: null,
         source: '东方财富公开分钟序列',
         sourceState: 'STALE',
-        reason: '盘面脉络数据暂时不可用，正在自动重连',
+        reason: `盘面脉络行情请求失败（${sourceError}）；正在自动重连`,
         basis: '',
         coverage: {
           sectors: 0,

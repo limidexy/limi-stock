@@ -120,7 +120,8 @@ export async function GET() {
     return Response.json(snapshot, {
       headers: { 'cache-control': 'no-store' },
     });
-  } catch {
+  } catch (error) {
+    const sourceError = String(error);
     const fallback =
       lastSnapshot ??
       (await loadLatestModuleSnapshot<
@@ -138,7 +139,7 @@ export async function GET() {
               ? fallback.persistedAt
               : fallback.retrievedAt,
           retrievedAt: new Date().toISOString(),
-          reason: '行情源短暂波动，展示最近成功快照并自动重连',
+          reason: `涨速行情源请求失败（${sourceError}）；展示最近成功快照并自动重连`,
         },
         { headers: { 'cache-control': 'no-store' } },
       );
@@ -146,7 +147,7 @@ export async function GET() {
       {
         status: 'MISSING',
         retrievedAt: new Date().toISOString(),
-        reason: '行情源暂时不可用，正在自动重连',
+        reason: `涨速行情源请求失败（${sourceError}）；正在自动重连`,
         rows: [],
       },
       { status: 503 },

@@ -12,6 +12,7 @@ import {
   toEmotionFacts,
 } from '@/components/market-reading-board';
 import { EmotionTrackingBoard } from '@/components/emotion-tracking-board';
+import { MultiWindowRankingsBoard } from '@/components/multi-window-rankings-board';
 import { UnifiedMarketBoard } from '@/components/unified-market-board';
 import { unifiedMarketReading } from '@/lib/unified-market';
 import {
@@ -29,6 +30,7 @@ import {
   ArrowDownRight,
   ArrowLeftRight,
   ArrowUpRight,
+  BarChart3,
   BrainCircuit,
   CalendarDays,
   Clock3,
@@ -89,6 +91,10 @@ import {
   type IntradayEmotionSnapshot,
   type CloseStock,
 } from '@/lib/close-history';
+import type {
+  EarlyObservationComparison,
+  EarlyObservationSnapshot,
+} from '@/lib/early-observation';
 
 type DataState = 'READY' | 'DEGRADED' | 'MISSING';
 
@@ -480,6 +486,233 @@ function StateBadge({ state, label }: { state?: DataState; label?: string }) {
       </Badge>
     );
   return <Badge variant="destructive">{label ?? 'MISSING'}</Badge>;
+}
+
+function median(values: number[]) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+function useEarlyObservationComparison(
+  data: EarlyObservationSnapshot | null,
+  receivedAt: number | null,
+) {
+  const previous = useRef<EarlyObservationSnapshot | null>(null);
+  const seenReceipt = useRef<number | null>(null);
+  const [comparison, setComparison] =
+    useState<EarlyObservationComparison | null>(null);
+
+  useEffect(() => {
+    if (!data || receivedAt === null || seenReceipt.current === receivedAt)
+      return;
+    seenReceipt.current = receivedAt;
+    if (data.status === 'MISSING' || !data.rows.length) {
+      previous.current = null;
+      setComparison(null);
+      return;
+    }
+    const prior = previous.current;
+    if (!prior || prior.tradeDate !== data.tradeDate) {
+      previous.current = data;
+      setComparison(null);
+      return;
+    }
+
+    const baselineTime = prior.latestQuoteTime ?? prior.quoteTime;
+    const latestTime = data.latestQuoteTime ?? data.quoteTime;
+    const elapsedSeconds =
+      baselineTime && latestTime
+        ? Math.max(
+            0,
+            Math.round((Date.parse(latestTime) - Date.parse(baselineTime)) / 1000),
+          )
+        : 0;
+    const quoteAdvanced = elapsedSeconds > 0;
+    const priorByCode = new Map(prior.rows.map((row) => [row.code, row]));
+    const volumeChanges: number[] = [];
+    const amountChanges: number[] = [];
+    for (const row of data.rows) {
+      const old = priorByCode.get(row.code);
+      if (!old) continue;
+      if (old.volume && old.volume > 0 && row.volume !== null)
+        volumeChanges.push(((row.volume - old.volume) / old.volume) * 100);
+      if (old.amount && old.amount > 0 && row.amount !== null)
+        amountChanges.push(((row.amount - old.amount) / old.amount) * 100);
+    }
+    setComparison({
+      baselineQuoteTime: baselineTime ?? '',
+      latestQuoteTime: latestTime ?? '',
+      elapsedSeconds,
+      quoteAdvanced,
+      breadthDelta: {
+        up: data.breadth.up - prior.breadth.up,
+        down: data.breadth.down - prior.breadth.down,
+        flat: data.breadth.flat - prior.breadth.flat,
+      },
+      matchedTurnoverBoards: Math.min(volumeChanges.length, amountChanges.length),
+      medianVolumeChangePct: median(volumeChanges),
+      medianAmountChangePct: median(amountChanges),
+    });
+    if (quoteAdvanced) previous.current = data;
+  }, [data, receivedAt]);
+
+  return comparison;
+}
+
+function EarlyObservationPanel({
+  data,
+  error,
+  comparison,
+}: {
+  data: EarlyObservationSnapshot | null;
+  error: string | null;
+  comparison: EarlyObservationComparison | null;
+}) {
+  const state: DataState = error
+    ? data?.rows.length
+      ? 'DEGRADED'
+      : 'MISSING'
+    : data?.status ?? 'MISSING';
+  const reason = error
+    ? `${error}${data?.rows.length ? '；当前显示的是上一次同日报价' : ''}`
+    : data?.reason;
+  const gainers = [...(data?.rows ?? [])]
+    .filter((row) => row.changePct !== null)
+    .sort((a, b) => (b.changePct ?? 0) - (a.changePct ?? 0))
+    .slice(0, 3);
+  const decliners = [...(data?.rows ?? [])]
+    .filter((row) => row.changePct !== null)
+    .sort((a, b) => (a.changePct ?? 0) - (b.changePct ?? 0))
+    .slice(0, 3);
+  const delta = (value: number) => `${value > 0 ? '+' : ''}${value}`;
+
+  return (
+    <section
+      aria-labelledby="early-observation-title"
+      className="rounded-xl border bg-card px-4 py-4 shadow-sm sm:px-5"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="early-observation-title" className="text-base font-semibold">
+            板块价格与成交早期观察
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            免费公开行业板块报价；独立于分钟资金归档，不把价格或成交变化解释成资金流。
+          </p>
+        </div>
+        <StateBadge state={state} />
+      </div>
+
+      {data?.rows.length ? (
+        <>
+          <dl className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 border-y py-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
+            <div>
+              <dt className="text-xs text-muted-foreground">行情日 / 报价时点</dt>
+              <dd className="mt-1 font-medium tabular-nums">
+                {fmtTradeDate(data.tradeDate)} · {fmtTime(data.quoteTime)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">有效覆盖</dt>
+              <dd className="mt-1 font-medium tabular-nums">
+                {data.coverage.priced}/{data.coverage.requested}（日期行 {data.coverage.exactDate}）
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">上涨</dt>
+              <dd className="mt-1 font-medium tabular-nums text-red-600 dark:text-red-400">
+                {data.breadth.up}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">下跌</dt>
+              <dd className="mt-1 font-medium tabular-nums text-emerald-700 dark:text-emerald-400">
+                {data.breadth.down}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">平盘</dt>
+              <dd className="mt-1 font-medium tabular-nums">{data.breadth.flat}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">成交字段覆盖</dt>
+              <dd className="mt-1 font-medium tabular-nums">
+                {data.coverage.volumeAndAmount}/{data.coverage.requested}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">报价延迟 / 跨页跨度</dt>
+              <dd className="mt-1 font-medium tabular-nums">
+                {data.quoteAgeSeconds ?? '—'}s / {data.quoteSpreadSeconds ?? '—'}s
+              </dd>
+            </div>
+          </dl>
+
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+            {comparison?.quoteAdvanced ? (
+              <span>
+                距 {fmtTime(comparison.baselineQuoteTime)}（{comparison.elapsedSeconds}s）：
+                上涨板块 {delta(comparison.breadthDelta.up)}，下跌板块{' '}
+                {delta(comparison.breadthDelta.down)}，平盘板块{' '}
+                {delta(comparison.breadthDelta.flat)}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                {comparison
+                  ? '报价时点尚未推进，暂不计算区间变化'
+                  : '正在建立首个有效采样基线，下一次新报价后显示变化'}
+              </span>
+            )}
+            {comparison?.quoteAdvanced ? (
+              <span>
+                同板块成交量中位变化{' '}
+                {comparison.medianVolumeChangePct === null
+                  ? '—'
+                  : fmtPct(comparison.medianVolumeChangePct)}
+                {' · '}成交额中位变化{' '}
+                {comparison.medianAmountChangePct === null
+                  ? '—'
+                  : fmtPct(comparison.medianAmountChangePct)}
+                {' · '}配对 {comparison.matchedTurnoverBoards} 板块
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs">
+            <span>
+              涨幅靠前：
+              {gainers.map((row) => `${row.name} ${fmtPct(row.changePct)}`).join(' · ') || '—'}
+            </span>
+            <span>
+              跌幅靠前：
+              {decliners.map((row) => `${row.name} ${fmtPct(row.changePct)}`).join(' · ') || '—'}
+            </span>
+          </div>
+        </>
+      ) : (
+        <p className="mt-3 text-sm text-muted-foreground">
+          当前没有可用的精确日期板块报价。
+        </p>
+      )}
+
+      {reason ? (
+        <p
+          role={state === 'READY' ? undefined : 'status'}
+          className={`mt-3 text-xs leading-5 ${state === 'MISSING' ? 'text-destructive' : 'text-amber-700 dark:text-amber-300'}`}
+        >
+          {reason}
+        </p>
+      ) : null}
+      <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+        来源：{data?.source ?? '东方财富公开行业板块报价（push2delay / clist）'} · 范围：
+        {data?.scope ?? '行业板块指数报价，不代表板块成分股宽度或资金净流入'}
+      </p>
+    </section>
+  );
 }
 
 function EmptyState({ children }: { children: React.ReactNode }) {
@@ -1886,6 +2119,14 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
 export default function Home() {
   const [activeTab, setActiveTab] = useState('overview');
   const radar = usePolling<RadarData>('/api/radar', 15_000);
+  const earlyObservation = usePolling<EarlyObservationSnapshot>(
+    '/api/early-observation',
+    20_000,
+  );
+  const earlyComparison = useEarlyObservationComparison(
+    earlyObservation.data,
+    earlyObservation.receivedAt,
+  );
   const flow = usePolling<FlowData>('/api/flow', 60_000);
   const ladder = usePolling<LadderData>('/api/ladder', 30_000);
   const speed = usePolling<SpeedData>(
@@ -2041,6 +2282,7 @@ export default function Home() {
     radarEvents[0];
   const latestAt = [
     radar.data?.retrievedAt,
+    earlyObservation.data?.retrievedAt,
     flow.data?.retrievedAt,
     ladder.data?.retrievedAt,
     speed.data?.retrievedAt,
@@ -2053,11 +2295,20 @@ export default function Home() {
     history.archive?.sessionState === 'CLOSED' ? history.archive : undefined;
   const moduleHealth = [
     {
+      name: '板块价格/成交观察',
+      error: earlyObservation.error,
+      state: earlyObservation.data?.status,
+      date: earlyObservation.data?.tradeDate,
+      detail: earlyObservation.data?.reason,
+      hasData: Boolean(earlyObservation.data?.rows.length),
+    },
+    {
       name: '板块异动',
       error: radar.error,
       state: radar.data?.status,
       date: radar.data?.tradeDate,
       detail: radar.data?.reason,
+      hasData: Boolean(radar.data),
     },
     {
       name: '资金分流',
@@ -2065,6 +2316,7 @@ export default function Home() {
       state: flow.data?.status,
       date: flow.data?.tradeDate,
       detail: flow.data?.reason,
+      hasData: Boolean(flow.data),
     },
     {
       name: '连板梯队',
@@ -2072,6 +2324,7 @@ export default function Home() {
       state: ladder.data?.status,
       date: ladder.data?.tradeDate,
       detail: ladder.data?.reason,
+      hasData: Boolean(ladder.data),
     },
     {
       name: '涨速榜',
@@ -2079,6 +2332,7 @@ export default function Home() {
       state: speed.data?.status,
       date: speed.data?.tradeDate,
       detail: speed.data?.reason,
+      hasData: Boolean(speed.data),
     },
     {
       name: '盘中情绪',
@@ -2086,6 +2340,7 @@ export default function Home() {
       state: intradayEmotion.data?.status,
       date: intradayEmotion.data?.tradeDate,
       detail: intradayEmotion.data?.reason,
+      hasData: Boolean(intradayEmotion.data),
     },
     {
       name: '情绪周期',
@@ -2096,6 +2351,7 @@ export default function Home() {
         closeHistory.data?.archive?.state === 'DEGRADED'
           ? closeHistory.data.archive.message
           : undefined,
+      hasData: Boolean(closeHistory.data),
     },
   ];
   const alignedDate = moduleHealth
@@ -2124,6 +2380,7 @@ export default function Home() {
     setRefreshing(true);
     await Promise.all([
       radar.refresh(),
+      earlyObservation.refresh(),
       flow.refresh(),
       ladder.refresh(),
       speed.refresh(),
@@ -2227,6 +2484,38 @@ export default function Home() {
       </header>
 
       <div className="mx-auto max-w-[1500px] space-y-4 px-4 py-4 sm:px-6 sm:py-6">
+        {issueModules.length ? (
+          <aside
+            role="alert"
+            aria-live="polite"
+            className="rounded-xl border border-amber-500/35 bg-amber-500/[0.08] px-4 py-3"
+          >
+            <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+              <ShieldAlert className="size-4 text-amber-600" />
+              <span>数据状态提醒 · {sourceNotice}</span>
+            </div>
+            <ul className="mt-2 grid gap-x-6 gap-y-1 text-xs leading-5 text-foreground sm:grid-cols-2">
+              {issueModules.map((item) => (
+                <li key={item.name}>
+                  <span className="font-medium">{item.name}：</span>
+                  {item.error
+                    ? `${item.hasData ? '本次请求失败，旧数据已降级' : '当前缺失'}：${item.error}`
+                    : item.detail || item.state || '状态异常'}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+              系统会按各模块间隔自动重试；失败时保留最近同日证据并明确标为降级，缺少同日数据则标为缺失。
+            </p>
+          </aside>
+        ) : null}
+
+        <EarlyObservationPanel
+          data={earlyObservation.data}
+          error={earlyObservation.error}
+          comparison={earlyComparison}
+        />
+
         <MarketCommandCenter
           radarEvents={radarEvents}
           radarDate={radar.data?.tradeDate}
@@ -2263,7 +2552,11 @@ export default function Home() {
           </summary>
           <div className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
             {moduleHealth.map((item) => {
-              const state = item.error ? 'MISSING' : item.state;
+              const state = item.error
+                ? item.hasData
+                  ? 'DEGRADED'
+                  : 'MISSING'
+                : item.state;
               const stale = Boolean(
                 alignedDate &&
                 item.date &&
@@ -2316,6 +2609,10 @@ export default function Home() {
             <TabsTrigger value="emotion-tracking">
               <Activity />
               情绪跟踪
+            </TabsTrigger>
+            <TabsTrigger value="rankings">
+              <BarChart3 />
+              多周期涨幅
             </TabsTrigger>
             <TabsTrigger value="radar">
               <Activity />
@@ -2378,6 +2675,10 @@ export default function Home() {
                 setSelectedCloseDate(date);
               }}
             />
+          </TabsContent>
+
+          <TabsContent value="rankings">
+            <MultiWindowRankingsBoard />
           </TabsContent>
 
           <TabsContent value="radar" className="space-y-4">

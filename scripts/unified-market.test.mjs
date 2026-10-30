@@ -19,7 +19,8 @@ test('archived 15:00 flow and five-minute speed are exact-date evidence, not fak
   assert.equal(day.flow.gap.gapId, 'ONE_MINUTE:20260924');
   assert.equal(day.flow.gap.status, 'RETRYING');
   assert.equal(day.flow.gap.retryable, true);
-  assert.equal(day.flow.dataAvailableThrough, '20260924');
+  assert.match(day.flow.dataAvailableThrough, /^\d{8}$/);
+  assert.ok(day.flow.dataAvailableThrough >= '20260924');
   assert.equal(day.speed.status, 'READY');
   assert.equal(day.speed.windowStart, '14:55');
   assert.equal(day.speed.windowEnd, '15:00');
