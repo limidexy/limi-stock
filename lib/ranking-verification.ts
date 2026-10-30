@@ -29,6 +29,23 @@ export type RankingRow = {
   startClose: number;
   gainPct: number;
   metadataStatus: DataState;
+  /** 可选：该行实际使用的交易日跨度，用于校验窗口长度。 */
+  sessions?: number;
+  /** 可选：目标日收盘的独立源核验结果。 */
+  crosscheckStatus?: string;
+};
+
+/** 行情源是否提供行业 / 题材。缺省视为都提供，兼容既有外部接口。 */
+export type MetadataAvailability = {
+  industry: boolean;
+  themes: boolean;
+};
+
+export type CrosscheckSummary = {
+  covered: number;
+  requested: number;
+  source?: string;
+  target?: string;
 };
 
 export type RankingWindow = {
@@ -65,6 +82,10 @@ export type RankingPayload = {
   windows: Record<WindowKey, RankingWindow>;
   scoringEnabled?: boolean;
   selectionEnabled?: boolean;
+  /** 可选：声明该数据源是否提供行业 / 题材。 */
+  metadata?: MetadataAvailability;
+  /** 可选：目标日收盘交叉核验的覆盖情况。 */
+  crosscheck?: CrosscheckSummary;
 };
 
 export type Exclusion = {
@@ -82,6 +103,7 @@ export type WindowView = {
   topRequested: number;
   topAvailable: number;
   metadataReady: number;
+  metadataAvailable: boolean;
   expectedStart: string | null;
   endDate: string;
   declaredStart: string | null;
@@ -102,6 +124,10 @@ export type BoardView = {
   reasons: string[];
   windows: Record<WindowKey, WindowView>;
   scoringDisabled: boolean;
+  metadataAvailable: boolean;
+  crosscheck: CrosscheckSummary | null;
+  /** 该视图是否为用户主动选择的历史交易日回看。 */
+  historical: boolean;
 };
 
 export const WINDOW_KEYS: WindowKey[] = ['5', '10', '20', '30'];
@@ -185,21 +211,47 @@ function sessionSpan(calendar: string[], startIso: string, endIso: string) {
 }
 
 /**
- * 元数据是否完整：以题材为准。
- * 行业与板态属于补充信息，缺失不单独判定为不完整，避免整榜无谓降级。
+ * 元数据是否完整：只对数据源声明提供的字段做判定。
+ * - 有题材就按题材判，行业只作兜底（行业缺失不降级）
+ * - 两者都未提供时返回 true，并由页面显式说明「源未提供」，而不是伪装成 30/30
  */
-export function isMetadataComplete(row: RankingRow) {
-  return Array.isArray(row.themes) && row.themes.length > 0;
+export function isMetadataComplete(
+  row: RankingRow,
+  availability: MetadataAvailability = { industry: true, themes: true },
+) {
+  if (availability.themes) {
+    return Array.isArray(row.themes) && row.themes.length > 0;
+  }
+  if (availability.industry) {
+    return Boolean(row.industry && row.industry.trim());
+  }
+  return true;
 }
+
+export type VerifyOptions = {
+  /**
+   * 用户明确回看某个历史交易日时置为 true：
+   * 「落后于最新交易日」不再判为 MISSING，也不再提示生成时间过久，
+   * 因为此时页面并不声称自己是最新榜。日期仍须被权威日历确认。
+   */
+  historical?: boolean;
+};
 
 export function verifyRankings(
   payload: RankingPayload,
   calendar: string[],
   now: Date,
+  options: VerifyOptions = {},
 ): BoardView {
+  const historical = options.historical === true;
   const reasons: string[] = [...(payload.reasons ?? [])];
   const tradeIso = compactToIso(payload.tradeDate);
   const calendarLastIso = calendar[calendar.length - 1] ?? '';
+  const availability: MetadataAvailability = {
+    industry: payload.metadata?.industry ?? true,
+    themes: payload.metadata?.themes ?? true,
+  };
+  const metadataAvailable = availability.industry || availability.themes;
   let status: DataState = payload.status ?? 'DEGRADED';
 
   // 门禁一：目标交易日必须被权威日历确认，且不得落后于已知交易日。
@@ -211,7 +263,7 @@ export function verifyRankings(
     reasons.push(
       `目标交易日 ${tradeIso} 不在本地权威交易日历内，无法交叉核验该日期。`,
     );
-  } else if (calendarLastIso && tradeIso < calendarLastIso) {
+  } else if (calendarLastIso && tradeIso < calendarLastIso && !historical) {
     // 已知存在更晚的交易日：不得用旧榜冒充最新榜。
     status = 'MISSING';
     reasons.push(
@@ -222,7 +274,7 @@ export function verifyRankings(
     reasons.push(
       `交易日历止于 ${calendarLastIso}，无法确认 ${tradeIso} 为有效交易日。`,
     );
-  } else if (calendarLastIso) {
+  } else if (calendarLastIso && !historical) {
     const lag = countWeekdaysAfter(calendarLastIso, todayIso(now));
     if (lag > CALENDAR_STALE_WEEKDAYS) {
       if (status !== 'MISSING') status = 'DEGRADED';
@@ -251,6 +303,7 @@ export function verifyRankings(
         topRequested: 30,
         topAvailable: 0,
         metadataReady: 0,
+        metadataAvailable,
         expectedStart: null,
         endDate: payload.tradeDate,
         declaredStart: null,
@@ -299,10 +352,28 @@ export function verifyRankings(
         });
         continue;
       }
+      if (typeof row.sessions === 'number' && row.sessions !== sessions) {
+        excluded.push({
+          code: row.code,
+          name: row.name,
+          reason: `该行自报窗口 ${row.sessions} 个交易日，与 ${sessions} 日榜不符`,
+        });
+        continue;
+      }
+      if (row.crosscheckStatus === 'MISMATCH') {
+        excluded.push({
+          code: row.code,
+          name: row.name,
+          reason: '目标日收盘未通过独立源核验，不展示该行',
+        });
+        continue;
+      }
       kept.push(row);
     }
 
-    const metadataReady = kept.filter(isMetadataComplete).length;
+    const metadataReady = kept.filter((row) =>
+      isMetadataComplete(row, availability),
+    ).length;
     let windowStatus: DataState = declared.status ?? 'DEGRADED';
     const declaredStartIso = compactToIso(declared.startDate);
 
@@ -324,10 +395,19 @@ export function verifyRankings(
         `已排除 ${excluded.length}/${sourceRows.length} 行：窗口长度或目标日不符，不参与排行。`,
       );
     }
-    if (kept.length && metadataReady < kept.length) {
+    if (metadataAvailable && kept.length && metadataReady < kept.length) {
       if (windowStatus !== 'MISSING') windowStatus = 'DEGRADED';
       windowReasons.push(
-        `元数据完整 ${metadataReady}/${kept.length}，缺题材。`,
+        `元数据完整 ${metadataReady}/${kept.length}，缺${availability.themes ? '题材' : '行业'}。`,
+      );
+    }
+    const unverifiedRows = kept.filter(
+      (row) => row.crosscheckStatus === 'UNAVAILABLE',
+    ).length;
+    if (unverifiedRows) {
+      if (windowStatus !== 'MISSING') windowStatus = 'DEGRADED';
+      windowReasons.push(
+        `${unverifiedRows} 行缺少独立源收盘，无法交叉核验目标日价格。`,
       );
     }
     if (!kept.length) {
@@ -347,6 +427,7 @@ export function verifyRankings(
       topRequested: declared.topRequested ?? 30,
       topAvailable: kept.length,
       metadataReady,
+      metadataAvailable,
       expectedStart,
       endDate: payload.tradeDate,
       declaredStart: declared.startDate ?? null,
@@ -362,13 +443,21 @@ export function verifyRankings(
     else if (anyWindowDegraded && status === 'READY') status = 'DEGRADED';
   }
 
+  const crosscheck = payload.crosscheck ?? null;
+  if (crosscheck && crosscheck.requested > 0 && crosscheck.covered < crosscheck.requested) {
+    if (status === 'READY') status = 'DEGRADED';
+    reasons.push(
+      `目标日收盘交叉核验覆盖 ${crosscheck.covered}/${crosscheck.requested} 行。`,
+    );
+  }
+
   const generatedAt = payload.generatedAt;
   const generatedMs = generatedAt ? new Date(generatedAt).getTime() : Number.NaN;
   const ageHours = Number.isFinite(generatedMs)
     ? (now.getTime() - generatedMs) / 3_600_000
     : null;
 
-  if (ageHours != null && ageHours > GENERATED_AGE_WARN_HOURS) {
+  if (!historical && ageHours != null && ageHours > GENERATED_AGE_WARN_HOURS) {
     if (status === 'READY') status = 'DEGRADED';
     reasons.push(
       `接口生成于 ${formatAge(ageHours)}，可能尚未包含最新收盘，请核对目标日。`,
@@ -388,5 +477,8 @@ export function verifyRankings(
     windows,
     scoringDisabled:
       payload.scoringEnabled === false && payload.selectionEnabled === false,
+    metadataAvailable,
+    crosscheck,
+    historical,
   };
 }

@@ -43,3 +43,6 @@ next-env.d.ts
 /outputs/
 /work/
 *.tsbuildinfo
+
+# 行情原始缓存（不提交）
+.cache/

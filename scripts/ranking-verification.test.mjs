@@ -271,3 +271,130 @@ test('接口声明未启用评分与选股时如实透出', () => {
   const view = verifyRankings(makePayload(cleanWindows()), CALENDAR, NOW);
   assert.equal(view.scoringDisabled, true);
 });
+
+test('行自报窗口长度与榜位不符时排除', () => {
+  const windows = cleanWindows();
+  windows['20'] = [
+    makeRow('600007', '自报43', sessionsAgo(20), { sessions: 43 }),
+    makeRow('600001', '样本甲', sessionsAgo(20), { sessions: 20 }),
+  ];
+
+  const view = verifyRankings(makePayload(windows), CALENDAR, NOW);
+  assert.equal(view.windows['20'].rows.length, 1);
+  assert.equal(view.windows['20'].excluded[0].code, '600007');
+  assert.match(view.windows['20'].excluded[0].reason, /自报窗口 43 个交易日/);
+  assert.equal(view.windows['20'].status, 'DEGRADED');
+});
+
+test('目标日收盘未通过独立源核验的行必须排除', () => {
+  const windows = cleanWindows();
+  windows['5'] = [
+    makeRow('600008', '价格不符', sessionsAgo(5), { crosscheckStatus: 'MISMATCH' }),
+    makeRow('600001', '样本甲', sessionsAgo(5), { crosscheckStatus: 'PASS' }),
+  ];
+
+  const view = verifyRankings(makePayload(windows), CALENDAR, NOW);
+  assert.equal(view.windows['5'].rows.length, 1);
+  assert.equal(view.windows['5'].excluded[0].code, '600008');
+  assert.match(view.windows['5'].excluded[0].reason, /未通过独立源核验/);
+});
+
+test('缺独立源收盘时降级，而不是当作核验通过', () => {
+  const windows = cleanWindows();
+  windows['10'] = [
+    makeRow('600009', '无独立源', sessionsAgo(10), { crosscheckStatus: 'UNAVAILABLE' }),
+    makeRow('600001', '样本甲', sessionsAgo(10), { crosscheckStatus: 'PASS' }),
+  ];
+
+  const view = verifyRankings(makePayload(windows), CALENDAR, NOW);
+  assert.equal(view.windows['10'].rows.length, 2, '仍可展示，但必须降级');
+  assert.equal(view.windows['10'].status, 'DEGRADED');
+  assert.match(view.windows['10'].reasons.join(' '), /1 行缺少独立源收盘/);
+});
+
+test('源未提供行业与题材时不伪装成元数据齐全', () => {
+  const payload = makePayload(cleanWindows(), {
+    payload: { metadata: { industry: false, themes: false } },
+  });
+  // 源不提供元数据时，行内本就没有题材与行业。
+  for (const key of ['5', '10', '20', '30']) {
+    payload.windows[key].rows = payload.windows[key].rows.map((row) => ({
+      ...row,
+      industry: null,
+      themes: [],
+    }));
+  }
+
+  const view = verifyRankings(payload, CALENDAR, NOW);
+  assert.equal(view.metadataAvailable, false, '页面据此显示「源未提供」');
+  assert.equal(view.windows['5'].metadataAvailable, false);
+  assert.equal(view.windows['5'].status, 'READY', '源未提供不应算作数据缺失');
+  assert.doesNotMatch(view.windows['5'].reasons.join(' '), /元数据完整/);
+});
+
+test('交叉核验覆盖不足时整体降级并给出比例', () => {
+  const payload = makePayload(cleanWindows(), {
+    payload: { crosscheck: { covered: 7, requested: 8, source: '新浪日线' } },
+  });
+
+  const view = verifyRankings(payload, CALENDAR, NOW);
+  assert.equal(view.status, 'DEGRADED');
+  assert.match(view.reasons.join(' '), /交叉核验覆盖 7\/8 行/);
+  assert.equal(view.crosscheck.source, '新浪日线');
+});
+
+test('回看历史交易日时不判 MISSING，也不提示生成过久', () => {
+  const tradeDate = sessionsAgo(3);
+  const rows = {};
+  for (const key of ['5', '10', '20', '30']) {
+    rows[key] = [
+      makeRow('600001', '样本甲', sessionsAgo(Number(key) + 3)),
+      makeRow('600002', '样本乙', sessionsAgo(Number(key) + 3)),
+    ];
+  }
+  const payload = makePayload(rows, { tradeDate });
+  payload.tradeDate = tradeDate;
+  for (const key of ['5', '10', '20', '30']) {
+    payload.windows[key].endDate = tradeDate;
+    payload.windows[key].startDate = sessionsAgo(Number(key) + 3);
+    payload.windows[key].rows = payload.windows[key].rows.map((row) => ({
+      ...row,
+      latestDate: tradeDate,
+    }));
+  }
+
+  const later = new Date('2026-11-01T12:00:00+08:00');
+  const asLatest = verifyRankings(payload, CALENDAR, later);
+  assert.equal(asLatest.status, 'MISSING', '默认仍按最新榜口径，不允许旧榜冒充');
+
+  const asHistory = verifyRankings(payload, CALENDAR, later, { historical: true });
+  assert.equal(asHistory.status, 'READY');
+  assert.equal(asHistory.historical, true);
+  assert.doesNotMatch(asHistory.reasons.join(' '), /落后于已知交易日/);
+  assert.doesNotMatch(asHistory.reasons.join(' '), /可能尚未包含最新收盘/);
+});
+
+test('历史回看仍逐行校验窗口起点，不因历史模式放宽', () => {
+  const tradeDate = sessionsAgo(3);
+  const rows = {};
+  for (const key of ['5', '10', '20', '30']) {
+    rows[key] = [makeRow('600001', '样本甲', sessionsAgo(Number(key) + 3))];
+  }
+  rows['30'] = [makeRow('600825', '新华传媒', sessionsAgo(43))];
+  const payload = makePayload(rows, { tradeDate });
+  payload.tradeDate = tradeDate;
+  for (const key of ['5', '10', '20', '30']) {
+    payload.windows[key].endDate = tradeDate;
+    payload.windows[key].startDate = sessionsAgo(Number(key) + 3);
+    payload.windows[key].rows = payload.windows[key].rows.map((row) => ({
+      ...row,
+      latestDate: tradeDate,
+    }));
+  }
+
+  const view = verifyRankings(payload, CALENDAR, NOW, { historical: true });
+  assert.equal(view.windows['30'].rows.length, 0);
+  // 目标日已前移 3 个交易日，sessionsAgo(43) 相对它实际跨度 40 个交易日。
+  assert.match(view.windows['30'].excluded[0].reason, /实际跨度 40 个交易日/);
+  assert.equal(view.windows['30'].status, 'MISSING');
+});
