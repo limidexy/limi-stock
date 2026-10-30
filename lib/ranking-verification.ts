@@ -184,15 +184,12 @@ function sessionSpan(calendar: string[], startIso: string, endIso: string) {
   return end - start;
 }
 
-/** 元数据是否完整：行业、题材、板态三者齐全才算完整。 */
+/**
+ * 元数据是否完整：以题材为准。
+ * 行业与板态属于补充信息，缺失不单独判定为不完整，避免整榜无谓降级。
+ */
 export function isMetadataComplete(row: RankingRow) {
-  return Boolean(
-    row.industry &&
-      row.industry.trim() &&
-      Array.isArray(row.themes) &&
-      row.themes.length &&
-      row.limitState,
-  );
+  return Array.isArray(row.themes) && row.themes.length > 0;
 }
 
 export function verifyRankings(
@@ -330,7 +327,7 @@ export function verifyRankings(
     if (kept.length && metadataReady < kept.length) {
       if (windowStatus !== 'MISSING') windowStatus = 'DEGRADED';
       windowReasons.push(
-        `元数据完整 ${metadataReady}/${kept.length}，缺行业、题材或板态。`,
+        `元数据完整 ${metadataReady}/${kept.length}，缺题材。`,
       );
     }
     if (!kept.length) {

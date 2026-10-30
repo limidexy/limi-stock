@@ -199,7 +199,7 @@ test('目标日不在权威日历内时降级，不冒充 READY', () => {
   assert.match(view.reasons.join(' '), /不在本地权威交易日历内/);
 });
 
-test('元数据缺失按行实算分子分母并降级', () => {
+test('元数据以题材为准：缺行业不降级，缺题材才降级', () => {
   const windows = cleanWindows();
   windows['5'] = [
     makeRow('600001', '样本甲', sessionsAgo(5)),
@@ -211,9 +211,21 @@ test('元数据缺失按行实算分子分母并降级', () => {
   const window5 = view.windows['5'];
 
   assert.equal(window5.rows.length, 3, '元数据缺失仍可展示，但必须降级');
-  assert.equal(window5.metadataReady, 1, '只有 1 行元数据完整');
+  assert.equal(window5.metadataReady, 2, '缺行业不算不完整，缺题材才算');
   assert.equal(window5.status, 'DEGRADED');
-  assert.match(window5.reasons.join(' '), /元数据完整 1\/3/);
+  assert.match(window5.reasons.join(' '), /元数据完整 2\/3/);
+});
+
+test('题材齐全时即使行业为空也保持 READY', () => {
+  const windows = cleanWindows();
+  windows['10'] = [
+    makeRow('600004', '缺行业甲', sessionsAgo(10), { industry: null }),
+    makeRow('600006', '缺行业乙', sessionsAgo(10), { industry: null }),
+  ];
+
+  const view = verifyRankings(makePayload(windows), CALENDAR, NOW);
+  assert.equal(view.windows['10'].metadataReady, 2);
+  assert.equal(view.windows['10'].status, 'READY');
 });
 
 test('接口声明的区间起点与日历口径不一致时给出原因', () => {
