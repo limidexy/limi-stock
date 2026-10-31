@@ -181,3 +181,33 @@ test('a stock without any daily series is listed as not computed, not as not bro
   assert.match(attached.tenLine.missing[0].reason, /未请求日线收盘/);
   assert.equal(attached.rows[0].path[0].ma10, null);
 });
+
+test('ma5 uses five real closes and stays null when the stock is too new', async () => {
+  const { maAt } = await import('../lib/daily-close-ma10.ts');
+  const points = Array.from({ length: 6 }, (_, i) => ({
+    date: `2026-09-${String(i + 1).padStart(2, '0')}`,
+    close: 10 + i,
+  }));
+  // 09-06 收盘 15，前 5 根是 11..15，均值 13。
+  assert.equal(maAt(points, '2026-09-06', 5).ma, 13);
+  assert.equal(maAt(points, '2026-09-03', 5).ma, null);
+  assert.equal(maAt(points, '2026-09-03', 5).used, 3);
+});
+
+test('a target-day live quote is used only when its date equals the target date', async () => {
+  const { parseTencentQuotes, quoteForDate } = await import('../lib/live-quote.ts');
+  const raw =
+    'v_sh600838="1~上海九百~600838~12.27~13.63~12.98~1188169~630454~557715~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~12.27~68224~12.28~723~12.29~134~12.30~510~12.31~45~~20261030161456~-1.36~-9.98~13.53~12.27~";';
+  const quotes = parseTencentQuotes(raw);
+  const quote = quotes.get('600838');
+  assert.equal(quote.price, 12.27);
+  assert.equal(quote.changePct, -9.98);
+  assert.equal(quote.date, '2026-10-30');
+  assert.equal(quote.time, '16:14');
+  // 目标日一致：可用，且 15:00 之后是收盘快照，不是实时。
+  const same = quoteForDate(quote, '2026-10-30');
+  assert.equal(same.price, 12.27);
+  assert.equal(same.label, '收盘');
+  // 目标日不一致：不许把 10-30 的快照当成 09-18 的价格。
+  assert.equal(quoteForDate(quote, '2026-09-18'), null);
+});

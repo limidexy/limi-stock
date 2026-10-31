@@ -34,6 +34,7 @@ import {
   fetchDailyCloses,
   type TenLineCarrier,
 } from '@/lib/daily-close-ma10';
+import { fetchLiveQuotes } from '@/lib/live-quote';
 
 export const dynamic = 'force-dynamic';
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -62,8 +63,13 @@ async function attachDailyTenLine<T extends TenLineCarrier>(
   date: string,
 ) {
   if (!rows.length) return attachTenLine(rows, new Map(), date);
-  const series = await fetchDailyCloses(rows.map((row) => ({ code: row.code })));
-  return attachTenLine(rows, series, date);
+  const codes = rows.map((row) => ({ code: row.code }));
+  // 日线与实时快照并行取；两者互不依赖，任一失败都不影响另一个。
+  const [series, quotes] = await Promise.all([
+    fetchDailyCloses(codes),
+    fetchLiveQuotes(codes.map((row) => row.code)).catch(() => new Map()),
+  ]);
+  return attachTenLine(rows, series, date, quotes);
 }
 
 async function capture(requested: string, lookback: number) {
@@ -389,29 +395,37 @@ async function capture(requested: string, lookback: number) {
     date,
     lookback,
     cutoff,
+    calendar.dates,
   );
   // 10日线必须是每只老高标自己的日线收盘 MA10，不能拿池内稀疏涨幅重建。
   // 取数失败时 attachTenLine 会逐条写明原因，绝不退回重建口径。
-  const attached = await attachDailyTenLine(result.oldLeaders.rows, date).catch(
-    (error) => {
-      storageReason = [
-        storageReason,
-        `日线收盘取数失败，10日线不显示：${error instanceof Error ? error.message : '未知错误'}`,
-      ]
-        .filter(Boolean)
-        .join('；');
-      return null;
-    },
-  );
+  // 断板老高标与「仍在板上」的高标都要 5/10 日线与现价，一起取数再拆回两组。
+  const sealedRows = result.oldLeaders.stillSealed ?? [];
+  const attached = await attachDailyTenLine(
+    [...result.oldLeaders.rows, ...sealedRows],
+    date,
+  ).catch((error) => {
+    storageReason = [
+      storageReason,
+      `日线收盘取数失败，均线不显示：${error instanceof Error ? error.message : '未知错误'}`,
+    ]
+      .filter(Boolean)
+      .join('；');
+    return null;
+  });
   const withTenLine = attached
-    ? {
-        ...result,
-        oldLeaders: {
-          ...result.oldLeaders,
-          rows: attached.rows,
-          tenLine: attached.tenLine,
-        },
-      }
+    ? (() => {
+        const brokenCodes = new Set(result.oldLeaders.rows.map((x) => x.code));
+        return {
+          ...result,
+          oldLeaders: {
+            ...result.oldLeaders,
+            rows: attached.rows.filter((x) => brokenCodes.has(x.code)),
+            stillSealed: attached.rows.filter((x) => !brokenCodes.has(x.code)),
+            tenLine: attached.tenLine,
+          },
+        };
+      })()
     : result;
   const priorInfluence = await loadLatestModuleSnapshot<{
     records: Parameters<typeof updateInfluenceHistory>[1];

@@ -104,12 +104,20 @@ export function exactQuote(
     ? quote
     : null;
 }
+/**
+ * 完整收盘：三池名单与计数对得上，且是 15:00 收盘。
+ *
+ * 这里用**未过滤**的涨停梯队计数，因为 `limitUp` 是源站原始口径；
+ * `stocksOf` 会剔除退市整理期个股，拿过滤后的条数去比原始计数，
+ * 会把「池里恰好有一只退市股」误判成快照不完整。
+ */
 function complete(day?: CloseSnapshot) {
+  const ladderStocks = day?.ladders.flatMap((level) => level.stocks) ?? [];
   return Boolean(
     day &&
     day.status === 'READY' &&
     day.cutoff === '15:00' &&
-    unique(stocksOf(day)).length === day.limitUp &&
+    unique(ladderStocks).length === day.limitUp &&
     unique(day.failedStocks).length === day.failed &&
     unique(day.limitDownStocks).length === day.limitDown,
   );
@@ -553,13 +561,29 @@ export type TenLineDay = {
   quoteTime: string | null;
   /** 该股自身日线前复权收盘；由 attachTenLine 在接口层补上。 */
   close?: number | null;
+  /** 该股自身日线收盘的 5 日均值；不足 5 根真实收盘时为 null。 */
+  ma5?: number | null;
   /** 该股自身日线收盘的 10 日均值；不足 10 根真实收盘时为 null。 */
   ma10?: number | null;
+  /** 收盘严格低于 5 日线；算不出时为 null（不是 false）。 */
+  belowMa5?: boolean | null;
   /** 收盘严格低于 10 日线；算不出时为 null（不是 false）。 */
   belowMa10?: boolean | null;
-  /** ma10 为 null 的具体原因。 */
+  /** 均线算不出来的具体原因。 */
   ma10Note?: string | null;
 };
+
+/**
+ * 两个日期之间被跳过的交易日（不含两端）。
+ * 只有权威交易日历能回答「中间到底缺了哪一天」，不用自然日减法推断。
+ */
+export function missingTradingDays(
+  before: string,
+  after: string,
+  calendar: string[] = [],
+) {
+  return calendar.filter((day) => day > before && day < after);
+}
 
 export function buildEmotionTracking(
   history: CloseSnapshot[],
@@ -567,6 +591,7 @@ export function buildEmotionTracking(
   date: string,
   lookback = 10,
   cutoff = '15:00',
+  calendar: string[] = [],
 ) {
   const ordered = history
     .filter((x) => x.date <= date)
@@ -656,6 +681,27 @@ export function buildEmotionTracking(
         break;
       }
     }
+    // 断板日只能在相邻完整收盘之间确认。若中间缺某个交易日的收盘快照，
+    // 相邻关系不成立，就明确标「断板日不可确认」并保留身份——
+    // 它确实已经不在涨停池，不能因为缺一天就当作没发生过（也不许用相邻日顶替）。
+    let breakReason: string | null = null;
+    if (!broken) {
+      const gone = days.findIndex(
+        (day, i) =>
+          i > 0 &&
+          complete(day) &&
+          stocksOf(days[i - 1]).some((x) => x.code === stock.code) &&
+          !stocksOf(day).some((x) => x.code === stock.code),
+      );
+      if (gone > 0) {
+        const before = days[gone - 1].date;
+        const after = days[gone].date;
+        const gap = missingTradingDays(before, after, calendar);
+        breakReason = gap.length
+          ? `断板日不可确认：${gap.join('、')} 缺收盘快照，${before}→${after} 不是相邻交易日`
+          : `断板日不可确认：${after} 收盘名单里没有该股，但缺少可确认的相邻完整收盘`;
+      }
+    }
     const rawPath = days.map((day) => ({
       date: day.date,
       changePct:
@@ -674,6 +720,11 @@ export function buildEmotionTracking(
     return {
       ...stock,
       brokenDate: broken,
+      breakReason,
+      stillSealed: hasCurrent && stocksOf(current).some((x) => x.code === stock.code),
+      // 仍在板上时给出目标日的实际板数，避免只显示窗口内的峰值板。
+      currentHeight:
+        stocksOf(current).find((x) => x.code === stock.code)?.height ?? null,
       changePct:
         quoteState(date, stock.code) === 'READY'
           ? (quote(date, stock.code)?.changePct ?? null)
@@ -685,13 +736,22 @@ export function buildEmotionTracking(
     };
   });
   const old = allOld
-    .filter((x) => x.brokenDate)
+    .filter((x) => x.brokenDate || x.breakReason)
     .sort(
       (a, b) =>
-        // 断板日期越新越靠前
+        // 已确认断板的排在前面，断板日期越新越靠前；不可确认的按最高板与峰值日期排。
+        Number(Boolean(b.brokenDate)) - Number(Boolean(a.brokenDate)) ||
         (b.brokenDate ?? '').localeCompare(a.brokenDate ?? '') ||
         b.peakHeight - a.peakHeight ||
+        b.peakDate.localeCompare(a.peakDate) ||
         (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity),
+    );
+  // 仍在板上的高标：峰值达标、目标日仍然封住，不是断板，单独列出。
+  const stillSealed = allOld
+    .filter((x) => !x.brokenDate && !x.breakReason && x.stillSealed)
+    .sort(
+      (a, b) =>
+        b.peakHeight - a.peakHeight || b.peakDate.localeCompare(a.peakDate),
     );
   const failed = adjacent
     ? candidates.failed
@@ -882,6 +942,10 @@ export function buildEmotionTracking(
     missingSessions,
     oldLeaders: {
       rows: old,
+      // 仍在板上、并未断板的高标，单独成组，避免与“断板”混为一谈。
+      stillSealed,
+      stillSealedCount: stillSealed.length,
+      unconfirmedCount: old.filter((x) => !x.brokenDate).length,
       tenLine: emptyTenLineSummary(
         '10日线需要个股自身日线收盘，本轮未取到；接口层补齐后才会显示。',
       ),

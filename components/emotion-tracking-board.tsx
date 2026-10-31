@@ -62,6 +62,141 @@ function Coverage({
   );
 }
 
+type OldLeaderRow = EmotionTracking['oldLeaders']['rows'][number];
+type LeaderQuote = NonNullable<
+  EmotionTracking['oldLeaders']['tenLine']
+>['rows'][number];
+
+/** 名次旁的均线徽标：跌破用红色，站在线上用灰。 */
+function MaTag({
+  label,
+  value,
+  below,
+}: {
+  label: string;
+  value: number | null | undefined;
+  below: boolean | null | undefined;
+}) {
+  if (value == null) return null;
+  return (
+    <span
+      className={`rounded border px-1.5 py-0.5 font-mono text-xs ${
+        below === true
+          ? 'border-red-400/50 bg-red-500/10 text-red-600 dark:text-red-400'
+          : 'text-muted-foreground'
+      }`}
+    >
+      {label} {value.toFixed(2)}
+    </span>
+  );
+}
+
+/**
+ * 断板老高标卡片。
+ * 名字旁边直接给：现价（标明来源时刻）、MA5、MA10。
+ * 均线来自该股自身日线前复权收盘；现价只在报价日期 == 目标日时使用，
+ * 否则退回目标日日线收盘并标注「日线收盘」。
+ */
+function OldLeaderCard({
+  stock,
+  quote,
+}: {
+  stock: OldLeaderRow;
+  quote?: LeaderQuote;
+}) {
+  const price = quote?.price ?? null;
+  const changePct = quote?.changePct ?? stock.changePct;
+  return (
+    <article className="rounded-lg border p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-2 font-semibold">
+            <span>
+              {stock.name}{' '}
+              <span className="text-sm font-normal text-muted-foreground">
+                {stock.code}
+              </span>
+            </span>
+            <span
+              className={`font-mono text-sm ${tone(changePct)}`}
+              title={
+                quote?.priceAsOf
+                  ? `${quote.priceLabel} · ${quote.priceAsOf}`
+                  : undefined
+              }
+            >
+              {price == null ? '缺价格' : price.toFixed(2)}
+              {changePct != null ? ` ${pct(changePct)}` : ''}
+            </span>
+            <span className="text-[11px] font-normal text-muted-foreground">
+              {quote?.priceLabel ?? '日线收盘'}
+            </span>
+            <MaTag label="MA5" value={quote?.ma5} below={quote?.belowMa5} />
+            <MaTag label="MA10" value={quote?.ma10} below={quote?.belowMa10} />
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {stock.peakDate} 最高{stock.peakHeight}板 ·{' '}
+            {stock.brokenDate
+              ? `${stock.brokenDate}断板`
+              : stock.stillSealed
+                ? `目标日仍封住 ${stock.currentHeight ?? stock.peakHeight}板`
+                : (stock.breakReason ?? '断板日未确认')}{' '}
+            · {stock.industry}
+          </p>
+        </div>
+      </div>
+      <div
+        className="mt-2 flex gap-2 overflow-x-auto pb-2"
+        aria-label={`${stock.name}断板前后逐日表现`}
+      >
+        {[...stock.path].reverse().map((day) => (
+          <div
+            key={day.date}
+            className={`min-w-24 rounded-md border p-2 text-center text-sm ${day.date === stock.brokenDate ? 'border-amber-400 bg-amber-500/10' : 'bg-muted/30'}`}
+          >
+            <p>{day.date.slice(5)}</p>
+            <p className={`my-1 font-mono font-semibold ${tone(day.changePct)}`}>
+              {pathQuote(day.changePct, day.quoteState, day.quoteNote)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {day.height
+                ? `${day.height}板封住`
+                : day.date === stock.brokenDate
+                  ? '断板'
+                  : '未封板'}
+            </p>
+            {day.ma5 != null && (
+              <p
+                title={`收盘 ${day.close?.toFixed(2) ?? '—'} / MA5 ${day.ma5.toFixed(2)}`}
+                className={`text-[10px] ${
+                  day.belowMa5 === true
+                    ? 'font-semibold text-red-600 dark:text-red-400'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                MA5 {day.ma5.toFixed(1)}
+              </p>
+            )}
+            {day.ma10 != null && (
+              <p
+                title={`收盘 ${day.close?.toFixed(2) ?? '—'} / MA10 ${day.ma10.toFixed(2)}`}
+                className={`text-[10px] ${
+                  day.belowMa10 === true
+                    ? 'font-semibold text-red-600 dark:text-red-400'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                MA10 {day.ma10.toFixed(1)}
+                {day.belowMa10 === true ? ' · 跌破' : ''}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 type NegativeGroup = EmotionTracking['negativeLeadLag']['rows'][number];
 
 function NegativeGroupCard({ group }: { group: NegativeGroup }) {
@@ -153,6 +288,10 @@ export function EmotionTrackingBoard({
     };
   }, [key, mode, selectedDate, lookback, revision]);
   const current = requestKey === key ? data : null;
+  // 每只老高标的现价 / MA5 / MA10 来自接口层的日线与快照，按代码索引。
+  const quoteByCode = new Map(
+    (current?.oldLeaders.tenLine?.rows ?? []).map((row) => [row.code, row]),
+  );
   const paths =
     current?.rebounds.rows.filter(
       (x) =>
@@ -253,6 +392,9 @@ export function EmotionTrackingBoard({
               <TabsList className="h-auto w-full flex-wrap justify-start gap-1">
                 <TabsTrigger value="old">
                   断板老高标 {current.oldLeaders.rows.length}（近30个交易日）
+                  {current.oldLeaders.stillSealed?.length
+                    ? ` · 在板${current.oldLeaders.stillSealed.length}`
+                    : ''}
                 </TabsTrigger>
                 <TabsTrigger value="failed">
                   昨日炸板修复 {current.failedRepair.rows.length}
@@ -266,7 +408,7 @@ export function EmotionTrackingBoard({
                 {current.oldLeaders.tenLine && current.oldLeaders.rows.length > 0 && (
                   <div className="rounded-lg border border-sky-500/30 bg-sky-500/[0.06] px-3 py-2.5">
                     <p className="text-sm font-semibold">
-                      10日线提醒 · {current.oldLeaders.tenLine.window}
+                      5/10日线提醒 · {current.oldLeaders.tenLine.window}
                     </p>
                     <dl className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
                       {current.oldLeaders.tenLine.items.map((item) => (
@@ -298,73 +440,38 @@ export function EmotionTrackingBoard({
                     该区间没有已确认断板的老高标，或缺少确认断板所需的连续收盘名单。
                   </p>
                 )}
+                {current.oldLeaders.unconfirmedCount ? (
+                  <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm leading-6">
+                    其中 {current.oldLeaders.unconfirmedCount}{' '}
+                    只已不在涨停池，但断板日所在区间缺收盘快照，断板日不确认——不用相邻日顶替，也不当作没发生过。
+                  </p>
+                ) : null}
                 {current.oldLeaders.rows.map((stock) => (
-                  <article key={stock.code} className="rounded-lg border p-4">
-                    <div className="flex flex-wrap justify-between gap-2">
-                      <p className="font-semibold">
-                        {stock.name}{' '}
-                        <span className="text-sm font-normal text-muted-foreground">
-                          {stock.code}
-                        </span>
+                  <OldLeaderCard
+                    key={stock.code}
+                    stock={stock}
+                    quote={quoteByCode.get(stock.code)}
+                  />
+                ))}
+                {current.oldLeaders.stillSealed?.length ? (
+                  <div className="space-y-3 rounded-lg border border-emerald-500/30 bg-emerald-500/[0.05] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold">
+                        仍在板上 · 近30个交易日出现过最高板，目标日仍封住
                       </p>
-                      <span
-                        className={`font-mono font-semibold ${tone(stock.changePct)}`}
-                      >
-                        {pathQuote(
-                          stock.changePct,
-                          stock.quoteState,
-                          stock.quoteNote,
-                        )}
+                      <span className="text-xs text-muted-foreground">
+                        {current.oldLeaders.stillSealed.length}只 · 不是断板
                       </span>
                     </div>
-                    <p className="my-2 text-sm text-muted-foreground">
-                      {stock.peakDate} 最高{stock.peakHeight}板 ·{' '}
-                      {stock.brokenDate}断板 · {stock.industry}
-                    </p>
-                    <div
-                      className="flex gap-2 overflow-x-auto pb-2"
-                      aria-label={`${stock.name}断板前后逐日表现`}
-                    >
-                      {[...stock.path].reverse().map((day) => (
-                        <div
-                          key={day.date}
-                          className={`min-w-24 rounded-md border p-2 text-center text-sm ${day.date === stock.brokenDate ? 'border-amber-400 bg-amber-500/10' : 'bg-muted/30'}`}
-                        >
-                          <p>{day.date.slice(5)}</p>
-                          <p
-                            className={`my-1 font-mono font-semibold ${tone(day.changePct)}`}
-                          >
-                            {pathQuote(
-                              day.changePct,
-                              day.quoteState,
-                              day.quoteNote,
-                            )}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {day.height
-                              ? `${day.height}板封住`
-                              : day.date === stock.brokenDate
-                                ? '断板'
-                                : '未封板'}
-                          </p>
-                          {day.ma10 != null && (
-                            <p
-                              title={`收盘 ${day.close?.toFixed(2) ?? '—'} / MA10 ${day.ma10.toFixed(2)}`}
-                              className={`text-[10px] ${
-                                day.belowMa10 === true
-                                  ? 'font-semibold text-red-600 dark:text-red-400'
-                                  : 'text-muted-foreground'
-                              }`}
-                            >
-                              MA10 {day.ma10.toFixed(1)}
-                              {day.belowMa10 === true ? ' · 跌破' : ''}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                ))}
+                    {current.oldLeaders.stillSealed.map((stock) => (
+                      <OldLeaderCard
+                        key={stock.code}
+                        stock={stock}
+                        quote={quoteByCode.get(stock.code)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
               </TabsContent>
               <TabsContent value="failed" className="space-y-3">
                 <Coverage part={current.failedRepair} />

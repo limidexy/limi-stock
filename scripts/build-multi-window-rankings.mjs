@@ -25,6 +25,7 @@
  * 产物：
  *   public/rankings/YYYYMMDD.json  每个交易日一份榜单快照（前端按日期读取）
  *   public/rankings/index.json     可用交易日索引（倒序，最新在前）
+ *   public/rankings/metadata.json  行业/题材缓存（由 scripts/enrich-rankings-metadata.mjs 生成）
  * 注意：public/ 在构建期被复制为静态资源，所以顺序必须是「先跑本脚本，再 npm run build」。
  * 原始日线缓存写在 .cache/（已 gitignore），不入库。
  */
@@ -33,6 +34,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
+
 
 /**
  * Node 内置 fetch 不读取 HTTP(S)_PROXY，在这类受管网络里会被 WAF 直接挡成 501。
@@ -221,6 +223,21 @@ const LIMIT = Number(argValue('--limit', '0'));
 const SAMPLE = Number(argValue('--sample', '0'));
 const CONCURRENCY = Number(argValue('--concurrency', '6'));
 const OUT_DIR = path.resolve(ROOT, argValue('--out', 'public/rankings'));
+
+/**
+ * 行业 / 题材来自东财 F10 所属板块，由 enrich-rankings-metadata.mjs 抓取并缓存。
+ * 缺失时写 null / []，并把 metadataStatus 标 DEGRADED，绝不编造。
+ */
+const BOARD_METADATA = (() => {
+  try {
+    const payload = JSON.parse(
+      fs.readFileSync(path.join(OUT_DIR, 'metadata.json'), 'utf8'),
+    );
+    return payload.records ?? {};
+  } catch {
+    return {};
+  }
+})();
 const CACHE_DIR = path.resolve(ROOT, argValue('--cache', '.cache/rankings'));
 const USE_CACHE = !args.includes('--no-cache');
 const CROSSCHECK = !args.includes('--no-crosscheck');
@@ -621,6 +638,7 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
     candidates.sort((a, b) => b.cell.gainPct - a.cell.gainPct);
     const rows = candidates.slice(0, TOP_N).map(({ entry, cell }) => {
       const snapshot = entry.universe;
+      const boardMeta = BOARD_METADATA[entry.code];
       const verified = crosscheck.get(`${entry.symbol}|${targetIso}`);
       // 比原始价对原始价：两家的复权算法不同（减法 vs 除法因子），
       // 直接比复权价会把口径差异误判成数据错误。
@@ -634,8 +652,8 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
         code: entry.code,
         name: entry.name,
         marketBoard: cell.board,
-        industry: null,
-        themes: [],
+        industry: boardMeta?.industry ?? null,
+        themes: boardMeta?.themes ?? [],
         latestClose: Number(cell.latestClose.toFixed(3)),
         latestDate: tradeDate,
         amount: isLatest ? snapshot.amount : null,
@@ -652,7 +670,10 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
         startDate: isoToCompact(cell.startIso),
         startClose: Number(cell.startClose.toFixed(3)),
         gainPct: Number(cell.gainPct.toFixed(4)),
-        metadataStatus: 'DEGRADED',
+        metadataStatus:
+          boardMeta?.industry || boardMeta?.themes?.length
+            ? 'READY'
+            : 'DEGRADED',
         crosscheckStatus,
       };
     });
@@ -662,7 +683,9 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
     window.topAvailable = rows.length;
     window.startDate = isoToCompact(startIso);
     window.rows = rows;
-    window.metadataReady = 0;
+    window.metadataReady = rows.filter(
+      (row) => row.industry && row.themes.length,
+    ).length;
 
     const mismatched = rows.filter(
       (row) => row.crosscheckStatus === 'MISMATCH',
@@ -780,7 +803,7 @@ function buildPayload({ tradeDate, calendar, universe, computed, crosscheck }) {
       listedSnapshotExactDate: universe.length,
       crosschecked,
     },
-    metadata: { industry: false, themes: false },
+    metadata: { industry: true, themes: true },
     crosscheck: {
       source: [...crosscheckSources].join('+') || 'UNAVAILABLE',
       target: 'TARGET_DATE_RAW_CLOSE',
@@ -1004,7 +1027,7 @@ async function main() {
   index.latest = index.dates[0] ?? null;
   index.generatedAt = new Date().toISOString();
   index.source = '腾讯前复权日线 + 新浪独立收盘核验';
-  index.metadata = { industry: false, themes: false };
+  index.metadata = { industry: true, themes: true };
   fs.writeFileSync(indexFile, JSON.stringify(index, null, 2));
   log(`索引已更新：${index.dates.length} 个交易日，最新 ${index.latest}`);
 }

@@ -304,3 +304,47 @@ test('valid lead-lag keeps early, simultaneous and subsequent responses separate
   );
   assert.equal(r.following, 1);
 });
+
+test('a leader that left the ladder across a missing session is kept with an explicit unconfirmed break', () => {
+  // 2026-10-27 是交易日但归档里没有收盘快照：10-26 → 10-28 不是相邻交易日。
+  // 上海九百 10-26 是当日最高板 4 板，10-28 起不在涨停池，10-30 已跌停。
+  const result = buildEmotionTracking(
+    history,
+    evidence,
+    '2026-10-30',
+    10,
+    '15:00',
+    JSON.parse(
+      fs.readFileSync(
+        new URL('../lib/trading-calendar.generated.json', import.meta.url),
+      ),
+    ).dates,
+  );
+  const stock = result.oldLeaders.rows.find((x) => x.code === '600838');
+  assert.ok(stock, '断板日不可确认的老高标不能被静默丢掉');
+  assert.equal(stock.brokenDate, null);
+  assert.match(stock.breakReason, /断板日不可确认/);
+  assert.match(stock.breakReason, /2026-10-27/);
+  assert.ok(result.oldLeaders.unconfirmedCount >= 1);
+  // 已确认断板的仍然排在前面的位置。
+  const firstUnconfirmed = result.oldLeaders.rows.findIndex(
+    (x) => !x.brokenDate,
+  );
+  const lastConfirmed = result.oldLeaders.rows.reduce(
+    (acc, x, i) => (x.brokenDate ? i : acc),
+    -1,
+  );
+  assert.ok(firstUnconfirmed === -1 || lastConfirmed < firstUnconfirmed);
+});
+
+test('a leader still sealed on the target date is listed separately, not as broken', () => {
+  const result = buildEmotionTracking(history, evidence, '2026-10-30');
+  const codes = result.oldLeaders.stillSealed.map((x) => x.code);
+  assert.ok(codes.includes('001219'), '青岛食品 10-30 仍是 5 板，应在“仍在板上”');
+  assert.equal(
+    result.oldLeaders.rows.some((x) => x.code === '001219'),
+    false,
+    '仍在板上的不能混进断板列表',
+  );
+  assert.equal(result.oldLeaders.stillSealedCount, result.oldLeaders.stillSealed.length);
+});

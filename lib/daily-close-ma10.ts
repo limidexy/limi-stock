@@ -14,9 +14,12 @@
 
 import type { TenLineDay } from './emotion-tracking.ts';
 import { marketSymbol } from './minute-series.ts';
+import { quoteForDate, type LiveQuote } from './live-quote.ts';
 
 /** 10 日线窗口长度。 */
 export const MA_WINDOW = 10;
+/** 5 日线窗口长度。 */
+export const MA5_WINDOW = 5;
 export const TENLINE_SOURCE = '腾讯日线（前复权）';
 
 const HEADERS = {
@@ -41,9 +44,17 @@ export type TenLineRow = {
   name: string;
   /** 目标日该股自身日线收盘。 */
   close: number | null;
+  /** 目标日该股自身 5 日线。 */
+  ma5: number | null;
   /** 目标日该股自身 10 日线。 */
   ma10: number | null;
+  belowMa5: boolean | null;
   belowMa10: boolean | null;
+  /** 目标日的价格与来源：优先当日实时/收盘快照，否则用日线收盘。 */
+  price: number | null;
+  priceLabel: string;
+  priceAsOf: string | null;
+  changePct: number | null;
   brokenDate: string | null;
 };
 
@@ -73,7 +84,7 @@ export type TenLineSummary = {
 };
 
 const BASIS =
-  '个股自身日线前复权收盘的 10 日均值（含路径之前的交易日），不是池内涨幅重建';
+  '5/10 日线都用个股自身日线前复权收盘算（含路径之前的交易日），不是池内涨幅重建';
 
 /** 日线尚未接入时的占位汇总：reached=false，且写明原因而不是留空。 */
 export function emptyTenLineSummary(reason: string): TenLineSummary {
@@ -163,25 +174,31 @@ export function parseTencentDailySeries(
 }
 
 /**
- * 该日（含）之前最近 10 根真实日线收盘的均值。
- * 该日必须有收盘，否则返回 close=null、ma10=null——停牌日没有 10 日线。
+ * 该日（含）之前最近 window 根真实日线收盘的均值。
+ * 该日必须有收盘，否则返回 close=null、ma=null——停牌日没有均线。
  */
-export function ma10At(
+export function maAt(
   points: DailyClosePoint[],
   date: string,
-): { close: number | null; ma10: number | null; used: number } {
+  window = MA_WINDOW,
+): { close: number | null; ma: number | null; used: number } {
   const upto = points.filter((point) => point.date <= date);
   const last = upto.at(-1);
   const close = last && last.date === date ? last.close : null;
-  if (close === null) return { close: null, ma10: null, used: upto.length };
-  if (upto.length < MA_WINDOW)
-    return { close, ma10: null, used: upto.length };
-  const window = upto.slice(-MA_WINDOW);
+  if (close === null) return { close: null, ma: null, used: upto.length };
+  if (upto.length < window) return { close, ma: null, used: upto.length };
+  const slice = upto.slice(-window);
   return {
     close,
-    ma10: window.reduce((sum, point) => sum + point.close, 0) / MA_WINDOW,
-    used: MA_WINDOW,
+    ma: slice.reduce((sum, point) => sum + point.close, 0) / window,
+    used: window,
   };
+}
+
+/** 10 日线。 */
+export function ma10At(points: DailyClosePoint[], date: string) {
+  const { close, ma, used } = maAt(points, date, MA_WINDOW);
+  return { close, ma10: ma, used };
 }
 
 function annotate(
@@ -192,30 +209,39 @@ function annotate(
     return path.map((day) => ({
       ...day,
       close: null,
+      ma5: null,
       ma10: null,
+      belowMa5: null,
       belowMa10: null,
-      ma10Note: series?.reasons[0] ?? '该股日线收盘未取到，10日线不计算',
+      ma10Note: series?.reasons[0] ?? '该股日线收盘未取到，均线不计算',
     }));
   return path.map((day) => {
-    const { close, ma10, used } = ma10At(series.points, day.date);
+    const five = maAt(series.points, day.date, MA5_WINDOW);
+    const ten = maAt(series.points, day.date, MA_WINDOW);
+    const close = ten.close;
     if (close === null)
       return {
         ...day,
         close: null,
+        ma5: null,
         ma10: null,
+        belowMa5: null,
         belowMa10: null,
-        ma10Note: '该日无日线收盘（停牌或未上市），不计算10日线',
+        ma10Note: '该日无日线收盘（停牌或未上市），不计算均线',
       };
-    if (ma10 === null)
-      return {
-        ...day,
-        close,
-        ma10: null,
-        belowMa10: null,
-        ma10Note: `该日前只有 ${used} 根真实日线收盘，不足 ${MA_WINDOW} 根`,
-      };
-    // 跌破 = 收盘严格低于 10 日线；持平不算跌破。
-    return { ...day, close, ma10, belowMa10: close < ma10, ma10Note: null };
+    // 跌破 = 收盘严格低于均线；持平不算跌破。算不出就是 null，不是 false。
+    return {
+      ...day,
+      close,
+      ma5: five.ma,
+      ma10: ten.ma,
+      belowMa5: five.ma === null ? null : close < five.ma,
+      belowMa10: ten.ma === null ? null : close < ten.ma,
+      ma10Note:
+        ten.ma === null
+          ? `该日前只有 ${ten.used} 根真实日线收盘，不足 ${MA_WINDOW} 根`
+          : null,
+    };
   });
 }
 
@@ -226,11 +252,17 @@ export type TenLineCarrier = {
   path: TenLineDay[];
 };
 
-/** 把真实 10 日线写进每只老高标的逐日路径，并给出拆开的提醒条目。 */
+/**
+ * 把真实 5/10 日线写进每只老高标的逐日路径，并给出拆开的提醒条目。
+ *
+ * 价格口径：只有实时快照的报价日期 == 目标日时才用它（标「实时」或「收盘」），
+ * 否则退回目标日的日线收盘（标「日线收盘」）。绝不把别的日子的快照当目标日价格。
+ */
 export function attachTenLine<T extends TenLineCarrier>(
   rows: T[],
   seriesByCode: Map<string, DailyCloseSeries>,
   targetDate: string,
+  quotes?: Map<string, LiveQuote>,
 ): { rows: T[]; tenLine: TenLineSummary } {
   const next = rows.map((row) => ({
     ...row,
@@ -239,12 +271,20 @@ export function attachTenLine<T extends TenLineCarrier>(
 
   const detail: TenLineRow[] = next.map((row) => {
     const today = row.path.find((day) => day.date === targetDate);
+    const live = quoteForDate(quotes?.get(row.code), targetDate);
+    const price = live?.price ?? today?.close ?? null;
     return {
       code: row.code,
       name: row.name,
       close: today?.close ?? null,
+      ma5: today?.ma5 ?? null,
       ma10: today?.ma10 ?? null,
+      belowMa5: today?.belowMa5 ?? null,
       belowMa10: today?.belowMa10 ?? null,
+      price,
+      priceLabel: live ? live.label : today?.close != null ? '日线收盘' : '无价格',
+      priceAsOf: live ? live.asOf : (today?.date ?? null),
+      changePct: live?.changePct ?? today?.changePct ?? null,
       brokenDate: row.brokenDate,
     };
   });
@@ -324,7 +364,7 @@ export function attachTenLine<T extends TenLineCarrier>(
     tenLine: {
       reached,
       basis: BASIS,
-      window: `回看 ${requestedCount} 只断板老高标`,
+      window: `回看 ${requestedCount} 只老高标`,
       requestedCount,
       readyCount: ready.length,
       belowNowCount: belowNow.length,
