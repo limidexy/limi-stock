@@ -11,6 +11,7 @@
     "db:generate": "drizzle-kit generate",
     "calendar:build": "node scripts/build-trading-calendar.mjs",
     "rankings:build": "node scripts/build-multi-window-rankings.mjs",
+    "speed:build": "node scripts/build-close-speed.mjs",
     "history:build": "node scripts/build-close-history.mjs",
     "seed:build": "node scripts/build-market-seed.mjs",
     "evidence:build": "node scripts/build-archive-evidence.mjs",

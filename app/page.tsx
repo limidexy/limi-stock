@@ -2,36 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { timelineHeadline } from '@/lib/timeline-evidence';
-import type { FundFlowObservation } from '@/lib/flow-observation';
-import {
-  alignedSnapshot,
-  overviewSessionLabel,
-} from '@/lib/snapshot-alignment';
 import {
   LadderOverview,
   toEmotionFacts,
 } from '@/components/market-reading-board';
 import { EmotionTrackingBoard } from '@/components/emotion-tracking-board';
 import { MultiWindowRankingsBoard } from '@/components/multi-window-rankings-board';
-import { UnifiedMarketBoard } from '@/components/unified-market-board';
-import { unifiedMarketReading } from '@/lib/unified-market';
+import { SectorMovementBoard } from '@/components/sector-movement-board';
 import {
   buildCoreEvidence,
   type CoreTrackingPayload,
 } from '@/lib/core-evidence';
 import {
-  windowedRadarEvents,
-  type RadarEvent,
-  type RadarHistory,
-  type RadarSnapshot as RadarData,
-} from '@/lib/radar-evidence';
-import {
   Activity,
-  ArrowDownRight,
-  ArrowLeftRight,
   ArrowUpRight,
   BarChart3,
-  BrainCircuit,
   CalendarDays,
   Clock3,
   RefreshCw,
@@ -45,7 +30,6 @@ import {
   CartesianGrid,
   Line,
   LineChart as RechartsLineChart,
-  ReferenceLine,
   XAxis,
   YAxis,
 } from 'recharts';
@@ -91,82 +75,8 @@ import {
   type IntradayEmotionSnapshot,
   type CloseStock,
 } from '@/lib/close-history';
-import type {
-  EarlyObservationComparison,
-  EarlyObservationSnapshot,
-} from '@/lib/early-observation';
 
 type DataState = 'READY' | 'DEGRADED' | 'MISSING';
-
-type SectorFlowPoint = {
-  time: string;
-  mainNetInflow: number;
-};
-
-type SectorFlowSeries = {
-  code: string;
-  name: string;
-  changePct: number | null;
-  latestMainNetInflow: number;
-  delta5m: number | null;
-  delta15m: number | null;
-  delta30m: number | null;
-  points: SectorFlowPoint[];
-  persistenceLabel?: string;
-  flowObservation?: FundFlowObservation;
-  detailState?: DataState;
-  detailBasis?: string;
-  subgroups?: Array<{ name: string; count: number; leaders: string[] }>;
-  representatives?: Array<{
-    code: string;
-    name: string;
-    industry: string;
-    changePct: number | null;
-    speedPct: number | null;
-    mainNetInflow: number | null;
-  }>;
-};
-
-type FlowData = {
-  status: DataState;
-  curveState: DataState;
-  splitState: DataState;
-  retrievedAt: string;
-  tradeDate: string;
-  requestedDate?: string;
-  sessionState?: 'LIVE' | 'CLOSED';
-  sourceState?: 'LIVE' | 'ARCHIVED' | 'STALE';
-  phase: string;
-  lastPointTime: string | null;
-  source?: string;
-  basis?: string;
-  reason?: string;
-  coverage?: { requested: number; available: number };
-  dataAvailableThrough?: string | null;
-  gap?: {
-    gapId: string;
-    tradeDate: string;
-    granularity: 'DAILY_CLOSE' | 'ONE_MINUTE';
-    status: string;
-    classification: string;
-    retryable: boolean;
-    lastProbeAt: string | null;
-    nextProbeAt: string | null;
-    reason: string;
-  } | null;
-  series: SectorFlowSeries[];
-  allRows?: SectorFlowSeries[];
-  split: {
-    inflow: SectorFlowSeries[];
-    outflow: SectorFlowSeries[];
-    cumulativeInflow: SectorFlowSeries[];
-    cumulativeOutflow: SectorFlowSeries[];
-    persistentStrong: SectorFlowSeries[];
-    persistentWeak: SectorFlowSeries[];
-    positiveCount: number;
-    negativeCount: number;
-  };
-};
 
 type Promotion = {
   level: string;
@@ -255,10 +165,18 @@ type SpeedData = {
   sessionState?: 'LIVE' | 'CLOSED';
   sourceState?: 'LIVE' | 'ARCHIVED' | 'STALE';
   reason?: string;
+  reasons?: string[];
+  source?: string;
+  windowStart?: string | null;
+  windowEnd?: string | null;
   coverage?: {
     requested: number;
+    available?: number;
+    withWindow?: number;
     conceptReady: number;
+    industryReady?: number;
     recentLimitReady: number;
+    returned?: number;
   };
   rows: SpeedRow[];
 };
@@ -405,27 +323,6 @@ function usePolling<T>(url: string, intervalMs: number): PollState<T> {
   return { data, loading, error, refresh, receivedAt };
 }
 
-function useWindowedRadar(data: RadarData | null, failed: boolean) {
-  const history = useRef<RadarHistory>(new Map());
-  const [events, setEvents] = useState<RadarEvent[]>([]);
-
-  useEffect(() => {
-    if (!data) return;
-    const update = () =>
-      setEvents(
-        windowedRadarEvents(
-          failed ? { ...data, sourceState: 'STALE' } : data,
-          history.current,
-        ),
-      );
-    update();
-    const timer = window.setInterval(update, 15_000);
-    return () => window.clearInterval(timer);
-  }, [data, failed]);
-
-  return events;
-}
-
 function fmtPct(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined || !Number.isFinite(value))
     return '—';
@@ -497,947 +394,10 @@ function median(values: number[]) {
     : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 
-function useEarlyObservationComparison(
-  data: EarlyObservationSnapshot | null,
-  receivedAt: number | null,
-) {
-  const previous = useRef<EarlyObservationSnapshot | null>(null);
-  const seenReceipt = useRef<number | null>(null);
-  const [comparison, setComparison] =
-    useState<EarlyObservationComparison | null>(null);
-
-  useEffect(() => {
-    if (!data || receivedAt === null || seenReceipt.current === receivedAt)
-      return;
-    seenReceipt.current = receivedAt;
-    if (data.status === 'MISSING' || !data.rows.length) {
-      previous.current = null;
-      setComparison(null);
-      return;
-    }
-    const prior = previous.current;
-    if (!prior || prior.tradeDate !== data.tradeDate) {
-      previous.current = data;
-      setComparison(null);
-      return;
-    }
-
-    const baselineTime = prior.latestQuoteTime ?? prior.quoteTime;
-    const latestTime = data.latestQuoteTime ?? data.quoteTime;
-    const elapsedSeconds =
-      baselineTime && latestTime
-        ? Math.max(
-            0,
-            Math.round((Date.parse(latestTime) - Date.parse(baselineTime)) / 1000),
-          )
-        : 0;
-    const quoteAdvanced = elapsedSeconds > 0;
-    const priorByCode = new Map(prior.rows.map((row) => [row.code, row]));
-    const volumeChanges: number[] = [];
-    const amountChanges: number[] = [];
-    for (const row of data.rows) {
-      const old = priorByCode.get(row.code);
-      if (!old) continue;
-      if (old.volume && old.volume > 0 && row.volume !== null)
-        volumeChanges.push(((row.volume - old.volume) / old.volume) * 100);
-      if (old.amount && old.amount > 0 && row.amount !== null)
-        amountChanges.push(((row.amount - old.amount) / old.amount) * 100);
-    }
-    setComparison({
-      baselineQuoteTime: baselineTime ?? '',
-      latestQuoteTime: latestTime ?? '',
-      elapsedSeconds,
-      quoteAdvanced,
-      breadthDelta: {
-        up: data.breadth.up - prior.breadth.up,
-        down: data.breadth.down - prior.breadth.down,
-        flat: data.breadth.flat - prior.breadth.flat,
-      },
-      matchedTurnoverBoards: Math.min(volumeChanges.length, amountChanges.length),
-      medianVolumeChangePct: median(volumeChanges),
-      medianAmountChangePct: median(amountChanges),
-    });
-    if (quoteAdvanced) previous.current = data;
-  }, [data, receivedAt]);
-
-  return comparison;
-}
-
-function EarlyObservationPanel({
-  data,
-  error,
-  comparison,
-}: {
-  data: EarlyObservationSnapshot | null;
-  error: string | null;
-  comparison: EarlyObservationComparison | null;
-}) {
-  const state: DataState = error
-    ? data?.rows.length
-      ? 'DEGRADED'
-      : 'MISSING'
-    : data?.status ?? 'MISSING';
-  const reason = error
-    ? `${error}${data?.rows.length ? '；当前显示的是上一次同日报价' : ''}`
-    : data?.reason;
-  const gainers = [...(data?.rows ?? [])]
-    .filter((row) => row.changePct !== null)
-    .sort((a, b) => (b.changePct ?? 0) - (a.changePct ?? 0))
-    .slice(0, 3);
-  const decliners = [...(data?.rows ?? [])]
-    .filter((row) => row.changePct !== null)
-    .sort((a, b) => (a.changePct ?? 0) - (b.changePct ?? 0))
-    .slice(0, 3);
-  const delta = (value: number) => `${value > 0 ? '+' : ''}${value}`;
-
-  return (
-    <section
-      aria-labelledby="early-observation-title"
-      className="rounded-xl border bg-card px-4 py-4 shadow-sm sm:px-5"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 id="early-observation-title" className="text-base font-semibold">
-            板块价格与成交早期观察
-          </h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            免费公开行业板块报价；独立于分钟资金归档，不把价格或成交变化解释成资金流。
-          </p>
-        </div>
-        <StateBadge state={state} />
-      </div>
-
-      {data?.rows.length ? (
-        <>
-          <dl className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 border-y py-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
-            <div>
-              <dt className="text-xs text-muted-foreground">行情日 / 报价时点</dt>
-              <dd className="mt-1 font-medium tabular-nums">
-                {fmtTradeDate(data.tradeDate)} · {fmtTime(data.quoteTime)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">有效覆盖</dt>
-              <dd className="mt-1 font-medium tabular-nums">
-                {data.coverage.priced}/{data.coverage.requested}（日期行 {data.coverage.exactDate}）
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">上涨</dt>
-              <dd className="mt-1 font-medium tabular-nums text-red-600 dark:text-red-400">
-                {data.breadth.up}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">下跌</dt>
-              <dd className="mt-1 font-medium tabular-nums text-emerald-700 dark:text-emerald-400">
-                {data.breadth.down}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">平盘</dt>
-              <dd className="mt-1 font-medium tabular-nums">{data.breadth.flat}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">成交字段覆盖</dt>
-              <dd className="mt-1 font-medium tabular-nums">
-                {data.coverage.volumeAndAmount}/{data.coverage.requested}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">报价延迟 / 跨页跨度</dt>
-              <dd className="mt-1 font-medium tabular-nums">
-                {data.quoteAgeSeconds ?? '—'}s / {data.quoteSpreadSeconds ?? '—'}s
-              </dd>
-            </div>
-          </dl>
-
-          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
-            {comparison?.quoteAdvanced ? (
-              <span>
-                距 {fmtTime(comparison.baselineQuoteTime)}（{comparison.elapsedSeconds}s）：
-                上涨板块 {delta(comparison.breadthDelta.up)}，下跌板块{' '}
-                {delta(comparison.breadthDelta.down)}，平盘板块{' '}
-                {delta(comparison.breadthDelta.flat)}
-              </span>
-            ) : (
-              <span className="text-muted-foreground">
-                {comparison
-                  ? '报价时点尚未推进，暂不计算区间变化'
-                  : '正在建立首个有效采样基线，下一次新报价后显示变化'}
-              </span>
-            )}
-            {comparison?.quoteAdvanced ? (
-              <span>
-                同板块成交量中位变化{' '}
-                {comparison.medianVolumeChangePct === null
-                  ? '—'
-                  : fmtPct(comparison.medianVolumeChangePct)}
-                {' · '}成交额中位变化{' '}
-                {comparison.medianAmountChangePct === null
-                  ? '—'
-                  : fmtPct(comparison.medianAmountChangePct)}
-                {' · '}配对 {comparison.matchedTurnoverBoards} 板块
-              </span>
-            ) : null}
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs">
-            <span>
-              涨幅靠前：
-              {gainers.map((row) => `${row.name} ${fmtPct(row.changePct)}`).join(' · ') || '—'}
-            </span>
-            <span>
-              跌幅靠前：
-              {decliners.map((row) => `${row.name} ${fmtPct(row.changePct)}`).join(' · ') || '—'}
-            </span>
-          </div>
-        </>
-      ) : (
-        <p className="mt-3 text-sm text-muted-foreground">
-          当前没有可用的精确日期板块报价。
-        </p>
-      )}
-
-      {reason ? (
-        <p
-          role={state === 'READY' ? undefined : 'status'}
-          className={`mt-3 text-xs leading-5 ${state === 'MISSING' ? 'text-destructive' : 'text-amber-700 dark:text-amber-300'}`}
-        >
-          {reason}
-        </p>
-      ) : null}
-      <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-        来源：{data?.source ?? '东方财富公开行业板块报价（push2delay / clist）'} · 范围：
-        {data?.scope ?? '行业板块指数报价，不代表板块成分股宽度或资金净流入'}
-      </p>
-    </section>
-  );
-}
-
 function EmptyState({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
       {children}
-    </div>
-  );
-}
-
-function MarketCommandCenter({
-  radarEvents,
-  radarDate,
-  flow: rawFlow,
-  emotion: rawEmotion,
-  ladder: rawLadder,
-  referenceDate,
-  sessionState,
-  marketNotice,
-  onNavigate,
-}: {
-  radarEvents: RadarEvent[];
-  radarDate?: string;
-  flow: FlowData | null;
-  emotion: IntradayEmotionSnapshot | null;
-  ladder: LadderData | null;
-  referenceDate?: string;
-  sessionState?: string;
-  marketNotice: string | null;
-  onNavigate: (tab: string) => void;
-}) {
-  const flow = alignedSnapshot(rawFlow, referenceDate);
-  const emotion = alignedSnapshot(rawEmotion, referenceDate);
-  const ladder = alignedSnapshot(rawLadder, referenceDate);
-  const radarAligned = alignedSnapshot({ tradeDate: radarDate }, referenceDate);
-  const currentEvents = radarAligned ? radarEvents : [];
-  const rising = currentEvents.find((event) => event.direction === 'up');
-  const falling = currentEvents.find((event) => event.direction === 'down');
-  const flowNotice =
-    !flow && rawFlow
-      ? `资金快照 ${fmtTradeDate(rawFlow.tradeDate)} 未对齐或已过期，未纳入本日判断`
-      : '等待价格与资金同向确认';
-  const inflow = flow?.split.cumulativeInflow[0] ?? flow?.split.inflow[0];
-  const outflow = flow?.split.cumulativeOutflow[0] ?? flow?.split.outflow[0];
-  const leaderNames = emotion?.leaders?.length
-    ? emotion.leaders.join('、')
-    : ladder?.sealedStocks
-        ?.filter((stock) => stock.height === emotion?.highestBoard)
-        .map((stock) => stock.name)
-        .join('、');
-  const breadthRatio = emotion?.breadth.rowsAvailable
-    ? (emotion.breadth.up / emotion.breadth.rowsAvailable) * 100
-    : null;
-  const emotionState = emotion
-    ? [...new Set([emotion.indexMood, ...emotion.cycleNode.split(' · ')])].join(
-        ' · ',
-      )
-    : '情绪数据连接中';
-  const strongest = rising
-    ? `${rising.name}明显拉升，${
-        rising.drivers
-          .slice(0, 3)
-          .map((stock) => stock.name)
-          .join('、') || '驱动股暂不可用'
-      }`
-    : radarAligned
-      ? '当前未检测到达到阈值的板块拉升'
-      : '本日板块拉升数据待补';
-  const weakest = falling
-    ? `${falling.name}明显下跌，${
-        falling.drivers
-          .slice(0, 3)
-          .map((stock) => stock.name)
-          .join('、') || '领跌股暂不可用'
-      }`
-    : radarAligned
-      ? '当前未检测到达到阈值的集中走弱'
-      : '本日板块走弱数据待补';
-
-  return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-950 to-slate-900 text-slate-100 shadow-sm dark:border-slate-800">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 sm:px-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <Activity className="size-5 text-sky-400" />
-            <h2 className="font-semibold">盘面决策台</h2>
-            <Badge
-              className="border-slate-700 bg-slate-900 text-slate-300"
-              variant="outline"
-            >
-              {overviewSessionLabel(sessionState)}
-            </Badge>
-          </div>
-          <p className="mt-1 text-xs text-slate-400">
-            {marketNotice ?? `行情日期 ${fmtTradeDate(referenceDate)}`}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {[
-            ['overview', '盘面全景'],
-            ['radar', '板块异动'],
-            ['emotion', '情绪周期'],
-            ['promotion', '连板天梯'],
-            ['speed', '涨速共振'],
-          ].map(([tab, label]) => (
-            <Button
-              key={tab}
-              variant="outline"
-              size="sm"
-              className="border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
-              onClick={() => onNavigate(tab)}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid gap-px bg-slate-800 sm:grid-cols-2 xl:grid-cols-5">
-        <button
-          className="min-h-32 bg-slate-950 p-4 text-left transition hover:bg-slate-900 sm:col-span-2"
-          onClick={() => onNavigate('emotion')}
-        >
-          <span className="text-xs text-slate-400">情绪结论</span>
-          <strong className="mt-2 block text-xl text-amber-300">
-            {emotionState}
-          </strong>
-          <span className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-300">
-            <span>
-              涨停 <b className="text-red-400">{emotion?.limitUp ?? '—'}</b>
-            </span>
-            <span>
-              炸板 <b className="text-amber-300">{emotion?.failed ?? '—'}</b>
-            </span>
-            <span>
-              跌停{' '}
-              <b className="text-emerald-400">{emotion?.limitDown ?? '—'}</b>
-            </span>
-            <span>
-              封板率 <b>{emotion ? `${emotion.sealRate.toFixed(1)}%` : '—'}</b>
-            </span>
-            <span>
-              上涨面{' '}
-              <b>
-                {breadthRatio === null ? '—' : `${breadthRatio.toFixed(1)}%`}
-              </b>
-            </span>
-            <span>
-              中位数 <b>{fmtPct(emotion?.breadth.medianChangePct)}</b>
-            </span>
-          </span>
-        </button>
-
-        <button
-          className="min-h-32 bg-slate-950 p-4 text-left transition hover:bg-slate-900"
-          onClick={() => onNavigate('radar')}
-        >
-          <span className="text-xs text-slate-400">主线 / 最强启动</span>
-          <strong className="mt-2 block text-sm leading-6 text-red-300">
-            {strongest}
-          </strong>
-          <span className="mt-2 block text-xs text-slate-400">
-            {inflow
-              ? `${inflow.name} ${fmtFlowDirection(inflow.latestMainNetInflow)}`
-              : flowNotice}
-          </span>
-        </button>
-
-        <button
-          className="min-h-32 bg-slate-950 p-4 text-left transition hover:bg-slate-900"
-          onClick={() => onNavigate('radar')}
-        >
-          <span className="text-xs text-slate-400">弱侧 / 最强下杀</span>
-          <strong className="mt-2 block text-sm leading-6 text-emerald-300">
-            {weakest}
-          </strong>
-          <span className="mt-2 block text-xs text-slate-400">
-            {outflow
-              ? `${outflow.name} ${fmtFlowDirection(outflow.latestMainNetInflow)}`
-              : flowNotice}
-          </span>
-        </button>
-
-        <button
-          className="min-h-32 bg-slate-950 p-4 text-left transition hover:bg-slate-900"
-          onClick={() => onNavigate('promotion')}
-        >
-          <span className="text-xs text-slate-400">高度 / 核心</span>
-          <strong className="mt-2 block text-xl text-sky-300">
-            {emotion?.highestBoard ? `${emotion.highestBoard}板` : '—'}
-          </strong>
-          <span className="mt-2 block text-sm leading-6 text-slate-200">
-            {leaderNames || '最高板股票待确认'}
-          </span>
-          <span className="mt-1 block text-xs text-slate-400">
-            连板 {emotion?.consecutiveCount ?? '—'} 家
-          </span>
-        </button>
-      </div>
-    </section>
-  );
-}
-
-const FLOW_COLORS = [
-  '#dc2626',
-  '#e65b33',
-  '#f59e0b',
-  '#a855f7',
-  '#7c3aed',
-  '#2563eb',
-  '#0891b2',
-  '#0d9488',
-  '#16a34a',
-  '#65a30d',
-  '#475569',
-  '#64748b',
-  '#9333ea',
-  '#db2777',
-  '#0f766e',
-  '#4f46e5',
-];
-
-function SectorFlowChart({ data }: { data: FlowData }) {
-  const [mode, setMode] = useState<'all' | 'inflow' | 'outflow'>('all');
-  const colorByCode = useMemo(
-    () =>
-      new Map(
-        data.series.map((item, index) => [
-          item.code,
-          FLOW_COLORS[index % FLOW_COLORS.length],
-        ]),
-      ),
-    [data.series],
-  );
-  const visible = useMemo(
-    () =>
-      data.series.filter((item) => {
-        if (mode === 'inflow') return item.latestMainNetInflow >= 0;
-        if (mode === 'outflow') return item.latestMainNetInflow < 0;
-        return true;
-      }),
-    [data.series, mode],
-  );
-  const chartData = useMemo(() => {
-    const rows = new Map<string, Record<string, string | number>>();
-    for (const item of visible) {
-      for (const point of item.points) {
-        const row = rows.get(point.time) ?? { time: point.time };
-        row[item.code] = point.mainNetInflow / 100_000_000;
-        rows.set(point.time, row);
-      }
-    }
-    return [...rows.values()].sort((a, b) =>
-      String(a.time).localeCompare(String(b.time)),
-    );
-  }, [visible]);
-  const chartConfig = useMemo(
-    () =>
-      Object.fromEntries(
-        visible.map((item) => [
-          item.code,
-          { label: item.name, color: colorByCode.get(item.code) ?? '#64748b' },
-        ]),
-      ) as ChartConfig,
-    [colorByCode, visible],
-  );
-  const ranking = [...visible].sort(
-    (a, b) => b.latestMainNetInflow - a.latestMainNetInflow,
-  );
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Activity className="size-5" />
-          盘中板块主力净流入曲线
-        </CardTitle>
-        <CardDescription>
-          从开盘累计到当前分钟，单位：亿元；右侧为各板块最新累计值
-        </CardDescription>
-        <CardAction>
-          <StateBadge
-            state={data.curveState}
-            label={`本次覆盖 ${data.coverage?.available ?? 0}/${data.coverage?.requested ?? 0}板块`}
-          />
-        </CardAction>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {data.reason ? (
-          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm leading-6 text-muted-foreground">
-            <p className="font-medium text-foreground">{data.reason}</p>
-          </div>
-        ) : null}
-        {data.gap ? (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-xs leading-5 text-muted-foreground">
-            <span className="font-medium text-foreground">
-              缺口队列：{data.gap.status}
-            </span>
-            {' · '}
-            {data.gap.classification.startsWith('UPSTREAM_')
-              ? '上游响应不稳定，连续两轮多数探测恢复后才启动全量回补'
-              : data.gap.reason}
-            {data.dataAvailableThrough
-              ? ` · 当前完整收盘数据截至${data.dataAvailableThrough}`
-              : ''}
-          </div>
-        ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex gap-1">
-            {(
-              [
-                ['all', '全部曲线'],
-                ['inflow', '净流入'],
-                ['outflow', '净流出'],
-              ] as const
-            ).map(([value, label]) => (
-              <Button
-                key={value}
-                type="button"
-                size="sm"
-                variant={mode === value ? 'default' : 'outline'}
-                onClick={() => setMode(value)}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {data.tradeDate} · {data.phase} · 最新点 {data.lastPointTime ?? '—'}
-          </div>
-        </div>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_230px]">
-          <ChartContainer
-            config={chartConfig}
-            className="h-[430px] w-full aspect-auto"
-            initialDimension={{ width: 960, height: 430 }}
-          >
-            <RechartsLineChart
-              data={chartData}
-              margin={{ top: 10, right: 12, bottom: 0, left: 4 }}
-              accessibilityLayer
-            >
-              <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis
-                dataKey="time"
-                tickLine={false}
-                axisLine={false}
-                minTickGap={36}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                width={58}
-                tickFormatter={(value) => `${Number(value).toFixed(0)}亿`}
-              />
-              <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1.5} />
-              <ChartTooltip
-                cursor={false}
-                content={<ChartTooltipContent indicator="line" />}
-              />
-              {visible.map((item) => (
-                <Line
-                  key={item.code}
-                  type="monotone"
-                  dataKey={item.code}
-                  name={item.name}
-                  stroke={colorByCode.get(item.code)}
-                  strokeWidth={1.8}
-                  dot={false}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                />
-              ))}
-            </RechartsLineChart>
-          </ChartContainer>
-          <div
-            className="grid max-h-[430px] content-start gap-1 overflow-y-auto pr-1"
-            aria-label="板块最新主力净流入排名"
-          >
-            {ranking.map((item) => (
-              <div
-                key={item.code}
-                className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/70"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span
-                    className="size-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: colorByCode.get(item.code) }}
-                  />
-                  <span className="truncate">{item.name}</span>
-                </span>
-                <span
-                  className={`shrink-0 font-mono font-medium ${item.latestMainNetInflow >= 0 ? 'market-up' : 'market-down'}`}
-                >
-                  {fmtMoney(item.latestMainNetInflow)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">{data.basis}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function SectorDetailLine({ item }: { item: SectorFlowSeries }) {
-  const subgroups = item.subgroups?.slice(0, 3) ?? [];
-  const representatives = item.representatives?.slice(0, 3) ?? [];
-  return (
-    <div className="space-y-1 text-[11px] text-muted-foreground">
-      <div className="flex flex-wrap items-center gap-1">
-        <span>成分细分：</span>
-        {subgroups.length ? (
-          subgroups.map((group) => (
-            <Badge
-              key={group.name}
-              variant="secondary"
-              className="h-5 px-1.5 text-[10px]"
-            >
-              {group.name} {group.count}
-            </Badge>
-          ))
-        ) : (
-          <span>暂未补齐</span>
-        )}
-      </div>
-      <div className="truncate">
-        活跃股当日主力资金：
-        {representatives.length
-          ? representatives
-              .map(
-                (row) =>
-                  `${row.name}（${fmtFlowDirection(row.mainNetInflow)}）`,
-              )
-              .join(' · ')
-          : '暂未补齐'}
-      </div>
-    </div>
-  );
-}
-
-function FlowSplitList({
-  title,
-  rows,
-  direction,
-}: {
-  title: string;
-  rows: SectorFlowSeries[];
-  direction: 'inflow' | 'outflow';
-}) {
-  const maxValue = Math.max(
-    ...rows.map((item) => Math.abs(item.delta5m ?? 0)),
-    1,
-  );
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle
-          className={`flex items-center gap-2 ${direction === 'inflow' ? 'market-up' : 'market-down'}`}
-        >
-          {direction === 'inflow' ? (
-            <ArrowUpRight className="size-5" />
-          ) : (
-            <ArrowDownRight className="size-5" />
-          )}
-          {title}
-        </CardTitle>
-        <CardDescription>
-          按最近5个有效交易分钟的主力净流入增量排序
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {rows.length ? (
-          rows.map((item, index) => (
-            <div key={item.code} className="space-y-1.5">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="min-w-0 truncate">
-                  <span className="mr-2 text-xs text-muted-foreground">
-                    {index + 1}
-                  </span>
-                  {item.name}
-                </span>
-                <span
-                  className={`shrink-0 font-mono font-medium ${direction === 'inflow' ? 'market-up' : 'market-down'}`}
-                >
-                  {fmtMoney(item.delta5m)}
-                </span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className={`h-full rounded-full ${direction === 'inflow' ? 'bg-red-500' : 'bg-emerald-500'}`}
-                  style={{
-                    width: `${Math.max(4, (Math.abs(item.delta5m ?? 0) / maxValue) * 100)}%`,
-                  }}
-                />
-              </div>
-              <div className="flex justify-between text-[11px] text-muted-foreground">
-                <span>累计 {fmtMoney(item.latestMainNetInflow)}</span>
-                <span>15分钟 {fmtMoney(item.delta15m)}</span>
-              </div>
-              <SectorDetailLine item={item} />
-            </div>
-          ))
-        ) : (
-          <EmptyState>当前样本中暂无这一方向的资金增量</EmptyState>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function HorizonFlowList({
-  title,
-  rows,
-  direction,
-  horizon,
-}: {
-  title: string;
-  rows: SectorFlowSeries[];
-  direction: 'inflow' | 'outflow';
-  horizon: 'day' | '30m';
-}) {
-  const valueOf = (item: SectorFlowSeries) =>
-    horizon === 'day' ? item.latestMainNetInflow : item.delta30m;
-  return (
-    <div className="min-w-0 rounded-lg border bg-card p-3">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h4
-          className={`text-sm font-medium ${direction === 'inflow' ? 'market-up' : 'market-down'}`}
-        >
-          {title}
-        </h4>
-        <span className="text-[11px] text-muted-foreground">
-          {horizon === 'day' ? '开盘至今' : '日内方向 · 30分钟状态'}
-        </span>
-      </div>
-      <div className="grid min-w-0 grid-cols-1 gap-2">
-        {rows.length ? (
-          rows.map((item, index) => (
-            <div
-              key={item.code}
-              className="min-w-0 rounded-md bg-muted/45 px-2.5 py-2"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <div className="truncate text-sm">
-                      <span className="mr-2 text-xs text-muted-foreground">
-                        {index + 1}
-                      </span>
-                      {item.name}
-                    </div>
-                    {horizon === '30m' && item.persistenceLabel ? (
-                      <Badge
-                        variant="outline"
-                        className="h-auto whitespace-normal px-1.5 py-0.5 text-xs"
-                      >
-                        {item.persistenceLabel}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-muted-foreground">
-                    板块涨跌 {fmtPct(item.changePct)} · 累计{' '}
-                    {fmtMoney(item.latestMainNetInflow)}
-                  </div>
-                </div>
-                <span
-                  className={`shrink-0 font-mono text-sm font-medium ${(valueOf(item) ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
-                >
-                  {fmtMoney(valueOf(item))}
-                </span>
-              </div>
-              {horizon === '30m' && item.flowObservation ? (
-                <details className="mt-2 break-words text-xs leading-5 text-muted-foreground">
-                  <summary className="cursor-pointer">
-                    资金过程依据与限制
-                  </summary>
-                  <p>{item.flowObservation.basis}</p>
-                </details>
-              ) : null}
-              <div className="mt-2">
-                <SectorDetailLine item={item} />
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="rounded-md border border-dashed px-3 py-5 text-center text-xs text-muted-foreground">
-            当前没有满足同向价格与资金条件的板块
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function PersistentStrengthBoard({ data }: { data: FlowData }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>长周期持续强弱</CardTitle>
-        <CardDescription>
-          日内价格与累计资金同向只是观察起点；再比较资金前后过程。单点跳变、短长分化、转向迹象和后续延续分开，不据此确认主线或情绪反转。
-        </CardDescription>
-        <CardAction>
-          <StateBadge
-            state={
-              data.series.some((item) => item.delta30m !== null)
-                ? 'READY'
-                : 'DEGRADED'
-            }
-            label="长周期"
-          />
-        </CardAction>
-      </CardHeader>
-      <CardContent className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
-        <HorizonFlowList
-          title="持续强势"
-          rows={data.split.persistentStrong}
-          direction="inflow"
-          horizon="30m"
-        />
-        <HorizonFlowList
-          title="持续弱势"
-          rows={data.split.persistentWeak}
-          direction="outflow"
-          horizon="30m"
-        />
-      </CardContent>
-    </Card>
-  );
-}
-
-function FlowSplitBoard({ data }: { data: FlowData }) {
-  const leadersIn =
-    data.split.inflow
-      .slice(0, 3)
-      .map((item) => item.name)
-      .join('、') || '暂无';
-  const leadersOut =
-    data.split.outflow
-      .slice(0, 3)
-      .map((item) => item.name)
-      .join('、') || '暂无';
-  return (
-    <div className="space-y-4">
-      <section className="grid gap-3 md:grid-cols-3" aria-label="资金分流摘要">
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>流入侧扩散</CardTitle>
-            <CardAction>
-              <span className="market-up text-lg font-semibold">
-                {data.split.positiveCount}
-              </span>
-            </CardAction>
-            <CardDescription>{leadersIn}</CardDescription>
-          </CardHeader>
-        </Card>
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>流出侧扩散</CardTitle>
-            <CardAction>
-              <span className="market-down text-lg font-semibold">
-                {data.split.negativeCount}
-              </span>
-            </CardAction>
-            <CardDescription>{leadersOut}</CardDescription>
-          </CardHeader>
-        </Card>
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>观察窗口</CardTitle>
-            <CardAction>
-              <StateBadge state={data.splitState} />
-            </CardAction>
-            <CardDescription>
-              最近5个有效交易分钟 · {data.phase} {data.lastPointTime ?? '—'}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </section>
-      <div className="rounded-lg border bg-muted/35 px-4 py-3 text-sm">
-        <div className="flex items-center gap-2 font-medium">
-          <ArrowLeftRight className="size-4" />
-          资金分流观察
-        </div>
-        <p className="mt-1 text-muted-foreground">
-          流出侧集中在「{leadersOut}」，流入侧集中在「{leadersIn}
-          」。这是概念板块的方向对照，不代表这些板块之间存在可逐笔证明的一一转移关系。
-        </p>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <FlowSplitList
-          title="资金正在流入"
-          rows={data.split.inflow}
-          direction="inflow"
-        />
-        <FlowSplitList
-          title="资金正在流出"
-          rows={data.split.outflow}
-          direction="outflow"
-        />
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>当日累计净流入 / 净流出</CardTitle>
-          <CardDescription>
-            即使最近5分钟发生回流，日内累计失血板块仍会保留在净流出侧，不再消失
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-2">
-          <HorizonFlowList
-            title="当日累计净流入"
-            rows={data.split.cumulativeInflow}
-            direction="inflow"
-            horizon="day"
-          />
-          <HorizonFlowList
-            title="当日累计净流出"
-            rows={data.split.cumulativeOutflow}
-            direction="outflow"
-            horizon="day"
-          />
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -2117,21 +1077,11 @@ function MarketTimelineBoard({ data }: { data: MarketTimelineData }) {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState('overview');
-  const radar = usePolling<RadarData>('/api/radar', 15_000);
-  const earlyObservation = usePolling<EarlyObservationSnapshot>(
-    '/api/early-observation',
-    20_000,
-  );
-  const earlyComparison = useEarlyObservationComparison(
-    earlyObservation.data,
-    earlyObservation.receivedAt,
-  );
-  const flow = usePolling<FlowData>('/api/flow', 60_000);
+  const [activeTab, setActiveTab] = useState('emotion');
   const ladder = usePolling<LadderData>('/api/ladder', 30_000);
   const speed = usePolling<SpeedData>(
     '/api/speed',
-    activeTab === 'speed' ? 1_000 : 15_000,
+    30_000,
   );
   const intradayEmotion = usePolling<IntradayEmotionSnapshot>(
     '/api/intraday-emotion',
@@ -2146,14 +1096,7 @@ export default function Home() {
     60_000,
   );
   const history = closeHistory.data ?? CLOSE_HISTORY;
-  const radarEvents = useWindowedRadar(radar.data, Boolean(radar.error));
   const emotionDate = intradayEmotion.data?.tradeDate.replaceAll('-', '') ?? '';
-  const currentEmotionClose = history.snapshots.find(
-    (snapshot) => snapshot.date.replaceAll('-', '') === emotionDate,
-  );
-  const previousEmotionClose = history.snapshots
-    .filter((snapshot) => snapshot.date.replaceAll('-', '') < emotionDate)
-    .at(-1);
   const coreDecisionMode =
     intradayEmotion.data?.cutoff === '15:00'
       ? ('FIXED' as const)
@@ -2194,8 +1137,6 @@ export default function Home() {
             facts: toEmotionFacts(intradayEmotion.data),
             tracking: coreTracking.data,
             speed: speed.data,
-            radarEvents,
-            flowRows: flow.data?.allRows ?? flow.data?.series ?? [],
             history: history.snapshots,
             decisionMode: coreDecisionMode,
             now: coreDecisionNow,
@@ -2220,53 +1161,15 @@ export default function Home() {
       coreDecisionNow,
       ladder.data,
       emotionDate,
-      flow.data,
       history.snapshots,
       intradayEmotion.data,
-      radarEvents,
       speed.data,
     ],
   );
-  const unifiedReading = intradayEmotion.data
-    ? unifiedMarketReading({
-        facts: toEmotionFacts(intradayEmotion.data),
-        close: currentEmotionClose,
-        previousClose: previousEmotionClose,
-        ladder: ladder.data,
-        radar: radar.data,
-        radarEvents,
-        flow: flow.data,
-        speed: speed.data,
-        coreEvidence,
-        intradayEvidence: intradayEmotion.data.intradayEvidence,
-        auctionEvidence: intradayEmotion.data.auctionEvidence,
-      })
-    : null;
-  const sharedRadarSectors = useMemo(() => {
-    const sectors = new Map<string, string[]>();
-    for (const event of radarEvents)
-      for (const driver of event.drivers) {
-        sectors.set(driver.code, [
-          ...new Set([...(sectors.get(driver.code) ?? []), event.name]),
-        ]);
-      }
-    return sectors;
-  }, [radarEvents]);
-  const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [selectedCloseDate, setSelectedCloseDate] = useState(LATEST_CLOSE_DATE);
   const closeDatePinned = useRef(false);
   const [competitionFilter, setCompetitionFilter] = useState('ALL');
   const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    if (!radarEvents.length) return;
-    if (
-      !selectedSector ||
-      !radarEvents.some((event) => event.code === selectedSector)
-    ) {
-      setSelectedSector(radarEvents[0].code);
-    }
-  }, [radarEvents, selectedSector]);
 
   useEffect(() => {
     const latest = history.snapshots.at(-1)?.date;
@@ -2277,13 +1180,7 @@ export default function Home() {
     if (!closeDatePinned.current || !available) setSelectedCloseDate(latest);
   }, [history.snapshots, selectedCloseDate]);
 
-  const selectedEvent =
-    radarEvents.find((event) => event.code === selectedSector) ??
-    radarEvents[0];
   const latestAt = [
-    radar.data?.retrievedAt,
-    earlyObservation.data?.retrievedAt,
-    flow.data?.retrievedAt,
     ladder.data?.retrievedAt,
     speed.data?.retrievedAt,
     intradayEmotion.data?.retrievedAt,
@@ -2294,30 +1191,6 @@ export default function Home() {
   const closedSnapshot =
     history.archive?.sessionState === 'CLOSED' ? history.archive : undefined;
   const moduleHealth = [
-    {
-      name: '板块价格/成交观察',
-      error: earlyObservation.error,
-      state: earlyObservation.data?.status,
-      date: earlyObservation.data?.tradeDate,
-      detail: earlyObservation.data?.reason,
-      hasData: Boolean(earlyObservation.data?.rows.length),
-    },
-    {
-      name: '板块异动',
-      error: radar.error,
-      state: radar.data?.status,
-      date: radar.data?.tradeDate,
-      detail: radar.data?.reason,
-      hasData: Boolean(radar.data),
-    },
-    {
-      name: '资金分流',
-      error: flow.error,
-      state: flow.data?.status,
-      date: flow.data?.tradeDate,
-      detail: flow.data?.reason,
-      hasData: Boolean(flow.data),
-    },
     {
       name: '连板梯队',
       error: ladder.error,
@@ -2373,15 +1246,9 @@ export default function Home() {
     : staleModules.length
       ? `${staleModules.length}个模块日期未对齐：${staleModules.map((item) => item.name).join('、')}`
       : null;
-  const marketNotice = closedSnapshot
-    ? `当前休市，展示 ${fmtTradeDate(closedSnapshot.marketDate ?? closedSnapshot.latestDate)} 的最近可用快照；各模块的数据缺口单独标注。`
-    : null;
   const manualRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
-      radar.refresh(),
-      earlyObservation.refresh(),
-      flow.refresh(),
       ladder.refresh(),
       speed.refresh(),
       intradayEmotion.refresh(),
@@ -2443,7 +1310,7 @@ export default function Home() {
                 李米看板
               </h1>
               <p className="truncate text-xs text-muted-foreground">
-                板块异动、资金分流、情绪与连板梯队一屏联动
+                情绪周期、板块异动与连板梯队一屏联动
               </p>
             </div>
           </div>
@@ -2509,26 +1376,6 @@ export default function Home() {
             </p>
           </aside>
         ) : null}
-
-        <EarlyObservationPanel
-          data={earlyObservation.data}
-          error={earlyObservation.error}
-          comparison={earlyComparison}
-        />
-
-        <MarketCommandCenter
-          radarEvents={radarEvents}
-          radarDate={radar.data?.tradeDate}
-          flow={flow.data}
-          emotion={intradayEmotion.data}
-          ladder={ladder.data}
-          referenceDate={alignedDate}
-          sessionState={
-            closedSnapshot?.sessionState ?? intradayEmotion.data?.sessionState
-          }
-          marketNotice={marketNotice}
-          onNavigate={setActiveTab}
-        />
 
         <details className="rounded-lg border bg-card px-4 py-3 text-sm">
           <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 font-medium">
@@ -2598,10 +1445,6 @@ export default function Home() {
           className="gap-4"
         >
           <TabsList variant="line" className="max-w-full overflow-x-auto">
-            <TabsTrigger value="overview">
-              <BrainCircuit />
-              盘面全景
-            </TabsTrigger>
             <TabsTrigger value="emotion">
               <CalendarDays />
               情绪周期
@@ -2618,10 +1461,6 @@ export default function Home() {
               <Activity />
               板块异动
             </TabsTrigger>
-            <TabsTrigger value="flow">
-              <ArrowLeftRight />
-              资金分流
-            </TabsTrigger>
             <TabsTrigger value="promotion">
               <TrendingUp />
               连板晋级
@@ -2636,17 +1475,7 @@ export default function Home() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="space-y-4">
-            {unifiedReading ? (
-              <UnifiedMarketBoard reading={unifiedReading} />
-            ) : (
-              <EmptyState>
-                {intradayEmotion.loading
-                  ? '正在建立盘面十二模块…'
-                  : intradayEmotion.error || '盘面证据暂不可用'}
-              </EmptyState>
-            )}
-          </TabsContent>
+          
 
           <TabsContent value="emotion" className="space-y-4">
             <IntradayEmotionBoard
@@ -2682,349 +1511,7 @@ export default function Home() {
           </TabsContent>
 
           <TabsContent value="radar" className="space-y-4">
-            {flow.data?.series?.length ? (
-              <SectorFlowChart data={flow.data} />
-            ) : (
-              <EmptyState>
-                {flow.loading
-                  ? '正在读取板块主力净流入分钟曲线…'
-                  : flow.data?.reason ||
-                    flow.error ||
-                    '当前没有可用的板块资金曲线'}
-              </EmptyState>
-            )}
-            {!radarEvents.length ? (
-              <EmptyState>
-                {radar.loading
-                  ? '正在建立板块监控…'
-                  : radar.data?.reason ||
-                    radar.error ||
-                    '当前没有达到阈值的板块异动'}
-              </EmptyState>
-            ) : (
-              <>
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {(['up', 'down'] as const).map((direction) => (
-                    <Card key={direction}>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          {direction === 'up' ? (
-                            <ArrowUpRight className="market-up" />
-                          ) : (
-                            <ArrowDownRight className="market-down" />
-                          )}
-                          {radar.data?.sessionState === 'CLOSED'
-                            ? direction === 'up'
-                              ? '当日强势板块'
-                              : '当日弱势板块'
-                            : direction === 'up'
-                              ? '明显拉升'
-                              : '明显下跌'}
-                        </CardTitle>
-                        <CardDescription>
-                          {radar.data?.sessionState === 'CLOSED'
-                            ? `${radar.data.tradeDate}日涨跌幅 · 非当前实时，休市不计算3分钟变化`
-                            : '约1分钟先提示价格与资金同向变化，约3分钟再确认持续性；报价时间不齐时不做短窗判断'}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="grid gap-2">
-                        {radarEvents
-                          .filter((item) => item.direction === direction)
-                          .map((item) => (
-                            <button
-                              key={item.code}
-                              type="button"
-                              aria-label={`查看${item.name}${direction === 'up' ? '拉升' : '下跌'}驱动个股`}
-                              onClick={() => setSelectedSector(item.code)}
-                              className={`w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted/70 ${selectedSector === item.code ? 'border-ring bg-muted/60 ring-1 ring-ring' : 'bg-muted/30'}`}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <h3 className="font-medium">{item.name}</h3>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    {item.drivers
-                                      .map(
-                                        (driver) =>
-                                          `${driver.name}${(sharedRadarSectors.get(driver.code)?.length ?? 0) > 1 ? '（跨题材）' : ''}`,
-                                      )
-                                      .join(' · ') || '驱动股待补齐'}
-                                  </p>
-                                </div>
-                                <div className="text-right">
-                                  <p
-                                    className={`text-base font-medium ${direction === 'up' ? 'market-up' : 'market-down'}`}
-                                  >
-                                    {fmtPct(item.displayChangePct)}
-                                  </p>
-                                  <p
-                                    className={`text-xs ${(item.displayFlow ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
-                                  >
-                                    {item.windowReady || item.earlyWindowReady
-                                      ? '净额变化 '
-                                      : '日内净额 '}
-                                    {fmtMoney(item.displayFlow)}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                                <span>
-                                  {item.windowReady
-                                    ? '实测约3分钟价格变化'
-                                    : item.earlyWindowReady
-                                      ? `早期约${item.windowDurationSeconds ?? 60}秒变化`
-                                      : item.selectionBasis === 'DAY_CHANGE'
-                                        ? '日涨跌幅'
-                                        : '当前报价涨速'}
-                                </span>
-                                <span>
-                                  同向{item.directionalCount ?? '—'}只 · 样本
-                                  {item.members.length}/
-                                  {item.memberCount ?? '—'}只
-                                </span>
-                              </div>
-                            </button>
-                          ))}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-
-                {selectedEvent && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>{selectedEvent.name} · 主要驱动个股</CardTitle>
-                      <CardDescription>
-                        {selectedEvent.driverBasis}
-                        <span className="mt-1 block">
-                          成分查询{selectedEvent.memberQueriesReady ?? '—'}/
-                          {selectedEvent.memberQueriesRequested ?? '—'} · 样本
-                          {selectedEvent.members.length}/
-                          {selectedEvent.memberCount ?? '—'}只 · 报价时间
-                          {selectedEvent.quoteTime
-                            ? new Date(selectedEvent.quoteTime).toLocaleString(
-                                'zh-CN',
-                                { timeZone: 'Asia/Shanghai', hour12: false },
-                              )
-                            : '未记录'}
-                        </span>
-                        {selectedEvent.missingReasons?.length ? (
-                          <span className="mt-1 block text-amber-700 dark:text-amber-400">
-                            {selectedEvent.missingReasons.join('；')}
-                          </span>
-                        ) : null}
-                      </CardDescription>
-                      <CardAction>
-                        <StateBadge
-                          state={selectedEvent.driverState}
-                          label={
-                            selectedEvent.windowReady
-                              ? '实测短窗关联'
-                              : selectedEvent.earlyWindowReady
-                                ? '早期变化观察'
-                                : selectedEvent.selectionBasis === 'DAY_CHANGE'
-                                  ? '日内同向样本'
-                                  : '当前涨速样本'
-                          }
-                        />
-                      </CardAction>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="mb-3 text-xs text-muted-foreground">
-                        同一股票可能属于多个题材，交叉出现不代表新增一笔资金，不能跨板块累加。
-                      </p>
-                      {selectedEvent.drivers.length ? (
-                        <>
-                          <div className="grid gap-2 md:hidden">
-                            {selectedEvent.drivers.map((driver) => (
-                              <article
-                                key={driver.code}
-                                className="rounded-lg border bg-muted/20 p-3"
-                              >
-                                <div className="flex flex-wrap items-start justify-between gap-2">
-                                  <div>
-                                    <p className="font-medium">{driver.name}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {driver.code} ·{' '}
-                                      {driver.industry || '行业未提供'}
-                                    </p>
-                                  </div>
-                                  <Badge variant="outline">
-                                    {driver.driverRole}
-                                  </Badge>
-                                </div>
-                                <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
-                                  <div>
-                                    <dt className="text-muted-foreground">
-                                      {selectedEvent.windowReady
-                                        ? '3分钟价格变化'
-                                        : selectedEvent.earlyWindowReady
-                                          ? '约1分钟价格变化'
-                                          : selectedEvent.selectionBasis ===
-                                              'DAY_CHANGE'
-                                            ? '日涨跌幅'
-                                            : '当前涨速'}
-                                    </dt>
-                                    <dd
-                                      className={`mt-1 text-base font-medium ${selectedEvent.direction === 'up' ? 'market-up' : 'market-down'}`}
-                                    >
-                                      {fmtPct(
-                                        selectedEvent.windowReady ||
-                                          selectedEvent.earlyWindowReady ||
-                                          selectedEvent.selectionBasis ===
-                                            'DAY_CHANGE'
-                                          ? driver.changePct
-                                          : driver.speedPct,
-                                      )}
-                                    </dd>
-                                  </div>
-                                  <div>
-                                    <dt className="text-muted-foreground">
-                                      {selectedEvent.windowReady ||
-                                      selectedEvent.earlyWindowReady
-                                        ? '净额变化'
-                                        : '日内主力净额'}
-                                    </dt>
-                                    <dd
-                                      className={`mt-1 text-base font-medium ${(driver.mainNetInflow ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
-                                    >
-                                      {fmtMoney(driver.mainNetInflow)}
-                                    </dd>
-                                  </div>
-                                </dl>
-                                <p className="mt-2 text-xs text-muted-foreground">
-                                  同向资金样本占比：
-                                  {driver.contributionPct == null
-                                    ? '—'
-                                    : `${driver.contributionPct.toFixed(1)}%`}
-                                </p>
-                                {(sharedRadarSectors.get(driver.code)?.length ??
-                                  0) > 1 ? (
-                                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                                    跨题材：
-                                    {sharedRadarSectors
-                                      .get(driver.code)
-                                      ?.join(' / ')}
-                                  </p>
-                                ) : null}
-                              </article>
-                            ))}
-                          </div>
-                          <Table className="hidden md:table">
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>个股</TableHead>
-                                <TableHead>细分行业</TableHead>
-                                <TableHead>同向关系</TableHead>
-                                <TableHead className="text-right">
-                                  {selectedEvent.windowReady
-                                    ? '3分钟价格变化'
-                                    : selectedEvent.earlyWindowReady
-                                      ? '约1分钟价格变化'
-                                      : selectedEvent.selectionBasis ===
-                                          'DAY_CHANGE'
-                                        ? '日涨跌幅'
-                                        : '当前涨速'}
-                                </TableHead>
-                                <TableHead className="text-right">
-                                  {selectedEvent.windowReady ||
-                                  selectedEvent.earlyWindowReady
-                                    ? '净额变化'
-                                    : '日内主力净额'}
-                                </TableHead>
-                                <TableHead className="text-right">
-                                  同向资金样本占比
-                                </TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {selectedEvent.drivers.map((driver) => (
-                                <TableRow key={driver.code}>
-                                  <TableCell>
-                                    <div className="font-medium">
-                                      {driver.name}
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">
-                                      {driver.code}
-                                    </div>
-                                    {(sharedRadarSectors.get(driver.code)
-                                      ?.length ?? 0) > 1 ? (
-                                      <div className="text-xs text-amber-700 dark:text-amber-400">
-                                        跨题材：
-                                        {sharedRadarSectors
-                                          .get(driver.code)
-                                          ?.join(' / ')}
-                                      </div>
-                                    ) : null}
-                                  </TableCell>
-                                  <TableCell>
-                                    {driver.industry || '未知'}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge
-                                      variant="outline"
-                                      className={
-                                        driver.driverRole === '价格与资金同向'
-                                          ? 'status-ready'
-                                          : 'status-degraded'
-                                      }
-                                    >
-                                      {driver.driverRole || '当前代理'}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell
-                                    className={`text-right ${selectedEvent.direction === 'up' ? 'market-up' : 'market-down'}`}
-                                  >
-                                    {fmtPct(
-                                      selectedEvent.windowReady ||
-                                        selectedEvent.earlyWindowReady ||
-                                        selectedEvent.selectionBasis ===
-                                          'DAY_CHANGE'
-                                        ? driver.changePct
-                                        : driver.speedPct,
-                                    )}
-                                  </TableCell>
-                                  <TableCell
-                                    className={`text-right ${(driver.mainNetInflow ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
-                                  >
-                                    {fmtMoney(driver.mainNetInflow)}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {driver.contributionPct == null
-                                      ? '—'
-                                      : `${driver.contributionPct.toFixed(1)}%`}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </>
-                      ) : (
-                        <EmptyState>
-                          暂无可用同向个股；查询失败与缺失原因见上方说明。
-                        </EmptyState>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-                {flow.data?.series?.length ? (
-                  <PersistentStrengthBoard data={flow.data} />
-                ) : null}
-              </>
-            )}
-          </TabsContent>
-
-          <TabsContent value="flow">
-            {flow.data?.series?.length ? (
-              <FlowSplitBoard data={flow.data} />
-            ) : (
-              <EmptyState>
-                {flow.loading
-                  ? '正在计算盘中资金分流…'
-                  : flow.data?.reason ||
-                    flow.error ||
-                    '当前没有可用的资金分流样本'}
-              </EmptyState>
-            )}
+            <SectorMovementBoard />
           </TabsContent>
 
           <TabsContent value="promotion" className="space-y-4">
@@ -3114,7 +1601,7 @@ export default function Home() {
               <CardHeader className="max-sm:grid-cols-1!">
                 <CardTitle>同梯队竞争</CardTitle>
                 <CardDescription>
-                  昨日涨停池按股票代码去重展示；目标梯队从高到低，同梯队内涨幅、涨速靠前。涨速为行情源的短窗涨幅，不是每秒收益。
+                  昨日涨停池按股票代码去重展示；目标梯队从高到低，同梯队内涨幅、涨速靠前。涨速取 14:55 → 15:00 的收盘涨速，由 1 分钟 K 线计算，不是每秒收益。
                 </CardDescription>
                 <CardAction className="max-sm:col-start-1 max-sm:row-start-3 max-sm:justify-self-start">
                   {ladder.data?.coverage ? (
@@ -3337,18 +1824,45 @@ export default function Home() {
           <TabsContent value="speed">
             <Card>
               <CardHeader>
-                <CardTitle>涨速榜 · 打板观察</CardTitle>
+                <CardTitle className="flex flex-wrap items-center gap-2">
+                  涨速榜 · 收盘 {fmtTradeDate(speed.data?.tradeDate)}
+                  <StateBadge
+                    state={speed.data?.status}
+                    label={
+                      speed.data?.sourceState === 'STALE'
+                        ? '非目标交易日'
+                        : undefined
+                    }
+                  />
+                </CardTitle>
                 <CardDescription>
-                  涨速只做触发器；同一核心概念同时进入多只票时加红提示共振，同时展示涨幅、板制距离与近20个交易日涨停次数
+                  涨速 =
+                  {speed.data?.windowStart && speed.data?.windowEnd
+                    ? ` ${speed.data.windowStart} → ${speed.data.windowEnd} 的价格变化`
+                    : ' 收盘前 5 分钟的价格变化'}
+                  ，由 1 分钟 K 线计算；同一核心概念同时进入多只票时加红提示共振。
+                  <span className="mt-1 block">
+                    {speed.data?.source ?? '涨速归档'}
+                    {speed.data?.coverage
+                      ? ` · 全市场 ${speed.data.coverage.available ?? '—'}/${speed.data.coverage.requested} 只可取到分钟序列 · 本表前 ${speed.data.coverage.returned ?? speed.data.rows.length} 只`
+                      : ''}
+                  </span>
                 </CardDescription>
                 <CardAction>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Clock3 className="size-3.5" />
-                    每秒刷新
+                    每 30 秒刷新
                   </div>
                 </CardAction>
               </CardHeader>
               <CardContent>
+                {speed.data?.reasons?.length ? (
+                  <ul className="mb-3 space-y-1 rounded-lg border border-amber-500/40 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                    {speed.data.reasons.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 {hotConcepts.length ? (
                   <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-red-500/35 bg-red-500/[0.08] px-3 py-2 text-sm">
                     <ShieldAlert className="size-4 shrink-0 text-red-600" />

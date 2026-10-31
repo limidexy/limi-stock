@@ -9,7 +9,6 @@ import { enrichEmotionCloses } from '@/lib/emotion-tracking-source';
 import { loadCloseHistory } from '@/lib/persistence';
 import { emotionReading } from '@/lib/market-reading';
 import { observeFundFlow, type FundFlowObservation } from './flow-observation';
-import { buildRadarSnapshot } from '@/lib/radar-evidence';
 import tradingCalendarDocument from '@/lib/trading-calendar.generated.json';
 import {
   buildArchivedLadderSnapshot,
@@ -27,7 +26,6 @@ import {
   priceLimitState,
   trendWindow,
 } from '@/lib/timeline-evidence';
-import type { EarlyBoardQuote, EarlyObservationSnapshot } from '@/lib/early-observation';
 
 const PUBLIC_CLIENT_TOKEN = '7eea3edcaed734bea9cbfc24409ed989';
 const MARKET_FILTER = 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048';
@@ -457,14 +455,6 @@ function shanghaiClock(value = new Date()): string {
   }).format(value);
 }
 
-function subtractDays(yyyymmdd: string, days: number): string {
-  const year = Number(yyyymmdd.slice(0, 4));
-  const month = Number(yyyymmdd.slice(4, 6));
-  const day = Number(yyyymmdd.slice(6, 8));
-  const date = new Date(Date.UTC(year, month - 1, day - days, 12));
-  return date.toISOString().slice(0, 10).replaceAll('-', '');
-}
-
 function clockText(value: unknown): string | null {
   const digits = String(value ?? '')
     .replace(/\D/g, '')
@@ -806,40 +796,6 @@ export async function fetchRecentLimitHistory(
       value,
     });
     return value;
-  }
-}
-
-const cachedRadar = new Map<
-  string,
-  {
-    expiresAt: number;
-    pending: Promise<import('./radar-evidence').RadarSnapshot>;
-  }
->();
-
-export async function getRadarSnapshot() {
-  const marketDate = await getMarketDateContext();
-  const key = `${marketDate.tradeDate}:${marketDate.sessionState}:${marketDate.phase}`;
-  const cached = cachedRadar.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.pending;
-  const pending = buildRadarSnapshot(marketDate, fetchClist);
-  const entry = { expiresAt: Date.now() + 30_000, pending };
-  cachedRadar.clear();
-  cachedRadar.set(key, entry);
-  try {
-    const result = await pending;
-    entry.expiresAt =
-      Date.now() +
-      (result.status === 'READY'
-        ? marketDate.sessionState === 'LIVE'
-          ? 10_000
-          : 300_000
-        : 45_000);
-    return result;
-  } catch (error) {
-    // Failed requests have a short backoff as well, to avoid a polling retry storm.
-    entry.expiresAt = Date.now() + 30_000;
-    throw error;
   }
 }
 
@@ -1893,192 +1849,6 @@ export async function getMarketDateContext(): Promise<MarketDateContext> {
   };
   marketDateContextCache = { expiresAt: Date.now() + 30_000, value };
   return value;
-}
-
-function earlyNumber(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-/**
- * A price/turnover observation over Eastmoney's public industry-board quotes.
- * It deliberately does not read or derive mainNetInflow and never writes to
- * the minute-money archive.
- */
-export async function getEarlySectorObservationSnapshot(): Promise<EarlyObservationSnapshot> {
-  const retrievedAt = new Date().toISOString();
-  const context = await getMarketDateContext();
-  const scope = '行业板块指数报价，不代表板块成分股宽度或资金净流入';
-  const source = '东方财富公开行业板块报价（push2delay / clist）';
-  const emptyCoverage = {
-    requested: 0,
-    exactDate: 0,
-    priced: 0,
-    volumeAndAmount: 0,
-    pagesRequested: 0,
-    pagesReceived: 0,
-  };
-  const emptyBreadth = { up: 0, down: 0, flat: 0 };
-
-  if (
-    context.sessionState !== 'LIVE' ||
-    context.tradeDate !== context.requestedDate ||
-    context.requestedDate !== shanghaiDate()
-  ) {
-    return {
-      status: 'MISSING',
-      tradeDate: context.tradeDate,
-      retrievedAt,
-      quoteTime: null,
-      latestQuoteTime: null,
-      quoteAgeSeconds: null,
-      quoteSpreadSeconds: null,
-      source,
-      scope,
-      sourceState: 'STALE',
-      reason: `尚无 ${shanghaiDate()} 的实时交易日报价；接口交易日为 ${context.tradeDate}，当前阶段为 ${context.phase}`,
-      coverage: emptyCoverage,
-      breadth: emptyBreadth,
-      rows: [],
-    };
-  }
-
-  const first = await fetchClist({
-    fs: 'm:90+t:2',
-    fid: 'f3',
-    pageSize: 100,
-    page: 1,
-    fields: 'f12,f14,f2,f3,f5,f6,f124',
-  });
-  const pagesRequested = Math.max(1, Math.ceil(first.total / 100));
-  const pageResults = await mapLimit(
-    Array.from({ length: pagesRequested - 1 }, (_, index) => index + 2),
-    3,
-    async (page) => {
-      try {
-        return {
-          page,
-          result: await fetchClist({
-            fs: 'm:90+t:2',
-            fid: 'f3',
-            pageSize: 100,
-            page,
-            fields: 'f12,f14,f2,f3,f5,f6,f124',
-          }),
-          error: null as string | null,
-        };
-      } catch (error) {
-        return { page, result: null, error: String(error) };
-      }
-    },
-  );
-  const pageSnapshots = [
-    first,
-    ...pageResults.flatMap((item) => (item.result ? [item.result] : [])),
-  ];
-  const rawRows = pageSnapshots.flatMap((page) => page.rows);
-  const uniqueRows = new Map(
-    rawRows
-      .filter((row) => row.f12)
-      .map((row) => [String(row.f12), row]),
-  );
-  const exactRows: EarlyBoardQuote[] = [];
-  for (const [code, row] of uniqueRows) {
-    const epoch = earlyNumber(row.f124);
-    const name = String(row.f14 ?? '').trim();
-    if (!name || epoch === null || quoteDate(epoch) !== context.tradeDate) continue;
-    exactRows.push({
-      code,
-      name,
-      price: earlyNumber(row.f2),
-      changePct: earlyNumber(row.f3),
-      volume: earlyNumber(row.f5),
-      amount: earlyNumber(row.f6),
-      quoteTime: new Date(epoch * 1000).toISOString(),
-    });
-  }
-  const priced = exactRows.filter(
-    (row) => row.price !== null && row.price > 0 && row.changePct !== null,
-  );
-  const volumeAndAmount = exactRows.filter(
-    (row) => row.volume !== null && row.amount !== null,
-  );
-  const stampedEpochs = exactRows.map((row) => Date.parse(row.quoteTime) / 1000);
-  const oldestEpoch = stampedEpochs.length ? Math.min(...stampedEpochs) : null;
-  const latestEpoch = stampedEpochs.length ? Math.max(...stampedEpochs) : null;
-  const nowEpoch = Date.now() / 1000;
-  const quoteAgeSeconds =
-    oldestEpoch === null ? null : Math.round(nowEpoch - oldestEpoch);
-  const quoteSpreadSeconds =
-    oldestEpoch === null || latestEpoch === null
-      ? null
-      : Math.round(latestEpoch - oldestEpoch);
-  const pageErrors = pageResults.filter((item) => item.error);
-  const hosts = [...new Set(pageSnapshots.map((page) => page.host))];
-  const totalsMatch = pageSnapshots.every((page) => page.total === first.total);
-  const breadth = exactRows.reduce(
-    (counts, row) => {
-      if (row.changePct === null) return counts;
-      if (row.changePct > 0) counts.up += 1;
-      else if (row.changePct < 0) counts.down += 1;
-      else counts.flat += 1;
-      return counts;
-    },
-    { ...emptyBreadth },
-  );
-  const reasons: string[] = [];
-  if (pageErrors.length)
-    reasons.push(
-      `${pageErrors.length}/${pagesRequested}页报价请求失败：${pageErrors[0]?.error}`,
-    );
-  if (exactRows.length !== first.total)
-    reasons.push(`精确日期覆盖 ${exactRows.length}/${first.total}`);
-  if (priced.length !== first.total)
-    reasons.push(`有效价格/涨跌幅 ${priced.length}/${first.total}`);
-  if (volumeAndAmount.length !== first.total)
-    reasons.push(`成交量与成交额 ${volumeAndAmount.length}/${first.total}`);
-  if (!totalsMatch) reasons.push('分页期间供应商总量发生变化');
-  if (hosts.length !== 1) reasons.push('分页切换了行情服务器');
-  if (pageSnapshots.some((page) => page.stale)) reasons.push('使用了本机短时缓存');
-  if (quoteAgeSeconds !== null && quoteAgeSeconds > 90)
-    reasons.push(`最早板块报价已滞后 ${quoteAgeSeconds} 秒`);
-  if (quoteAgeSeconds !== null && quoteAgeSeconds < -30)
-    reasons.push('行情报价时间超前于本机时间');
-  if (quoteSpreadSeconds !== null && quoteSpreadSeconds > 90)
-    reasons.push(`分页报价时间跨度 ${quoteSpreadSeconds} 秒`);
-
-  const status =
-    exactRows.length === 0 || priced.length === 0
-      ? 'MISSING'
-      : reasons.length === 0
-        ? 'READY'
-        : 'DEGRADED';
-  return {
-    status,
-    tradeDate: context.tradeDate,
-    retrievedAt,
-    quoteTime:
-      oldestEpoch === null ? null : new Date(oldestEpoch * 1000).toISOString(),
-    latestQuoteTime:
-      latestEpoch === null ? null : new Date(latestEpoch * 1000).toISOString(),
-    quoteAgeSeconds,
-    quoteSpreadSeconds,
-    source: hosts.length ? `${source} · ${hosts.join(', ')}` : source,
-    scope,
-    sourceState: pageSnapshots.some((page) => page.stale) ? 'STALE' : 'LIVE',
-    reason: reasons.length ? reasons.join('；') : undefined,
-    coverage: {
-      requested: first.total,
-      exactDate: exactRows.length,
-      priced: priced.length,
-      volumeAndAmount: volumeAndAmount.length,
-      pagesRequested,
-      pagesReceived: pageSnapshots.length,
-    },
-    breadth,
-    rows: exactRows,
-  };
 }
 
 async function previousTradingPool(tradeDate: string) {
