@@ -758,11 +758,12 @@ export function ShortEmotionPanel({
         </details>
       ) : null}
 
+      {/* 断板影响 / 反核尝试 / 修复扩散等反馈指标前置，避免被下方个股明细淹没。 */}
+      <CoreFeedback reading={reading} />
+
       {core?.comparativeReading ? (
         <ComparativeReading reading={core.comparativeReading} />
       ) : null}
-
-      <CoreFeedback reading={reading} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <JudgmentCard

@@ -117,11 +117,15 @@ export function trackingCandidates(
   history: CloseSnapshot[],
   date: string,
   lookback = 10,
+  leaderLookback = 30,
 ) {
   const allPrior = history
     .filter((x) => x.date < date)
     .sort((a, b) => a.date.localeCompare(b.date));
   const prior = allPrior.slice(-lookback);
+  // 老高标身份回溯固定在最近 leaderLookback 个交易日，独立于回看路径窗口
+  // lookback；身份是空间记忆，不参与“路径长度”裁剪。
+  const leaderWindow = allPrior.slice(-leaderLookback);
   const leaders = new Map<
     string,
     CloseStock & { peakDate: string; peakHeight: number }
@@ -129,7 +133,7 @@ export function trackingCandidates(
   // lookback controls the amount of path/feedback displayed, not identity
   // retention. A former high board must remain recallable after it leaves the
   // recent window; exit is an evidence-backed state, never a slice operation.
-  for (const day of allPrior.filter(complete)) {
+  for (const day of leaderWindow.filter(complete)) {
     // Membership is fixed from a PREVIOUS close, never today's winners.
     for (const stock of stocksOf(day).filter(
       (x) => x.height === day.highestBoard && x.height >= 3,
@@ -542,6 +546,57 @@ export function leadLagObservation(
   };
 }
 
+type TenLineDay = {
+  date: string;
+  changePct: number | null;
+  quoteState: 'READY' | 'NO_TRADE' | 'MISSING';
+  quoteNote: string | null;
+  height: number | null;
+  quoteTime: string | null;
+  ma10?: number | null;
+  belowMa10?: boolean;
+};
+
+// 用逐日区间涨幅重建归一化价格序列（基期=100），再算 10 日移动平均线。
+// 仅用已归档的日涨幅，不引入实时行情或复权缺口假设；
+// 跌破 10 日线 = 当日指数 <= 当日 MA10。
+function enrichTenLine(
+  days: Array<{
+    date: string;
+    changePct: number | null;
+    quoteState: 'READY' | 'NO_TRADE' | 'MISSING';
+    quoteNote: string | null;
+    height: number | null;
+    quoteTime: string | null;
+  }>,
+): TenLineDay[] {
+  let index = 100;
+  const series = days.map((day) => {
+    if (day.changePct != null) index *= 1 + day.changePct / 100;
+    return { ...day, index };
+  });
+  return series.map((day, i) => {
+    if (i < 9) return { ...day, ma10: null, belowMa10: false };
+    const window = series.slice(i - 9, i + 1);
+    const ma10 = window.reduce((sum, x) => sum + x.index, 0) / 10;
+    return { ...day, ma10, belowMa10: day.index <= ma10 };
+  });
+}
+
+function buildTenLineNote(rows: Array<{ path: TenLineDay[] }>) {
+  const reached = rows.some((r) => r.path.length >= 10);
+  const touched = rows.filter((r) => r.path.some((d) => d.belowMa10)).length;
+  return {
+    reached,
+    touchedCount: touched,
+    note: reached
+      ? `已到10日线窗口：老高标回看达到10个交易日，按归档日涨幅重建归一化指数估算10日线（基期=100，不含实时行情与复权缺口），关注是否回踩10日线。${
+          touched ? `其中${touched}只曾跌破10日线。` : '暂未观测到跌破10日线。'
+        }`
+      : '回看窗口不足10个交易日，10日线提醒暂不触发。',
+  };
+}
+
 export function buildEmotionTracking(
   history: CloseSnapshot[],
   evidence: TrackingHistory,
@@ -581,7 +636,7 @@ export function buildEmotionTracking(
     };
   }
   const current = ordered.find((x) => x.date === date);
-  const candidates = trackingCandidates(ordered, date, lookback);
+  const candidates = trackingCandidates(ordered, date, lookback, 30);
   const currentEvidence = evidence[date];
   const prev = candidates.previous;
   const tape = buildTapeObservation({
@@ -637,6 +692,20 @@ export function buildEmotionTracking(
         break;
       }
     }
+    const rawPath = days.map((day) => ({
+      date: day.date,
+      changePct:
+        quoteState(day.date, stock.code) === 'READY'
+          ? (quote(day.date, stock.code)?.changePct ?? null)
+          : null,
+      quoteState: quoteState(day.date, stock.code),
+      quoteNote: evidence[day.date]?.noTrade?.[stock.code] ?? null,
+      height:
+        stocksOf(day).find((x) => x.code === stock.code)?.height ?? null,
+      quoteTime: quote(day.date, stock.code)?.quoteTime ?? null,
+    }));
+    // 数据保持时间升序（10日线重建需要顺序）；展示层再倒序为“日期越新越靠前”。
+    const path = enrichTenLine(rawPath);
     return {
       ...stock,
       brokenDate: broken,
@@ -647,24 +716,15 @@ export function buildEmotionTracking(
       quoteState: quoteState(date, stock.code),
       quoteTime: quote(date, stock.code)?.quoteTime ?? null,
       quoteNote: evidence[date]?.noTrade?.[stock.code] ?? null,
-      path: days.map((day) => ({
-        date: day.date,
-        changePct:
-          quoteState(day.date, stock.code) === 'READY'
-            ? (quote(day.date, stock.code)?.changePct ?? null)
-            : null,
-        quoteState: quoteState(day.date, stock.code),
-        quoteNote: evidence[day.date]?.noTrade?.[stock.code] ?? null,
-        height:
-          stocksOf(day).find((x) => x.code === stock.code)?.height ?? null,
-        quoteTime: quote(day.date, stock.code)?.quoteTime ?? null,
-      })),
+      path,
     };
   });
   const old = allOld
     .filter((x) => x.brokenDate)
     .sort(
       (a, b) =>
+        // 断板日期越新越靠前
+        (b.brokenDate ?? '').localeCompare(a.brokenDate ?? '') ||
         b.peakHeight - a.peakHeight ||
         (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity),
     );
@@ -857,6 +917,7 @@ export function buildEmotionTracking(
     missingSessions,
     oldLeaders: {
       rows: old,
+      tenLine: buildTenLineNote(old),
       ...coverage(
         allOldQuotes.length,
         allOldQuotes.filter((x) => x.quoteState !== 'MISSING').length,

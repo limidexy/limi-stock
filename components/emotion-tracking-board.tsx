@@ -62,6 +62,40 @@ function Coverage({
   );
 }
 
+type NegativeGroup = EmotionTracking['negativeLeadLag']['rows'][number];
+
+function NegativeGroupCard({ group }: { group: NegativeGroup }) {
+  return (
+    <article className="rounded-lg border p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-semibold">
+          {group.industry} · {group.core.name}（向下观察）
+        </h3>
+        <Badge variant="outline">
+          {group.status} · {group.available}/{group.requested}
+        </Badge>
+      </div>
+      <p className="my-2 text-sm">
+        {group.onset
+          ? `${group.onset.time} 核心3分钟负向增量${group.onset.gain.toFixed(2)}个百分点`
+          : '核心没有可核验的连续分钟负向起点'}{' '}
+        · {group.label}
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {group.rows.map((stock) => (
+          <div key={stock.code} className="rounded-md bg-muted/50 p-3 text-sm">
+            <p className="font-semibold">{stock.name}</p>
+            <p className="mt-1 text-muted-foreground">
+              {stock.time ?? '未检出时点'} · {stock.role}
+              {stock.lag != null ? `（+${stock.lag}交易分钟）` : ''}
+            </p>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 export function EmotionTrackingBoard({
   history,
   selectedDate,
@@ -218,7 +252,7 @@ export function EmotionTrackingBoard({
             <Tabs defaultValue="old" className="space-y-4">
               <TabsList className="h-auto w-full flex-wrap justify-start gap-1">
                 <TabsTrigger value="old">
-                  断板老高标 {current.oldLeaders.rows.length}
+                  断板老高标 {current.oldLeaders.rows.length}（近30个交易日）
                 </TabsTrigger>
                 <TabsTrigger value="failed">
                   昨日炸板修复 {current.failedRepair.rows.length}
@@ -229,6 +263,12 @@ export function EmotionTrackingBoard({
               </TabsList>
               <TabsContent value="old" className="space-y-3">
                 <Coverage part={current.oldLeaders} />
+                {current.oldLeaders.tenLine?.reached && (
+                  <p className="rounded-lg border border-sky-500/30 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6">
+                    <span className="font-semibold">10日线提醒 · </span>
+                    {current.oldLeaders.tenLine.note}
+                  </p>
+                )}
                 {!current.oldLeaders.rows.length && (
                   <p className="text-muted-foreground">
                     该区间没有已确认断板的老高标，或缺少确认断板所需的连续收盘名单。
@@ -261,7 +301,7 @@ export function EmotionTrackingBoard({
                       className="flex gap-2 overflow-x-auto pb-2"
                       aria-label={`${stock.name}断板前后逐日表现`}
                     >
-                      {stock.path.map((day) => (
+                      {[...stock.path].reverse().map((day) => (
                         <div
                           key={day.date}
                           className={`min-w-24 rounded-md border p-2 text-center text-sm ${day.date === stock.brokenDate ? 'border-amber-400 bg-amber-500/10' : 'bg-muted/30'}`}
@@ -283,6 +323,18 @@ export function EmotionTrackingBoard({
                                 ? '断板'
                                 : '未封板'}
                           </p>
+                          {day.ma10 != null && (
+                            <p
+                              className={`text-[10px] ${
+                                day.belowMa10
+                                  ? 'font-semibold text-red-600 dark:text-red-400'
+                                  : 'text-muted-foreground'
+                              }`}
+                            >
+                              MA10 {day.ma10.toFixed(1)}
+                              {day.belowMa10 ? ' · 跌破' : ''}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -451,43 +503,51 @@ export function EmotionTrackingBoard({
                   只接受同日连续分钟路径：核心先出现连续3分钟跌幅至少1个百分点，成员在其后1—10个交易分钟负向响应；同现但无先后保持
                   MISSING。
                 </p>
-                {current.negativeLeadLag.rows.map((group) => (
-                  <article
-                    key={`${group.industry}:${group.core.code}`}
-                    className="rounded-lg border p-4"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="font-semibold">
-                        {group.industry} · {group.core.name}（向下观察）
-                      </h3>
-                      <Badge variant="outline">
-                        {group.status} · {group.available}/{group.requested}
-                      </Badge>
-                    </div>
-                    <p className="my-2 text-sm">
-                      {group.onset
-                        ? `${group.onset.time} 核心3分钟负向增量${group.onset.gain.toFixed(2)}个百分点`
-                        : '核心没有可核验的连续分钟负向起点'}{' '}
-                      · {group.label}
-                    </p>
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                      {group.rows.map((stock) => (
-                        <div
-                          key={stock.code}
-                          className="rounded-md bg-muted/50 p-3 text-sm"
-                        >
-                          <p className="font-semibold">{stock.name}</p>
-                          <p className="mt-1 text-muted-foreground">
-                            {stock.time ?? '未检出时点'} · {stock.role}
-                            {stock.lag != null
-                              ? `（+${stock.lag}交易分钟）`
-                              : ''}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                ))}
+                {(() => {
+                  const withOnset = current.negativeLeadLag.rows.filter(
+                    (group) => group.onset,
+                  );
+                  const withoutOnset = current.negativeLeadLag.rows.filter(
+                    (group) => !group.onset,
+                  );
+                  return (
+                    <>
+                      {withOnset.length ? (
+                        withOnset.map((group) => (
+                          <NegativeGroupCard
+                            key={`${group.industry}:${group.core.code}`}
+                            group={group}
+                          />
+                        ))
+                      ) : (
+                        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm leading-6">
+                          本日 {current.negativeLeadLag.rows.length}{' '}
+                          组核心均未出现连续3分钟≥1个百分点的负向下杀（分钟路径{' '}
+                          {current.negativeLeadLag.available}/
+                          {current.negativeLeadLag.requested}
+                          完整），所以没有可核验的先后细节。这不等于没有下跌，而是未达到负向起点的判定条件；成员行因此显示“未检出时点
+                          · 核心未触发负向起点”。
+                        </p>
+                      )}
+                      {withoutOnset.length ? (
+                        <details className="rounded-lg border p-3">
+                          <summary className="cursor-pointer text-sm font-medium">
+                            核心未触发负向下杀的 {withoutOnset.length} 组 ·
+                            仅保留观察，不构成先后
+                          </summary>
+                          <div className="mt-3 space-y-3">
+                            {withoutOnset.map((group) => (
+                              <NegativeGroupCard
+                                key={`${group.industry}:${group.core.code}`}
+                                group={group}
+                              />
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
+                    </>
+                  );
+                })()}
               </TabsContent>
             </Tabs>
             <details className="border-t pt-3 text-sm text-muted-foreground">

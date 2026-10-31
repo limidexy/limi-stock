@@ -1682,13 +1682,14 @@ export function readEmotionCores(
       '分歧/负向报价与确认爆量分别保留依据',
     ),
     brokenImpact: metric(
-      activeCandidates.map((c) =>
-        !info.get(c.code)!.broken
-          ? false
-          : info.get(c.code)!.up.length || info.get(c.code)!.down.length
-            ? true
-            : null,
-      ),
+      activeCandidates.map((c) => {
+        const i = info.get(c.code)!;
+        if (!i.broken) return false;
+        if (i.up.length || i.down.length) return true;
+        // 已取到当日报价但未见概念级上下响应：判定为当期无影响，与仅保留身份分开；
+        // 仅当当日无可用报价时才保留缺口（null），不把缺数据当作无影响。
+        return c.quoteState === 'READY' ? false : null;
+      }),
       `断板跟踪${activeCandidates.filter((c) => info.get(c.code)!.broken).length}只；当期影响与仅保留身份分开`,
     ),
     deepWater: metric(
@@ -1708,20 +1709,20 @@ export function readEmotionCores(
       '当前精确跌停池或完整分钟涨停后跌停序列；不按统一百分比猜天地板',
     ),
     antiAttempt: metric(
-      activeCandidates.map((c) =>
-        info.get(c.code)!.rebound
-          ? true
-          : rebounds.get(c.code)?.status === 'READY'
-            ? false
-            : null,
-      ),
+      activeCandidates.map((c) => {
+        const i = info.get(c.code)!;
+        if (i.rebound) return true;
+        if (rebounds.get(c.code)?.status === 'READY') return false;
+        // 已取到报价但分钟路径未构成反核：判定为当期无反核尝试，而非缺口。
+        return c.quoteState === 'READY' ? false : null;
+      }),
       '逐股有效分钟路径的反核尝试；无路径不计零',
     ),
     repairSpread: metric(
       activeCandidates.map((c) => {
         const i = info.get(c.code)!,
           e = i.rebound;
-        if (!e) return rebounds.get(c.code)?.status === 'READY' ? false : null;
+        if (!e) return c.quoteState === 'READY' ? false : null;
         const end = tradingMinute(e.time);
         const responses = i.up.filter(
           (p) =>
