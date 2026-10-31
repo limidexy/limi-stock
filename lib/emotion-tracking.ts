@@ -127,14 +127,18 @@ export function trackingCandidates(
   date: string,
   lookback = 10,
   leaderLookback = 30,
+  calendar: string[] = [],
 ) {
   const allPrior = history
     .filter((x) => x.date < date)
     .sort((a, b) => a.date.localeCompare(b.date));
   const prior = allPrior.slice(-lookback);
-  // 老高标身份回溯固定在最近 leaderLookback 个交易日，独立于回看路径窗口
-  // lookback；身份是空间记忆，不参与“路径长度”裁剪。
-  const leaderWindow = allPrior.slice(-leaderLookback);
+  // 老高标身份回溯固定为「最近 leaderLookback 个交易日」，按权威交易日历定位起点。
+  // 不能用 slice(-30) 数快照：归档有缺日（如 2026-10-27），30 份快照会横跨 34 个交易日。
+  const start = leaderWindowStart(date, leaderLookback, calendar);
+  const leaderWindow = start
+    ? allPrior.filter((x) => x.date >= start)
+    : allPrior.slice(-leaderLookback);
   const leaders = new Map<
     string,
     CloseStock & { peakDate: string; peakHeight: number }
@@ -143,9 +147,10 @@ export function trackingCandidates(
   // retention. A former high board must remain recallable after it leaves the
   // recent window; exit is an evidence-backed state, never a slice operation.
   for (const day of leaderWindow.filter(complete)) {
-    // Membership is fixed from a PREVIOUS close, never today's winners.
+    // 口径：达到过 4 板的高标全部纳入；3 板只在当天就是全市场最高板时纳入。
+    // 只认「当日最高板」会漏掉同一天被更高板压住的 4 板（例如 5 板在时）。
     for (const stock of stocksOf(day).filter(
-      (x) => x.height === day.highestBoard && x.height >= 3,
+      (x) => x.height >= 4 || (x.height === day.highestBoard && x.height >= 3),
     )) {
       const previous = leaders.get(stock.code);
       if (!previous || stock.height >= previous.peakHeight)
@@ -574,6 +579,20 @@ export type TenLineDay = {
 };
 
 /**
+ * 回看窗口的起点：目标日往前数第 lookback 个交易日。
+ * 日历缺失时返回 null，由调用方退回「按快照条数截取」。
+ */
+export function leaderWindowStart(
+  date: string,
+  lookback: number,
+  calendar: string[] = [],
+) {
+  const index = calendar.indexOf(date);
+  if (index < 0) return null;
+  return calendar[Math.max(0, index - lookback)] ?? null;
+}
+
+/**
  * 两个日期之间被跳过的交易日（不含两端）。
  * 只有权威交易日历能回答「中间到底缺了哪一天」，不用自然日减法推断。
  */
@@ -625,7 +644,7 @@ export function buildEmotionTracking(
     };
   }
   const current = ordered.find((x) => x.date === date);
-  const candidates = trackingCandidates(ordered, date, lookback, 30);
+  const candidates = trackingCandidates(ordered, date, lookback, 30, calendar);
   const currentEvidence = evidence[date];
   const prev = candidates.previous;
   const tape = buildTapeObservation({
@@ -664,43 +683,32 @@ export function buildEmotionTracking(
         : ('MISSING' as const);
   const allOld = candidates.leaders.map((stock) => {
     const days = ordered.filter((x) => x.date >= stock.peakDate);
+    // 断板观测：找第一个「前一交易日还在涨停池、当日不在」的完整收盘。
+    // 断板日只有在该日与前一日确实相邻时才确认；中间缺快照就标「不可确认」，
+    // 但观测日期照样保留，用于排序与展示——不能因为缺一天就把这只票丢掉。
     let broken: string | null = null;
+    let breakObservedAt: string | null = null;
+    let breakReason: string | null = null;
     for (let i = 1; i < days.length; i++) {
       if (
         days[i].date === date &&
         (cutoff !== '15:00' || currentEvidence?.sessionState === 'LIVE')
       )
         continue;
-      if (
-        complete(days[i]) &&
-        priorSession(days[i].date, days[i - 1].date, evidence[days[i].date]) &&
-        stocksOf(days[i - 1]).some((x) => x.code === stock.code) &&
-        !stocksOf(days[i]).some((x) => x.code === stock.code)
-      ) {
+      if (!complete(days[i])) continue;
+      if (!stocksOf(days[i - 1]).some((x) => x.code === stock.code)) continue;
+      if (stocksOf(days[i]).some((x) => x.code === stock.code)) continue;
+      breakObservedAt = days[i].date;
+      const before = days[i - 1].date;
+      if (priorSession(days[i].date, before, evidence[days[i].date]))
         broken = days[i].date;
-        break;
-      }
-    }
-    // 断板日只能在相邻完整收盘之间确认。若中间缺某个交易日的收盘快照，
-    // 相邻关系不成立，就明确标「断板日不可确认」并保留身份——
-    // 它确实已经不在涨停池，不能因为缺一天就当作没发生过（也不许用相邻日顶替）。
-    let breakReason: string | null = null;
-    if (!broken) {
-      const gone = days.findIndex(
-        (day, i) =>
-          i > 0 &&
-          complete(day) &&
-          stocksOf(days[i - 1]).some((x) => x.code === stock.code) &&
-          !stocksOf(day).some((x) => x.code === stock.code),
-      );
-      if (gone > 0) {
-        const before = days[gone - 1].date;
-        const after = days[gone].date;
-        const gap = missingTradingDays(before, after, calendar);
+      else {
+        const gap = missingTradingDays(before, days[i].date, calendar);
         breakReason = gap.length
-          ? `断板日不可确认：${gap.join('、')} 缺收盘快照，${before}→${after} 不是相邻交易日`
-          : `断板日不可确认：${after} 收盘名单里没有该股，但缺少可确认的相邻完整收盘`;
+          ? `断板日不可确认：${gap.join('、')} 缺收盘快照，${before}→${days[i].date} 不是相邻交易日`
+          : `断板日不可确认：${days[i].date} 收盘名单里没有该股，但缺少可确认的相邻完整收盘`;
       }
+      break;
     }
     const rawPath = days.map((day) => ({
       date: day.date,
@@ -720,6 +728,7 @@ export function buildEmotionTracking(
     return {
       ...stock,
       brokenDate: broken,
+      breakObservedAt,
       breakReason,
       stillSealed: hasCurrent && stocksOf(current).some((x) => x.code === stock.code),
       // 仍在板上时给出目标日的实际板数，避免只显示窗口内的峰值板。
@@ -735,13 +744,15 @@ export function buildEmotionTracking(
       path,
     };
   });
+  // 统一按日期倒序：已确认断板用断板日，不可确认的用「首次观测到离池」的日期。
+  // 断板日越新越靠前，不可确认的也排在它该在的位置，不沉底。
+  const leaveDate = (row: (typeof allOld)[number]) =>
+    row.brokenDate ?? row.breakObservedAt ?? '';
   const old = allOld
     .filter((x) => x.brokenDate || x.breakReason)
     .sort(
       (a, b) =>
-        // 已确认断板的排在前面，断板日期越新越靠前；不可确认的按最高板与峰值日期排。
-        Number(Boolean(b.brokenDate)) - Number(Boolean(a.brokenDate)) ||
-        (b.brokenDate ?? '').localeCompare(a.brokenDate ?? '') ||
+        leaveDate(b).localeCompare(leaveDate(a)) ||
         b.peakHeight - a.peakHeight ||
         b.peakDate.localeCompare(a.peakDate) ||
         (b.changePct ?? -Infinity) - (a.changePct ?? -Infinity),

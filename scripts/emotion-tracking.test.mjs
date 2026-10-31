@@ -326,15 +326,20 @@ test('a leader that left the ladder across a missing session is kept with an exp
   assert.match(stock.breakReason, /断板日不可确认/);
   assert.match(stock.breakReason, /2026-10-27/);
   assert.ok(result.oldLeaders.unconfirmedCount >= 1);
-  // 已确认断板的仍然排在前面的位置。
-  const firstUnconfirmed = result.oldLeaders.rows.findIndex(
-    (x) => !x.brokenDate,
+  // 整张表统一按日期倒序：不可确认的用「首次观测离池日」排序，不沉底。
+  const keys = result.oldLeaders.rows.map(
+    (x) => x.brokenDate ?? x.breakObservedAt ?? '',
   );
-  const lastConfirmed = result.oldLeaders.rows.reduce(
-    (acc, x, i) => (x.brokenDate ? i : acc),
-    -1,
+  assert.deepEqual(
+    keys,
+    [...keys].sort((a, b) => b.localeCompare(a)),
+    '断板/离池日期必须整体倒序，不可确认的也要排到它该在的位置',
   );
-  assert.ok(firstUnconfirmed === -1 || lastConfirmed < firstUnconfirmed);
+  const index = result.oldLeaders.rows.findIndex((x) => x.code === '600838');
+  assert.ok(
+    index > 0 && index < 6,
+    '10-28 离池的上海九百应排在最新几只里，而不是沉到表尾',
+  );
 });
 
 test('a leader still sealed on the target date is listed separately, not as broken', () => {
@@ -347,4 +352,31 @@ test('a leader still sealed on the target date is listed separately, not as brok
     '仍在板上的不能混进断板列表',
   );
   assert.equal(result.oldLeaders.stillSealedCount, result.oldLeaders.stillSealed.length);
+});
+
+test('the leader window is 30 trading days on the calendar and includes every 4-board stock', () => {
+  const calendar = JSON.parse(
+    fs.readFileSync(
+      new URL('../lib/trading-calendar.generated.json', import.meta.url),
+    ),
+  ).dates;
+  const start = calendar[calendar.indexOf('2026-10-30') - 30];
+  assert.equal(start, '2026-09-10');
+  const candidates = trackingCandidates(history, '2026-10-30', 10, 30, calendar);
+  // 窗口按日历锚定，不能被归档缺日撑长：2026-09-04 的峰值不应再进来。
+  assert.equal(
+    candidates.leaders.some((x) => x.peakDate < start),
+    false,
+    '窗口外的峰值不应保留身份',
+  );
+  // 达到过 4 板但当天不是最高板的，必须纳入。
+  const heights = new Map(candidates.leaders.map((x) => [x.code, x.peakHeight]));
+  assert.ok([...heights.values()].filter((h) => h >= 4).length >= 25);
+  const four = candidates.leaders.filter((x) => x.peakHeight >= 4);
+  assert.ok(four.length >= 25, '4 板高标不能被当日更高板挤掉');
+  // 3 板只在当天就是最高板时纳入。
+  for (const leader of candidates.leaders.filter((x) => x.peakHeight === 3)) {
+    const day = history.find((d) => d.date === leader.peakDate);
+    assert.equal(day.highestBoard, 3);
+  }
 });
