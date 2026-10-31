@@ -3,6 +3,7 @@ import type { PriceTrend } from './timeline-evidence';
 import { extremePathObservation } from './core-minute-evidence.ts';
 import { buildTapeObservation } from './tape-observation.ts';
 import { isDelistedName } from './stock-universe.ts';
+import { emptyTenLineSummary } from './daily-close-ma10.ts';
 
 export type TrackingQuote = {
   changePct: number;
@@ -385,8 +386,8 @@ function negativeAcceleration(
 function completeMinutePath(trend: PriceTrend | undefined, cutoff: string) {
   if ((trend?.intervalMinutes ?? 1) !== 1) return false;
   const end = minuteIndex(cutoff);
-  // This predicate is used only for the recent negative-event decision window,
-  // not for a claim that the complete trading day has been observed.
+  // 路径完整性只要求尾盘窗口连续；负向起点的扫描范围在
+  // negativeLeadLagObservation 里改为全天，不再受这里限制。
   const points = cleanPath(trend, cutoff).filter(
     (point) => end !== null && point.minute >= end - 13,
   );
@@ -415,12 +416,9 @@ function negativeLeadLagObservation(
     evidence?.trends[group.core.code],
     cutoff,
   );
+  // 全天扫描核心的第一次连续3分钟≥1个百分点负向下杀，不再限定尾盘。
   const onset = corePathReady
-    ? negativeAcceleration(
-        evidence?.trends[group.core.code],
-        cutoff,
-        (minuteIndex(cutoff) ?? Infinity) - 13,
-      )
+    ? negativeAcceleration(evidence?.trends[group.core.code], cutoff, 0)
     : null;
   const rows = group.rows.map((member) => {
     const pathReady = completeMinutePath(evidence?.trends[member.code], cutoff);
@@ -459,7 +457,7 @@ function negativeLeadLagObservation(
     industry: group.industry,
     onset,
     direction: 'down' as const,
-    pathScope: 'RECENT_CONTIGUOUS_WINDOW' as const,
+    pathScope: 'FULL_SESSION' as const,
     status:
       corePathReady && rows.every((row) => row.pathState === 'READY')
         ? ('READY' as const)
@@ -546,56 +544,22 @@ export function leadLagObservation(
   };
 }
 
-type TenLineDay = {
+export type TenLineDay = {
   date: string;
   changePct: number | null;
   quoteState: 'READY' | 'NO_TRADE' | 'MISSING';
   quoteNote: string | null;
   height: number | null;
   quoteTime: string | null;
+  /** 该股自身日线前复权收盘；由 attachTenLine 在接口层补上。 */
+  close?: number | null;
+  /** 该股自身日线收盘的 10 日均值；不足 10 根真实收盘时为 null。 */
   ma10?: number | null;
-  belowMa10?: boolean;
+  /** 收盘严格低于 10 日线；算不出时为 null（不是 false）。 */
+  belowMa10?: boolean | null;
+  /** ma10 为 null 的具体原因。 */
+  ma10Note?: string | null;
 };
-
-// 用逐日区间涨幅重建归一化价格序列（基期=100），再算 10 日移动平均线。
-// 仅用已归档的日涨幅，不引入实时行情或复权缺口假设；
-// 跌破 10 日线 = 当日指数 <= 当日 MA10。
-function enrichTenLine(
-  days: Array<{
-    date: string;
-    changePct: number | null;
-    quoteState: 'READY' | 'NO_TRADE' | 'MISSING';
-    quoteNote: string | null;
-    height: number | null;
-    quoteTime: string | null;
-  }>,
-): TenLineDay[] {
-  let index = 100;
-  const series = days.map((day) => {
-    if (day.changePct != null) index *= 1 + day.changePct / 100;
-    return { ...day, index };
-  });
-  return series.map((day, i) => {
-    if (i < 9) return { ...day, ma10: null, belowMa10: false };
-    const window = series.slice(i - 9, i + 1);
-    const ma10 = window.reduce((sum, x) => sum + x.index, 0) / 10;
-    return { ...day, ma10, belowMa10: day.index <= ma10 };
-  });
-}
-
-function buildTenLineNote(rows: Array<{ path: TenLineDay[] }>) {
-  const reached = rows.some((r) => r.path.length >= 10);
-  const touched = rows.filter((r) => r.path.some((d) => d.belowMa10)).length;
-  return {
-    reached,
-    touchedCount: touched,
-    note: reached
-      ? `已到10日线窗口：老高标回看达到10个交易日，按归档日涨幅重建归一化指数估算10日线（基期=100，不含实时行情与复权缺口），关注是否回踩10日线。${
-          touched ? `其中${touched}只曾跌破10日线。` : '暂未观测到跌破10日线。'
-        }`
-      : '回看窗口不足10个交易日，10日线提醒暂不触发。',
-  };
-}
 
 export function buildEmotionTracking(
   history: CloseSnapshot[],
@@ -704,8 +668,9 @@ export function buildEmotionTracking(
         stocksOf(day).find((x) => x.code === stock.code)?.height ?? null,
       quoteTime: quote(day.date, stock.code)?.quoteTime ?? null,
     }));
-    // 数据保持时间升序（10日线重建需要顺序）；展示层再倒序为“日期越新越靠前”。
-    const path = enrichTenLine(rawPath);
+    // 数据保持时间升序（10日线要按顺序取「该日及之前 10 根收盘」）；展示层再倒序为「日期越新越靠前」。
+    // 真实 10 日线需要日线收盘，属接口层的取数工作，由 attachTenLine 补齐。
+    const path: TenLineDay[] = rawPath;
     return {
       ...stock,
       brokenDate: broken,
@@ -917,7 +882,9 @@ export function buildEmotionTracking(
     missingSessions,
     oldLeaders: {
       rows: old,
-      tenLine: buildTenLineNote(old),
+      tenLine: emptyTenLineSummary(
+        '10日线需要个股自身日线收盘，本轮未取到；接口层补齐后才会显示。',
+      ),
       ...coverage(
         allOldQuotes.length,
         allOldQuotes.filter((x) => x.quoteState !== 'MISSING').length,

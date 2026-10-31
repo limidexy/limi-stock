@@ -263,11 +263,35 @@ export function EmotionTrackingBoard({
               </TabsList>
               <TabsContent value="old" className="space-y-3">
                 <Coverage part={current.oldLeaders} />
-                {current.oldLeaders.tenLine?.reached && (
-                  <p className="rounded-lg border border-sky-500/30 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6">
-                    <span className="font-semibold">10日线提醒 · </span>
-                    {current.oldLeaders.tenLine.note}
-                  </p>
+                {current.oldLeaders.tenLine && current.oldLeaders.rows.length > 0 && (
+                  <div className="rounded-lg border border-sky-500/30 bg-sky-500/[0.06] px-3 py-2.5">
+                    <p className="text-sm font-semibold">
+                      10日线提醒 · {current.oldLeaders.tenLine.window}
+                    </p>
+                    <dl className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                      {current.oldLeaders.tenLine.items.map((item) => (
+                        <div key={item.label} className="text-sm leading-6">
+                          <dt className="inline font-medium">{item.label}：</dt>
+                          <dd
+                            className={`inline ${
+                              item.tone === 'warn'
+                                ? 'text-amber-700 dark:text-amber-400'
+                                : item.tone === 'ok'
+                                  ? 'text-emerald-700 dark:text-emerald-400'
+                                  : 'text-muted-foreground'
+                            }`}
+                          >
+                            {item.value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {!current.oldLeaders.tenLine.reached && (
+                      <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                        {current.oldLeaders.tenLine.note}
+                      </p>
+                    )}
+                  </div>
                 )}
                 {!current.oldLeaders.rows.length && (
                   <p className="text-muted-foreground">
@@ -325,14 +349,15 @@ export function EmotionTrackingBoard({
                           </p>
                           {day.ma10 != null && (
                             <p
+                              title={`收盘 ${day.close?.toFixed(2) ?? '—'} / MA10 ${day.ma10.toFixed(2)}`}
                               className={`text-[10px] ${
-                                day.belowMa10
+                                day.belowMa10 === true
                                   ? 'font-semibold text-red-600 dark:text-red-400'
                                   : 'text-muted-foreground'
                               }`}
                             >
                               MA10 {day.ma10.toFixed(1)}
-                              {day.belowMa10 ? ' · 跌破' : ''}
+                              {day.belowMa10 === true ? ' · 跌破' : ''}
                             </p>
                           )}
                         </div>

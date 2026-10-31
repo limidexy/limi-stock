@@ -39,7 +39,9 @@ import type {
 } from '@/lib/close-history';
 import { cn } from '@/lib/utils';
 import {
+  EmotionBreadthPanel,
   EmotionEvidencePanel,
+  EmotionFeedbackPanel,
   toEmotionFacts,
 } from '@/components/market-reading-board';
 import {
@@ -657,7 +659,195 @@ export function EmotionCycleBoard({
               </p>
             </div>
           ) : null}
-          <EmotionEvidencePanel
+          <EmotionBreadthPanel
+            snapshot={selected}
+            previous={previous}
+            ladder={ladder}
+            coreEvidence={
+              selectedCoreEvidence?.date === selected.date
+                ? selectedCoreEvidence
+                : selected.date === coreEvidence?.date
+                  ? coreEvidence
+                  : null
+            }
+          />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="size-5 text-rose-500" />
+                  {dateLabel(selected.date)} · 完整高度梯队
+                </CardTitle>
+                <CardDescription>
+                  共{selected.limitUp}
+                  只收盘涨停，一板也不省略；时间为首次触板，涨幅为15:00收盘值。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {selected.ladders.map((ladder) => (
+                  <div
+                    key={ladder.height}
+                    className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[90px_minmax(0,1fr)]"
+                  >
+                    <div>
+                      <Badge
+                        variant="outline"
+                        className={
+                          ladder.height === selected.highestBoard
+                            ? 'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                            : undefined
+                        }
+                      >
+                        {ladder.height}板 · {ladder.stocks.length}只
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {ladder.stocks.map((stock) => (
+                        <div
+                          key={stock.code}
+                          className="rounded-md bg-muted/60 px-2.5 py-1.5 text-xs"
+                          title={`${stock.code} · ${stock.industry} · 开板${stock.breakCount}次`}
+                        >
+                          <span className="font-medium">{stock.name}</span>
+                          <span className="ml-1.5 font-mono market-up">
+                            {fmtPct(stock.changePct)}
+                          </span>
+                          {stock.firstTouch ? (
+                            <span className="ml-1.5 text-muted-foreground">
+                              {stock.firstTouch}
+                            </span>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Flame className="size-5 text-red-500" />
+                    当日盘面摘要
+                  </CardTitle>
+                  <CardDescription>
+                    {selected.source} · 覆盖{selected.coverage.available}/
+                    {selected.coverage.reported}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-muted-foreground">指数表现</span>
+                    <span className="font-semibold">
+                      {emotionReading(toEmotionFacts(selected)).indexMood}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-muted-foreground">短线情绪</span>
+                    <span
+                      className={cn(
+                        'font-semibold',
+                        emotionToneClass(emotions.get(selected.date)!.tone),
+                      )}
+                    >
+                      {emotions.get(selected.date)!.label}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-muted-foreground">情绪变化线索</span>
+                    <p className="text-xs font-semibold leading-5">
+                      {emotions.get(selected.date)!.transition}
+                    </p>
+                    <span className="text-xs text-muted-foreground">
+                      {emotions.get(selected.date)!.status} · 规则观察，不是周期预测
+                    </span>
+                  </div>
+                  <div className="border-t pt-3">
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      主要涨停集中行业
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selected.concentratedIndustries.map((item) => (
+                        <Badge key={item.name} variant="secondary">
+                          {item.name} · {item.count}只
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="border-t pt-3">
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      三大指数15:00
+                    </p>
+                    <div className="grid gap-1.5">
+                      {selected.indices.map((index) => (
+                        <div
+                          key={index.code}
+                          className="flex items-center justify-between"
+                        >
+                          <span>
+                            {index.name}
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              {index.close?.toFixed(2) ?? '未入档'}
+                            </span>
+                          </span>
+                          <span
+                            className={cn(
+                              'font-mono',
+                              index.changePct === null
+                                ? 'text-muted-foreground'
+                                : index.changePct >= 0
+                                  ? 'market-up'
+                                  : 'market-down',
+                            )}
+                          >
+                            {fmtPct(index.changePct)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Snowflake className="size-5 text-emerald-500" />
+                    炸板与跌停
+                  </CardTitle>
+                  <CardDescription>
+                    强势梯队之外的负反馈也同步保留。
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <p className="mb-2 text-xs font-medium">
+                      炸板 {selected.failedStocks.length}只
+                    </p>
+                    <div className="max-h-72 overflow-y-auto pr-1">
+                      <StockList stocks={selected.failedStocks} empty="当无炸板" />
+                    </div>
+                  </div>
+                  <div className="border-t pt-3">
+                    <p className="mb-2 text-xs font-medium">
+                      跌停 {selected.limitDownStocks.length}只
+                    </p>
+                    <div className="max-h-72 overflow-y-auto pr-1">
+                      <StockList
+                        stocks={selected.limitDownStocks}
+                        empty="当无跌停"
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* 断板影响 / 反核尝试 / 修复扩散等反馈指标与个股明细在梯队之后。 */}
+          <EmotionFeedbackPanel
             snapshot={selected}
             previous={previous}
             ladder={ladder}
@@ -992,181 +1182,6 @@ export function EmotionCycleBoard({
           </div>
         </CardContent>
       </Card>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="size-5 text-rose-500" />
-              {dateLabel(selected.date)} · 完整高度梯队
-            </CardTitle>
-            <CardDescription>
-              共{selected.limitUp}
-              只收盘涨停，一板也不省略；时间为首次触板，涨幅为15:00收盘值。
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {selected.ladders.map((ladder) => (
-              <div
-                key={ladder.height}
-                className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[90px_minmax(0,1fr)]"
-              >
-                <div>
-                  <Badge
-                    variant="outline"
-                    className={
-                      ladder.height === selected.highestBoard
-                        ? 'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                        : undefined
-                    }
-                  >
-                    {ladder.height}板 · {ladder.stocks.length}只
-                  </Badge>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {ladder.stocks.map((stock) => (
-                    <div
-                      key={stock.code}
-                      className="rounded-md bg-muted/60 px-2.5 py-1.5 text-xs"
-                      title={`${stock.code} · ${stock.industry} · 开板${stock.breakCount}次`}
-                    >
-                      <span className="font-medium">{stock.name}</span>
-                      <span className="ml-1.5 font-mono market-up">
-                        {fmtPct(stock.changePct)}
-                      </span>
-                      {stock.firstTouch ? (
-                        <span className="ml-1.5 text-muted-foreground">
-                          {stock.firstTouch}
-                        </span>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Flame className="size-5 text-red-500" />
-                当日盘面摘要
-              </CardTitle>
-              <CardDescription>
-                {selected.source} · 覆盖{selected.coverage.available}/
-                {selected.coverage.reported}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-muted-foreground">指数表现</span>
-                <span className="font-semibold">
-                  {emotionReading(toEmotionFacts(selected)).indexMood}
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-muted-foreground">短线情绪</span>
-                <span
-                  className={cn(
-                    'font-semibold',
-                    emotionToneClass(emotions.get(selected.date)!.tone),
-                  )}
-                >
-                  {emotions.get(selected.date)!.label}
-                </span>
-              </div>
-              <div className="space-y-1">
-                <span className="text-muted-foreground">情绪变化线索</span>
-                <p className="text-xs font-semibold leading-5">
-                  {emotions.get(selected.date)!.transition}
-                </p>
-                <span className="text-xs text-muted-foreground">
-                  {emotions.get(selected.date)!.status} · 规则观察，不是周期预测
-                </span>
-              </div>
-              <div className="border-t pt-3">
-                <p className="mb-2 text-xs text-muted-foreground">
-                  主要涨停集中行业
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {selected.concentratedIndustries.map((item) => (
-                    <Badge key={item.name} variant="secondary">
-                      {item.name} · {item.count}只
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              <div className="border-t pt-3">
-                <p className="mb-2 text-xs text-muted-foreground">
-                  三大指数15:00
-                </p>
-                <div className="grid gap-1.5">
-                  {selected.indices.map((index) => (
-                    <div
-                      key={index.code}
-                      className="flex items-center justify-between"
-                    >
-                      <span>
-                        {index.name}
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          {index.close?.toFixed(2) ?? '未入档'}
-                        </span>
-                      </span>
-                      <span
-                        className={cn(
-                          'font-mono',
-                          index.changePct === null
-                            ? 'text-muted-foreground'
-                            : index.changePct >= 0
-                              ? 'market-up'
-                              : 'market-down',
-                        )}
-                      >
-                        {fmtPct(index.changePct)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Snowflake className="size-5 text-emerald-500" />
-                炸板与跌停
-              </CardTitle>
-              <CardDescription>
-                强势梯队之外的负反馈也同步保留。
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="mb-2 text-xs font-medium">
-                  炸板 {selected.failedStocks.length}只
-                </p>
-                <div className="max-h-72 overflow-y-auto pr-1">
-                  <StockList stocks={selected.failedStocks} empty="当无炸板" />
-                </div>
-              </div>
-              <div className="border-t pt-3">
-                <p className="mb-2 text-xs font-medium">
-                  跌停 {selected.limitDownStocks.length}只
-                </p>
-                <div className="max-h-72 overflow-y-auto pr-1">
-                  <StockList
-                    stocks={selected.limitDownStocks}
-                    empty="当无跌停"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
     </div>
   );
 }

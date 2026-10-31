@@ -147,7 +147,7 @@ test('negative sequence uses a complete recent interval even with an earlier unr
     (g) => g.core.code === '600001',
   );
   assert.equal(group.status, 'READY');
-  assert.equal(group.pathScope, 'RECENT_CONTIGUOUS_WINDOW');
+  assert.equal(group.pathScope, 'FULL_SESSION');
   assert.equal(group.following, 1);
 });
 test('a complete negative comparison with no onset is a known non-event, not missing data', () => {

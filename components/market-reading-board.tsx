@@ -58,17 +58,41 @@ export function toEmotionFacts(
   };
 }
 
-export function EmotionEvidencePanel({
-  snapshot,
-  previous,
-  ladder,
-  coreEvidence,
-}: {
+type EmotionEvidenceProps = {
   snapshot: IntradayEmotionSnapshot | CloseSnapshot;
   previous?: CloseSnapshot;
   ladder?: ReadingLadder | null;
   coreEvidence?: EmotionCoreEvidence | null;
-}) {
+};
+
+/**
+ * 高标与接力：断板影响 / 反核尝试 / 修复扩散 等反馈指标都在这里。
+ * 单独拆出，便于在收盘页把「指数与市场广度、梯队、摘要」整体排到它上面。
+ */
+export function EmotionFeedbackPanel({
+  snapshot,
+  previous,
+  ladder,
+  coreEvidence,
+}: EmotionEvidenceProps) {
+  const facts = toEmotionFacts(snapshot);
+  return (
+    <ShortEmotionPanel
+      facts={facts}
+      previous={previous ? toEmotionFacts(previous) : null}
+      ladder={ladder}
+      coreEvidence={coreEvidence}
+    />
+  );
+}
+
+/** 指数与市场广度：指数与赚钱面分开看，单独成块便于置顶。 */
+export function EmotionBreadthPanel({
+  snapshot,
+  previous,
+  ladder,
+  coreEvidence,
+}: EmotionEvidenceProps) {
   const facts = toEmotionFacts(snapshot);
   const reading = emotionReading(facts);
   const compare = closeComparison(
@@ -84,15 +108,9 @@ export function EmotionEvidencePanel({
   const showCohort = cohort.ready && !facts.stale;
   return (
     <section
-      aria-label="盘面判断依据"
+      aria-label="指数与市场广度"
       className="space-y-3 rounded-xl border bg-background/70 p-4"
     >
-      <ShortEmotionPanel
-        facts={facts}
-        previous={previous ? toEmotionFacts(previous) : null}
-        ladder={ladder}
-        coreEvidence={coreEvidence}
-      />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-xs text-muted-foreground">
@@ -194,6 +212,16 @@ export function EmotionEvidencePanel({
         </p>
       </details>
     </section>
+  );
+}
+
+/** 盘中实时页沿用原顺序：先高标与接力，再指数与市场广度。 */
+export function EmotionEvidencePanel(props: EmotionEvidenceProps) {
+  return (
+    <div aria-label="盘面判断依据" className="space-y-3">
+      <EmotionFeedbackPanel {...props} />
+      <EmotionBreadthPanel {...props} />
+    </div>
   );
 }
 
