@@ -1,41 +1,46 @@
 import calendar from '@/lib/trading-calendar.generated.json';
 import {
-  marketSymbol,
-  parseMinuteBars,
-  type MinuteSeries,
-} from '@/lib/minute-series';
+  parseTencentIntraday,
+  type IntradaySeries,
+} from '@/lib/intraday-series';
+import { marketSymbol } from '@/lib/minute-series';
 
 export const dynamic = 'force-dynamic';
 
 const CALENDAR: string[] = calendar.dates;
 
-/** 新浪 5 分钟线单次最多约 5001 根，折合约 105 个完整交易日。 */
-const MAX_SESSIONS = 105;
-const SOURCE = 'SINA_CN_MARKETDATA_5MIN';
+/** 腾讯 1 分钟序列固定返回最近 5 个交易日。 */
+const MAX_SESSIONS = 5;
 const HEADERS = {
-  accept: 'application/json,text/plain,*/*',
-  referer: 'https://finance.sina.com.cn/',
+  referer: 'https://gu.qq.com/',
   'user-agent':
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
 };
 
-const missing = (code: string, date: string, reason: string): MinuteSeries => ({
+const missing = (code: string, date: string, reason: string): IntradaySeries => ({
+  status: 'MISSING',
   code,
   date,
-  status: 'MISSING',
+  preClose: null,
   bars: [],
-  expected: 48,
-  source: SOURCE,
+  expected: 242,
+  source: '腾讯 1 分钟 K 线',
   reasons: [reason],
+  notes: [],
 });
 
-async function fetchSina(symbol: string, datalen: number, signal: AbortSignal) {
-  const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${symbol}&scale=5&ma=no&datalen=${datalen}`;
-  const response = await fetch(url, { headers: HEADERS, cache: 'no-store', signal });
+async function fetchTencent(symbol: string, signal: AbortSignal) {
+  const url = `https://proxy.finance.qq.com/ifzqgtimg/appstock/app/day/query?code=${symbol}&_var=x`;
+  const response = await fetch(url, {
+    headers: HEADERS,
+    cache: 'no-store',
+    signal,
+  });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const body = await response.text();
-  if (!body.trim()) throw new Error('返回空响应');
-  return JSON.parse(body) as unknown;
+  const start = body.indexOf('=');
+  if (start < 0) throw new Error('返回不是赋值格式');
+  return JSON.parse(body.slice(start + 1)) as unknown;
 }
 
 export async function GET(request: Request) {
@@ -64,31 +69,30 @@ export async function GET(request: Request) {
       missing(
         code,
         date,
-        `行情源的 5 分钟线只覆盖最近约 ${MAX_SESSIONS} 个交易日，${date} 早于可回溯范围。`,
+        `1 分钟分时只保留最近 ${MAX_SESSIONS} 个交易日，${date} 早于可回溯范围；不用 5 分钟线或日线顶替。`,
       ),
     );
   }
 
   const symbol = marketSymbol(code, board);
-  const datalen = (sessionsAgo + 1) * 48 + 8;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12_000);
+  const timer = setTimeout(() => controller.abort(), 15_000);
   try {
     let raw: unknown;
     try {
-      raw = await fetchSina(symbol, datalen, controller.signal);
+      raw = await fetchTencent(symbol, controller.signal);
     } catch (first) {
       // 单次重试：行情源偶发超时，不改变口径。
-      raw = await fetchSina(symbol, datalen, controller.signal).catch(() => {
+      raw = await fetchTencent(symbol, controller.signal).catch(() => {
         throw first;
       });
     }
-    const series = parseMinuteBars(raw, code, date);
+    const series = parseTencentIntraday(raw, symbol, code, date);
     return Response.json(
       { ...series, symbol, sessionsAgo },
       {
         headers: {
-          // 历史交易日的分钟价格不再变化；当日行情短缓存。
+          // 历史交易日的分时不再变化；当日盘中短缓存。
           'cache-control':
             sessionsAgo > 0
               ? 'public, max-age=86400, immutable'
@@ -101,7 +105,7 @@ export async function GET(request: Request) {
       missing(
         code,
         date,
-        `分钟行情源不可用：${error instanceof Error ? error.message : '未知错误'}`,
+        `分时行情源不可用：${error instanceof Error ? error.message : '未知错误'}`,
       ),
     );
   } finally {

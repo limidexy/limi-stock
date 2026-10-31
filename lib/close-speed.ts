@@ -29,6 +29,8 @@ export type CloseSpeedView = {
     requested: number;
     available: number;
     withWindow: number;
+    /** 退市整理期个股，已排除在池外。 */
+    delistedExcluded: number;
   };
   rows: CloseSpeedRow[];
   reasons: string[];
@@ -41,6 +43,7 @@ type DayDocument = {
   requested: number;
   available: number;
   withWindow: number;
+  delistedExcluded?: number;
   rows: CloseSpeedRow[];
 };
 
@@ -70,7 +73,7 @@ export function resolveCloseSpeed(
     requestedDate,
     windowStart: null,
     windowEnd: null,
-    coverage: { requested: 0, available: 0, withWindow: 0 },
+    coverage: { requested: 0, available: 0, withWindow: 0, delistedExcluded: 0 },
     rows: [],
     reasons: [],
   };
@@ -98,6 +101,7 @@ export function resolveCloseSpeed(
       requested: day.requested,
       available: day.available,
       withWindow: day.withWindow,
+      delistedExcluded: day.delistedExcluded ?? 0,
     },
     rows: day.rows.slice(0, limit),
     reasons: missingWindow

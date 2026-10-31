@@ -3,6 +3,7 @@ import type {
   IntradayEmotionSnapshot,
 } from '@/lib/close-history';
 import { CLOSE_HISTORY } from '@/lib/close-history';
+import { excludeDelistedFromSnapshot } from '@/lib/close-snapshot-filter';
 import { emotionReading } from '@/lib/market-reading';
 import { getIntradayEmotionSnapshot, getMarketDateContext } from '@/lib/market';
 import {
@@ -19,9 +20,11 @@ import {
 export const dynamic = 'force-dynamic';
 
 function fromCloseSnapshot(
-  snapshot: CloseSnapshot,
+  raw: CloseSnapshot,
   reason?: string,
 ): IntradayEmotionSnapshot {
+  // 退市整理期个股不计入三池与梯队，统计量随之重算。
+  const snapshot = excludeDelistedFromSnapshot(raw);
   const reading = emotionReading({
     ...snapshot,
     poolsReady: true,

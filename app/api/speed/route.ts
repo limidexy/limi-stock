@@ -5,6 +5,7 @@ import {
   getMarketDateContext,
   nominalLimitPct,
 } from '@/lib/market';
+import { isDelistedName } from '@/lib/stock-universe';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +46,7 @@ type SpeedSnapshot = {
       requested: number;
       available: number;
       withWindow: number;
+      delistedExcluded: number;
       conceptReady: number;
       industryReady: number;
       recentLimitReady: number;
@@ -68,7 +70,7 @@ async function mapLimit<T, R>(
   limit: number,
   worker: (item: T) => Promise<R>,
 ) {
-  const results = new Array<R>(items.length);
+  const results = Array.from<R | undefined>({ length: items.length });
   let cursor = 0;
   await Promise.all(
     Array.from({ length: Math.min(limit, items.length) }, async () => {
@@ -79,7 +81,7 @@ async function mapLimit<T, R>(
       }
     }),
   );
-  return results;
+  return results as R[];
 }
 
 function rowStatus(
@@ -102,7 +104,10 @@ async function buildSnapshot(tradeDate: string): Promise<SpeedSnapshot | null> {
   const view = resolveCloseSpeed(tradeDate, ROW_LIMIT);
   if (!view.rows.length) return null;
 
-  const rows = await mapLimit(view.rows, 10, async (row) => {
+  // 归档已在生成时剔除退市整理期个股；这里再兜一层，防止旧归档被直接复用。
+  const candidates = view.rows.filter((row) => !isDelistedName(row.name));
+
+  const rows = await mapLimit(candidates, 10, async (row) => {
     const [metadata, history] = await Promise.all([
       fetchStockMetadata(row.code).catch(() => null),
       fetchRecentLimitHistory(row.code, row.name).catch(() => null),

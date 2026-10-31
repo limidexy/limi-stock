@@ -1,5 +1,6 @@
 import { priceLimitState } from './timeline-evidence.ts';
 import type { PriceTrend } from './timeline-evidence';
+import { isDelistedName } from './stock-universe.ts';
 
 export type ObservationState = 'READY' | 'DEGRADED' | 'MISSING';
 export type ObservationResult = 'OBSERVED' | 'NOT_OBSERVED' | 'UNRESOLVED';
@@ -129,7 +130,10 @@ export function buildTapeObservation(args: {
     string,
     Array<{ time: string; price: number; changePct: number }>
   >();
-  const rows: TapeStock[] = Object.entries(trends).map(([code, t]) => {
+  const rows: TapeStock[] = Object.entries(trends)
+    // 退市整理期个股不进盘口观察，涨跌幅与价格量级都和正常标的不可比。
+    .filter(([, t]) => !isDelistedName(t.name))
+    .map(([code, t]) => {
     const counts = new Map<string, number>();
     for (const p of t.points)
       if (p.time <= cutoff) counts.set(p.time, (counts.get(p.time) ?? 0) + 1);

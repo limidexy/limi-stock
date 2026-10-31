@@ -2,6 +2,7 @@ import type { CloseSnapshot, CloseStock } from './close-history';
 import type { PriceTrend } from './timeline-evidence';
 import { extremePathObservation } from './core-minute-evidence.ts';
 import { buildTapeObservation } from './tape-observation.ts';
+import { isDelistedName } from './stock-universe.ts';
 
 export type TrackingQuote = {
   changePct: number;
@@ -33,7 +34,11 @@ export type TrackingDay = {
 };
 export type TrackingHistory = Record<string, TrackingDay>;
 export const stocksOf = (day?: CloseSnapshot) =>
-  day?.ladders.flatMap((x) => x.stocks) ?? [];
+  // 退市整理期个股（简称带「退」）不参与连板梯队与情绪统计：
+  // 它们的价格与涨跌幅量级和正常标的不可比，留着只会污染梯队计数。
+  (day?.ladders.flatMap((x) => x.stocks) ?? []).filter(
+    (stock) => !isDelistedName(stock.name),
+  );
 const unique = <T extends { code: string }>(rows: T[]) => [
   ...new Map(rows.map((x) => [x.code, x])).values(),
 ];

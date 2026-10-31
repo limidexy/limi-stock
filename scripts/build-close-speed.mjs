@@ -11,6 +11,8 @@
 
 import fs from 'node:fs/promises';
 
+import { splitDelisted } from '../lib/stock-universe.ts';
+
 const CONCURRENCY = 24;
 const WINDOW_START = '1455';
 const WINDOW_END = '1500';
@@ -121,8 +123,13 @@ async function mapLimit(items, limit, worker) {
 
 async function main() {
   console.log('读取全市场代码…');
-  const universe = await loadUniverse();
-  console.log(`股票池 ${universe.length} 只`);
+  const listed = await loadUniverse();
+  // 退市整理期个股不进池，也不计入覆盖率分母。
+  const { kept: universe, excluded } = splitDelisted(listed);
+  console.log(`股票池 ${universe.length} 只 · 剔除退市整理期 ${excluded.length} 只`);
+  if (excluded.length) {
+    console.log(`  已剔除：${excluded.map((row) => row.name).join('、')}`);
+  }
 
   const byDate = new Map();
   let unavailable = 0;
@@ -189,6 +196,7 @@ async function main() {
       requested: universe.length,
       available: bucket.available,
       withWindow: bucket.withWindow,
+      delistedExcluded: excluded.length,
       rows: ranked,
     };
     console.log(
@@ -206,9 +214,11 @@ async function main() {
       window: '14:55 → 15:00',
       resolution: '1 分钟',
       source: '腾讯 1 分钟 K 线；全市场代码取自新浪沪深京 A 股列表',
-      limits: '仅覆盖能取到完整 1 分钟序列的股票；缺端点的不参与排序',
+      limits:
+        '仅覆盖能取到完整 1 分钟序列的股票；缺端点的不参与排序；退市整理期个股（简称带「退」）已剔除',
     },
     unavailable,
+    delistedExcluded: excluded.length,
     dates,
   };
 

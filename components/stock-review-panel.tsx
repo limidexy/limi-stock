@@ -6,10 +6,11 @@ import { LineChart, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  summarizeSeries,
-  type MinuteBar,
-  type MinuteSeries,
-} from '@/lib/minute-series';
+  SESSION_MINUTES,
+  summarizeIntraday,
+  type IntradayBar,
+  type IntradaySeries,
+} from '@/lib/intraday-series';
 import { compactToIso } from '@/lib/ranking-verification';
 import {
   resolveStockIdentity,
@@ -58,70 +59,168 @@ function statusClass(status: string) {
   return 'status-missing';
 }
 
-/** 5 分钟收盘曲线。纵轴按当日实际区间缩放，虚线为当日首根收盘。 */
-function MinuteChart({ bars }: { bars: MinuteBar[] }) {
+/**
+ * 分时图：1 分钟价格线 + 均价线 + 昨收基准线，下方是每分钟成交量。
+ *
+ * 纵轴以昨收为中轴上下对称，这样"离昨收多远"一眼可读；横轴固定按 242 个
+ * 交易分钟铺满，所以停牌或数据不全时线只画到该到的地方，不会被拉伸成满屏。
+ * 涨红跌绿沿用 A 股习惯，不跟随明暗主题。
+ */
+function IntradayChart({
+  bars,
+  preClose,
+}: {
+  bars: IntradayBar[];
+  preClose: number | null;
+}) {
   if (bars.length < 2) return null;
-  const closes = bars.map((bar) => bar.close);
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const span = max - min || Math.max(max * 0.01, 0.01);
-  const lo = min - span * 0.08;
-  const hi = max + span * 0.08;
-  const x = (index: number) => (index / (bars.length - 1)) * 300;
-  const y = (value: number) => 90 - ((value - lo) / (hi - lo)) * 90;
-  const points = bars
-    .map((bar, index) => `${x(index).toFixed(2)},${y(bar.close).toFixed(2)}`)
-    .join(' ');
-  const first = bars[0].close;
-  const last = bars[bars.length - 1].close;
-  const positive = last >= first;
+
+  const UP = '#dc2626';
+  const DOWN = '#16a34a';
+  const AVG = '#f59e0b';
+  const BASE = '#94a3b8';
+
+  const prices = bars.map((bar) => bar.price);
+  const last = prices[prices.length - 1];
+  const base = preClose ?? prices[0];
+  const high = Math.max(...prices, base);
+  const low = Math.min(...prices, base);
+  // 以昨收为对称中心，上下取同样的幅度，否则分时线会整体偏到一侧。
+  const half = Math.max(high - base, base - low, base * 0.005) * 1.08;
+  const top = base + half;
+  const bottom = base - half;
+  const span = top - bottom || 1;
+
+  const slots = Math.max(SESSION_MINUTES, bars.length);
+  const width = 300;
+  const priceHeight = 90;
+  const gap = 8;
+  const volumeHeight = 26;
+  const totalHeight = priceHeight + gap + volumeHeight;
+
+  const x = (index: number) => (index / (slots - 1)) * width;
+  const y = (value: number) =>
+    priceHeight - ((value - bottom) / span) * priceHeight;
+
+  const line = (key: 'price' | 'avgPrice') =>
+    bars
+      .map((bar, index) => {
+        const value = key === 'price' ? bar.price : bar.avgPrice;
+        if (value == null || !Number.isFinite(value)) return null;
+        return `${x(index).toFixed(2)},${y(value).toFixed(2)}`;
+      })
+      .filter(Boolean)
+      .join(' ');
+
+  const maxVolume = Math.max(...bars.map((bar) => bar.volume), 1);
+  const volumeTop = priceHeight + gap;
+  const positive = last >= base;
+  const color = positive ? UP : DOWN;
+  const noonIndex = bars.findIndex((bar) => bar.time === '1130');
 
   return (
-    <div className={positive ? 'market-up' : 'market-down'}>
+    <div>
       <svg
-        viewBox="0 0 300 90"
+        viewBox={`0 0 ${width} ${totalHeight}`}
         preserveAspectRatio="none"
-        className="h-24 w-full"
+        className="h-36 w-full"
         aria-hidden="true"
         focusable="false"
       >
+        <rect
+          x="0"
+          y="0"
+          width={width}
+          height={priceHeight}
+          fill={positive ? UP : DOWN}
+          fillOpacity="0.04"
+        />
         <line
           x1="0"
-          y1={y(first)}
-          x2="300"
-          y2={y(first)}
-          stroke="currentColor"
-          strokeOpacity="0.35"
-          strokeDasharray="3 3"
+          y1={y(base)}
+          x2={width}
+          y2={y(base)}
+          stroke={BASE}
+          strokeWidth="1"
+          strokeDasharray="4 3"
           vectorEffect="non-scaling-stroke"
         />
-        {bars.length === 48 ? (
+        {noonIndex > 0 ? (
           <line
-            x1={x(23.5)}
+            x1={x(noonIndex)}
             y1="0"
-            x2={x(23.5)}
-            y2="90"
-            stroke="currentColor"
-            strokeOpacity="0.2"
-            strokeDasharray="2 2"
+            x2={x(noonIndex)}
+            y2={priceHeight}
+            stroke={BASE}
+            strokeOpacity="0.5"
+            strokeDasharray="2 3"
             vectorEffect="non-scaling-stroke"
           />
         ) : null}
         <polyline
-          points={points}
+          points={line('price')}
           fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
+          stroke={color}
+          strokeWidth="1.4"
+          strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
         />
+        <polyline
+          points={line('avgPrice')}
+          fill="none"
+          stroke={AVG}
+          strokeWidth="1"
+          strokeOpacity="0.9"
+          vectorEffect="non-scaling-stroke"
+        />
+        {bars.map((bar, index) => {
+          if (!bar.volume) return null;
+          const height = (bar.volume / maxVolume) * volumeHeight;
+          const previous = index ? bars[index - 1].price : bar.price;
+          return (
+            <rect
+              key={bar.time}
+              x={x(index) - 0.45}
+              y={volumeTop + volumeHeight - height}
+              width="0.9"
+              height={height}
+              fill={bar.price >= previous ? UP : DOWN}
+              fillOpacity="0.55"
+            />
+          );
+        })}
       </svg>
-      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
-        <span>{bars[0].time}</span>
-        <span>
-          纵轴 {min.toFixed(2)}–{max.toFixed(2)}（区间{' '}
-          {(((max - min) / (min || 1)) * 100).toFixed(2)}%）
+      <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>09:30</span>
+        <span>11:30 / 13:00</span>
+        <span>15:00</span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <span
+            className="inline-block h-0.5 w-3 rounded"
+            style={{ backgroundColor: color }}
+          />
+          价格
         </span>
-        <span>{bars[bars.length - 1].time}</span>
+        <span className="inline-flex items-center gap-1">
+          <span
+            className="inline-block h-0.5 w-3 rounded"
+            style={{ backgroundColor: AVG }}
+          />
+          均价
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span
+            className="inline-block h-0.5 w-3 rounded"
+            style={{ backgroundColor: BASE }}
+          />
+          昨收 {base.toFixed(2)}
+        </span>
+        <span>
+          纵轴 {bottom.toFixed(2)}–{top.toFixed(2)}（±
+          {((half / (base || 1)) * 100).toFixed(2)}%）
+        </span>
       </div>
     </div>
   );
@@ -143,7 +242,7 @@ export function StockReviewPanel({
   onClose: () => void;
 }) {
   const isoDate = compactToIso(date) ?? date;
-  const [series, setSeries] = useState<MinuteSeries | null>(null);
+  const [series, setSeries] = useState<IntradaySeries | null>(null);
   const [identity, setIdentity] = useState<StockIdentityView | null>(null);
   const [closeIdentity, setCloseIdentity] =
     useState<CloseIdentityView | null>(null);
@@ -163,7 +262,7 @@ export function StockReviewPanel({
           });
           const response = await fetch(`/api/stock-minute?${query}`);
           const payload = response.ok
-            ? ((await response.json()) as MinuteSeries)
+            ? ((await response.json()) as IntradaySeries)
             : null;
           if (cancelled) return;
           setSeries(payload);
@@ -197,11 +296,10 @@ export function StockReviewPanel({
     };
   }, [code, isoDate, marketBoard]);
 
-  const summary = series ? summarizeSeries(series) : null;
-  const changePct =
-    summary && summary.first > 0
-      ? ((summary.last / summary.first - 1) * 100).toFixed(2)
-      : null;
+  const summary = series ? summarizeIntraday(series) : null;
+  const changePct = summary?.changePct ?? null;
+  const lastAvgPrice =
+    series?.bars.filter((bar) => bar.avgPrice != null).at(-1)?.avgPrice ?? null;
 
   return (
     <div className="max-w-[calc(100vw-2rem)] border-t bg-muted/20 px-4 py-4 lg:max-w-none">
@@ -238,7 +336,7 @@ export function StockReviewPanel({
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="flex items-center gap-1.5 text-sm font-medium">
               <LineChart className="size-4" />
-              当日 5 分钟分时
+              当日 1 分钟分时
             </p>
             <Badge
               variant="outline"
@@ -254,36 +352,54 @@ export function StockReviewPanel({
             </div>
           ) : series && series.bars.length ? (
             <>
-              <MinuteChart bars={series.bars} />
-              <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
+              <IntradayChart bars={series.bars} preClose={series.preClose} />
+              <dl className="mt-2 grid grid-cols-3 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-6">
+                <div>
+                  <dt className="text-muted-foreground">昨收</dt>
+                  <dd className="font-mono">
+                    {series.preClose?.toFixed(2) ?? '—'}
+                  </dd>
+                </div>
                 <div>
                   <dt className="text-muted-foreground">开</dt>
-                  <dd className="font-mono">{summary?.first.toFixed(2)}</dd>
+                  <dd className="font-mono">{summary ? summary.first.toFixed(2) : '—'}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">高</dt>
-                  <dd className="font-mono">{summary?.high.toFixed(2)}</dd>
+                  <dd className="font-mono">{summary ? summary.high.toFixed(2) : '—'}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">低</dt>
-                  <dd className="font-mono">{summary?.low.toFixed(2)}</dd>
+                  <dd className="font-mono">{summary ? summary.low.toFixed(2) : '—'}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">收</dt>
-                  <dd className="font-mono">{summary?.last.toFixed(2)}</dd>
+                  <dd className="font-mono">{summary ? summary.last.toFixed(2) : '—'}</dd>
                 </div>
-                <div className="col-span-2">
-                  <dt className="text-muted-foreground">日内振幅（首根→末根）</dt>
+                <div>
+                  <dt className="text-muted-foreground">涨跌幅</dt>
                   <dd
-                    className={`font-mono ${(Number(changePct) || 0) >= 0 ? 'market-up' : 'market-down'}`}
+                    className={`font-mono ${(changePct ?? 0) >= 0 ? 'market-up' : 'market-down'}`}
                   >
-                    {changePct ? `${Number(changePct) >= 0 ? '+' : ''}${changePct}%` : '—'}
+                    {formatPct(changePct)}
                   </dd>
                 </div>
                 <div className="col-span-2">
-                  <dt className="text-muted-foreground">分钟累计成交量</dt>
+                  <dt className="text-muted-foreground">均价（成交额÷成交量）</dt>
+                  <dd className="font-mono">
+                    {lastAvgPrice == null ? '—' : lastAvgPrice.toFixed(2)}
+                  </dd>
+                </div>
+                <div className="col-span-2">
+                  <dt className="text-muted-foreground">分钟成交量合计</dt>
                   <dd className="font-mono">
                     {summary ? formatVolume(summary.volume) : '—'}
+                  </dd>
+                </div>
+                <div className="col-span-2">
+                  <dt className="text-muted-foreground">分钟根数</dt>
+                  <dd className="font-mono">
+                    {series.bars.length}/{series.expected}
                   </dd>
                 </div>
               </dl>
@@ -303,6 +419,14 @@ export function StockReviewPanel({
             <ul className="mt-2 space-y-0.5 text-xs text-amber-700 dark:text-amber-400">
               {series.reasons.map((reason) => (
                 <li key={reason}>· {reason}</li>
+              ))}
+            </ul>
+          ) : null}
+
+          {series?.notes?.length && series.status !== 'MISSING' ? (
+            <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+              {series.notes.map((note) => (
+                <li key={note}>· {note}</li>
               ))}
             </ul>
           ) : null}

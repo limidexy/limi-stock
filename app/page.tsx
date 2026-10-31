@@ -173,6 +173,7 @@ type SpeedData = {
     requested: number;
     available?: number;
     withWindow?: number;
+    delistedExcluded?: number;
     conceptReady: number;
     industryReady?: number;
     recentLimitReady: number;
@@ -383,15 +384,6 @@ function StateBadge({ state, label }: { state?: DataState; label?: string }) {
       </Badge>
     );
   return <Badge variant="destructive">{label ?? 'MISSING'}</Badge>;
-}
-
-function median(values: number[]) {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2
-    ? sorted[middle]
-    : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 
 function EmptyState({ children }: { children: React.ReactNode }) {
@@ -1845,6 +1837,9 @@ export default function Home() {
                     {speed.data?.source ?? '涨速归档'}
                     {speed.data?.coverage
                       ? ` · 全市场 ${speed.data.coverage.available ?? '—'}/${speed.data.coverage.requested} 只可取到分钟序列 · 本表前 ${speed.data.coverage.returned ?? speed.data.rows.length} 只`
+                      : ''}
+                    {speed.data?.coverage?.delistedExcluded
+                      ? ` · 已剔除退市整理期 ${speed.data.coverage.delistedExcluded} 只`
                       : ''}
                   </span>
                 </CardDescription>

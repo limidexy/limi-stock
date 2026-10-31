@@ -1,4 +1,5 @@
 import { CLOSE_HISTORY, type CloseHistoryDocument } from '@/lib/close-history';
+import { excludeDelistedFromSnapshot } from '@/lib/close-snapshot-filter';
 import { buildLatestCloseSnapshot, getMarketDateContext } from '@/lib/market';
 import { loadCloseHistory, saveCloseSnapshot } from '@/lib/persistence';
 import { enrichEmotionCloses } from '@/lib/emotion-tracking-source';
@@ -51,7 +52,10 @@ export async function GET() {
     }
   }
 
-  const enrichedSnapshots = enrichEmotionCloses(snapshots);
+  // 退市整理期个股不进梯队与三池，统计量随之重算，保证「涨停数 = 梯队条数」。
+  const enrichedSnapshots = enrichEmotionCloses(snapshots).map(
+    excludeDelistedFromSnapshot,
+  );
   const archivedDates = new Set(
     enrichedSnapshots.map((snapshot) => snapshot.date),
   );
