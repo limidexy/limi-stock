@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { CalendarClock, Info, RefreshCw, ShieldAlert, ShieldCheck, Trophy } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { StockReviewPanel } from '@/components/stock-review-panel';
 import tradingCalendar from '@/lib/trading-calendar.generated.json';
 import {
   assertPayload,
@@ -86,6 +87,8 @@ export function MultiWindowRankingsBoard() {
   const [error, setError] = useState<string | null>(null);
   /** 递增即重新拉取当前数据源，避免在 effect 里直接调用加载函数。 */
   const [reloadToken, setReloadToken] = useState(0);
+  /** 展开的个股回看，键为「窗口:代码」，同一代码在不同窗口互不影响。 */
+  const [expanded, setExpanded] = useState<string | null>(null);
   const lastFetchedAt = useRef(0);
   /** 请求序号：快速切换日期时丢弃过期响应，避免旧日期覆盖新日期。 */
   const requestSeq = useRef(0);
@@ -381,6 +384,9 @@ export function MultiWindowRankingsBoard() {
                     <span>
                       榜单区间 {formatDate(data.expectedStart)} 至{' '}
                       {formatDate(data.endDate)} · {data.sessions} 个交易日
+                      <span className="ml-2 hidden sm:inline">
+                        · 点任意一行看当日分时与身份
+                      </span>
                     </span>
                   </div>
 
@@ -403,8 +409,18 @@ export function MultiWindowRankingsBoard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {data.rows.map((row, rowIndex) => (
-                          <TableRow key={row.code}>
+                        {data.rows.map((row, rowIndex) => {
+                          const rowKey = `${window}:${row.code}`;
+                          const open = expanded === rowKey;
+                          return (
+                            <Fragment key={row.code}>
+                              <TableRow
+                                className="cursor-pointer"
+                                aria-expanded={open}
+                                onClick={() =>
+                                  setExpanded(open ? null : rowKey)
+                                }
+                              >
                             <TableCell className="text-center font-mono text-muted-foreground">
                               {rowIndex + 1}
                             </TableCell>
@@ -469,7 +485,29 @@ export function MultiWindowRankingsBoard() {
                               </Badge>
                             </TableCell>
                           </TableRow>
-                        ))}
+                              {open ? (
+                                <TableRow className="hover:bg-transparent">
+                                  <TableCell colSpan={10} className="p-0">
+                                    <StockReviewPanel
+                                      code={row.code}
+                                      name={row.name}
+                                      marketBoard={row.marketBoard}
+                                      date={row.latestDate}
+                                      windows={WINDOW_KEYS.map((key) => ({
+                                        key,
+                                        gainPct:
+                                          view.windows[key].rows.find(
+                                            (item) => item.code === row.code,
+                                          )?.gainPct ?? null,
+                                      }))}
+                                      onClose={() => setExpanded(null)}
+                                    />
+                                  </TableCell>
+                                </TableRow>
+                              ) : null}
+                            </Fragment>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   ) : (
