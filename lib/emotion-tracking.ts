@@ -951,6 +951,11 @@ export function buildEmotionTracking(
         : ('DEGRADED' as const),
     previousDate: prev?.date ?? null,
     missingSessions,
+    // 涨停/炸板/跌停三池由精确日线重建的交易日：池成员与连板高度精确，
+    // 但没有分时封板时点/炸板次数，展示层需要如实标注，不能当成分时证据。
+    reconstructedDays: ordered
+      .filter((day) => day.boardProcessReconstructed)
+      .map((day) => day.date),
     oldLeaders: {
       rows: old,
       // 仍在板上、并未断板的高标，单独成组，避免与“断板”混为一谈。

@@ -388,6 +388,12 @@ export function EmotionTrackingBoard({
                 之前缺相邻收盘日；不把间隔两端当连续交易日。
               </p>
             )}
+            {current.reconstructedDays.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                涨停池重建日：{current.reconstructedDays.join('、')}
+                ——由精确日线收盘触及涨停价重建，池成员与连板高度精确，无分时封板时点与炸板次数。
+              </p>
+            )}
             <Tabs defaultValue="old" className="space-y-4">
               <TabsList className="h-auto w-full flex-wrap justify-start gap-1">
                 <TabsTrigger value="old">

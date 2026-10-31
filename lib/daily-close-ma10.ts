@@ -423,6 +423,8 @@ async function fetchOne(
   const urls = [
     `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${query}`,
     `https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=${query}`,
+    // 腾讯 https 边缘按量返回 501 WAF，http 代理镜像通常仍可用；两者数据同源。
+    `http://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get?param=${query}`,
   ];
   const reasons: string[] = [];
   for (const url of urls) {

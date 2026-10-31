@@ -306,11 +306,15 @@ test('valid lead-lag keeps early, simultaneous and subsequent responses separate
 });
 
 test('a leader that left the ladder across a missing session is kept with an explicit unconfirmed break', () => {
-  // 2026-10-27 是交易日但归档里没有收盘快照：10-26 → 10-28 不是相邻交易日。
+  // 构造「缺 2026-10-27 收盘快照」的历史：10-26 → 10-28 不是相邻交易日。
   // 上海九百 10-26 是当日最高板 4 板，10-28 起不在涨停池，10-30 已跌停。
+  // 真实归档已补齐 10-27，这里主动删掉它，保证「不可确认」分支始终有测试覆盖。
+  const gapHistory = history.filter((day) => day.date !== '2026-10-27');
+  const gapEvidence = { ...evidence };
+  delete gapEvidence['2026-10-27'];
   const result = buildEmotionTracking(
-    history,
-    evidence,
+    gapHistory,
+    gapEvidence,
     '2026-10-30',
     10,
     '15:00',
@@ -339,6 +343,31 @@ test('a leader that left the ladder across a missing session is kept with an exp
   assert.ok(
     index > 0 && index < 6,
     '10-28 离池的上海九百应排在最新几只里，而不是沉到表尾',
+  );
+});
+
+test('filling the 2026-10-27 close snapshot turns the unconfirmed break into a confirmed one', () => {
+  // 10-27 的收盘快照补齐后，10-26 → 10-28 之间不再有缺日，
+  // 上海九百的断板日应被确认，而不是继续挂「不可确认」。
+  const result = buildEmotionTracking(
+    history,
+    evidence,
+    '2026-10-30',
+    10,
+    '15:00',
+    JSON.parse(
+      fs.readFileSync(
+        new URL('../lib/trading-calendar.generated.json', import.meta.url),
+      ),
+    ).dates,
+  );
+  const stock = result.oldLeaders.rows.find((x) => x.code === '600838');
+  assert.ok(stock, '上海九百仍应是断板老高标');
+  assert.ok(stock.brokenDate, '10-27 补齐后应确认断板日');
+  assert.equal(stock.breakReason, null);
+  assert.ok(
+    !result.missingSessions.includes('2026-10-27'),
+    '10-27 补齐后不应再出现在缺失交易日里',
   );
 });
 

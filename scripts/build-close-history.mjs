@@ -387,6 +387,13 @@ for (const date of sortedDates) {
     previousDate: previousDate ? formatDate(previousDate) : undefined,
     cutoff: '15:00',
     status: 'READY',
+    // 三池若由精确日线重建，只标记「封板过程重建」，不把整日快照降级：
+    // 池成员与连板高度仍来自当日真实收盘价，只是没有分时封板时点/炸板次数。
+    boardProcessReconstructed:
+      structure?.pools?.limit_up?.mode === 'RECONSTRUCTED_EXACT_OHLC'
+        ? true
+        : undefined,
+    poolMode: structure?.pools?.limit_up?.mode,
     evidenceStatus: manifest?.baseReady ? manifest.status : 'READY',
     modules: manifest?.modules,
     source: structure
@@ -411,7 +418,12 @@ for (const date of sortedDates) {
     sealRate,
     highestBoard,
     consecutiveCount,
-    turnover: Number(summary?.turnover_sh_sz ?? breadthSource.amountTotal ?? 0),
+    turnover: Number(
+      summary?.turnover_sh_sz ??
+        breadthSource.amountTotal ??
+        breadthSource.totalAmount ??
+        0,
+    ),
     breadth,
     indexMood: mood,
     shortMood: shortMood(moodInput),

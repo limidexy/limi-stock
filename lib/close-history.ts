@@ -31,6 +31,13 @@ export type CloseSnapshot = {
   cutoff: '15:00';
   status: 'READY';
   evidenceStatus?: 'READY' | 'DEGRADED';
+  /**
+   * 涨停/炸板/跌停三池若由「精确日期日线 OHLCV」重建（收盘价触及涨停价），
+   * 池成员与连板高度精确，但封板时点/炸板次数不可得。仅此一项标记为重建，
+   * 不代表整日快照降级，也不能据此声称有分时封板过程。
+   */
+  boardProcessReconstructed?: boolean;
+  poolMode?: string;
   modules?: Record<
     string,
     {
